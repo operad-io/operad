@@ -7,9 +7,6 @@ import {
   type PluginOffer,
 } from "@operad-io/engine";
 
-/** The harness plugins `operad init` turns on when their agent command is on `PATH`, in this order. */
-export const INIT_HARNESS_PLUGINS: readonly string[] = ["radian", "claude", "pi"];
-
 /**
  * Plugins shipped with operad that `plugin enable <name>` can add, including
  * those a new home leaves off (`shell`, `dev`, `pool`) and those a home made
@@ -19,6 +16,15 @@ export const OPTIONAL_PLUGINS: readonly string[] = ["shell", "pi", "claude", "co
 
 /** The plugins whose package is installed into the home rather than shipped with the CLI. */
 export const INSTALL_ON_ENABLE: readonly string[] = ["claude"];
+
+/** The pi library operad installs into the home when no agent is on `PATH` (ADR 0023 D9). */
+export const PI_CODING_AGENT_PACKAGE = "@earendil-works/pi-coding-agent";
+
+/** The exact pi version operad installs; it moves with an operad release. */
+export const PI_CODING_AGENT_VERSION = "1.6.0";
+
+/** The agent commands `operad init` looks for, in this order. */
+export const INIT_HARNESS_PLUGINS: readonly string[] = ["radian", "claude", "pi"];
 
 /** Harness plugins are named after their agent; their npm packages are `harness-<agent>`. */
 const HARNESS_PLUGINS: readonly string[] = ["claude", "codex", "pi", "radian"];
@@ -34,16 +40,15 @@ export const DEFAULT_LEAD_ACTIONS: readonly string[] = ["chat:close"];
 /** The allowed actions that also need the confirmation. */
 export const DEFAULT_CONFIRM_ACTIONS: readonly string[] = ["chat:close"];
 
-/** The plugins of a new home: the assistant's fixed ones plus the harnesses found on `PATH`. */
+/** The plugins of a new home: the assistant's fixed ones plus its harnesses. */
 export function defaultPluginsFor(harnesses: readonly string[]): readonly string[] {
-  const agents = harnesses.length === 0 ? ["radian"] : harnesses;
-  return ["chat", "bot", "memory", ...agents];
+  return ["chat", "bot", "memory", ...harnesses];
 }
 
 /** The config a new home starts with, with the harness plugins passed in place of the fallback. */
 export function distributionConfig(
   home: string,
-  harnesses: readonly string[] = [],
+  harnesses: readonly string[] = ["radian"],
 ): OperadConfig {
   return {
     ...defaultConfig(home),

@@ -355,3 +355,11 @@ the row fields.
 |---|---|---|---|
 | T-0676-M1 | packages/cli/src/main.ts | a bare `operad` passed no starting chat to the terminal client, so it opened the lists instead of the default bot's new chat | `operad with no command > creates the home and opens the default bot's new chat` |
 | T-0676-M3 | packages/cli/src/main.ts | `operad init` did not print `created` before the claude install, so an install that failed left the line out | `publishing and installing the packages > init retries a claude install that failed after config.json was written` |
+
+## T-0677 — operad installs pi when the machine has none
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0677-M4 | packages/cli/src/main.ts | a new home with no agent on `PATH` enabled no harness instead of `pi`, so init did not install one | `operad init finds the agent on PATH > no agent enables pi and installs operad's own copy, so init passes` |
+| T-0677-M5 | packages/cli/src/main.ts | enabling `pi` installed operad's copy even when `pi` was on `PATH` | `operad init finds the agent on PATH > a new home with pi on PATH uses it and installs no pi of its own` |
+| T-0677-M6 | packages/cli/src/main.ts | the HTTP plugin list never recorded an install line, so a client polling during the install saw no progress | `plugins over HTTP > GET /v1/plugins carries the line an install is on before the file names it` |

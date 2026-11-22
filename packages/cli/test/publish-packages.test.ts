@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { PI_CODING_AGENT_PACKAGE, PI_CODING_AGENT_VERSION } from "../src/defaults.ts";
 
 const root = dirname(dirname(dirname(dirname(fileURLToPath(import.meta.url)))));
 const cli = join(root, "packages", "cli");
@@ -16,6 +17,10 @@ interface Manifest {
   readonly repository?: { readonly type?: string; readonly url?: string; readonly directory?: string };
   readonly dependencies?: Readonly<Record<string, string>>;
   readonly devDependencies?: Readonly<Record<string, string>>;
+  readonly peerDependencies?: Readonly<Record<string, string>>;
+  readonly peerDependenciesMeta?: Readonly<
+    Record<string, { readonly optional?: boolean }>
+  >;
 }
 
 function manifestOf(directory: string): Manifest {
@@ -119,6 +124,13 @@ describe("the packages a publish needs", () => {
       const thirdParty = Object.keys(manifest.dependencies ?? {}).filter((name) => !name.startsWith("@operad-io/"));
       expect({ directory, thirdParty }).toEqual({ directory, thirdParty: [] });
     }
+  });
+
+  test("the pi harness names pi as an optional peer at the exact version the CLI installs", () => {
+    const manifest = manifestOf("harness/pi");
+    expect(manifest.dependencies?.[PI_CODING_AGENT_PACKAGE]).toBeUndefined();
+    expect(manifest.peerDependencies?.[PI_CODING_AGENT_PACKAGE]).toBe(PI_CODING_AGENT_VERSION);
+    expect(manifest.peerDependenciesMeta?.[PI_CODING_AGENT_PACKAGE]?.optional).toBe(true);
   });
 
   test("the CLI tarball's files list leaves tests and fixtures out", () => {

@@ -389,7 +389,7 @@ pi](dev.md#long-commands-under-pi).
 | `pi.model` | string | pi's default model | `provider/id` | When an agent step or a new chat starts | Refused by the schema |
 | `pi.models` | array of strings | every model `pi --list-models` prints | `provider/id` values | When a new chat lists its models | Refused by the schema |
 | `pi.thinkingLevel` | string | pi's default | `off`, `minimal`, `low`, `medium`, `high`, `xhigh`, `max` | When an agent step or a new chat starts | Refused by the schema |
-| `pi.command` | string | `"pi"` | a command name or path that leads into an installed `@earendil-works/pi-coding-agent` | When the plugin loads and when an agent step starts | Refused by the schema; a missing or old install fails the plugin check |
+| `pi.command` | string | `"pi"` | a command name or path that leads into an installed `@earendil-works/pi-coding-agent`; the default uses the copy on `PATH`, else the one operad installed in the home | When the plugin loads and when an agent step starts | Refused by the schema; a missing or old install fails the plugin check |
 | `pi.authPath` | string | `"~/.pi/agent/auth.json"` | pi's credentials file | When an agent step starts | Refused by the schema |
 | `pi.modelsPath` | string | `"~/.pi/agent/models.json"` | pi's custom models file | When an agent step starts | Refused by the schema |
 | `pi.wallTimeSecs` | number | `3600` | `1` to `28500` seconds | When an agent step starts | Refused by the schema; a larger value also fails the step with `must be at most 28500` |

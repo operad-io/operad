@@ -292,13 +292,13 @@ the built-in one.
 
 ## Plugins
 
-`GET /v1/plugins` lists the plugins the home's `config.json` names, as `operad plugin list` does; it reads the file at each call, so a change made by the command line or by hand shows at once.
+`GET /v1/plugins` lists the plugins the home's `config.json` names, as `operad plugin list` does; it reads the file at each call, so a change made by the command line or by hand shows at once. It also carries `progress`: the latest line a plugin's package install printed, while the plugin is being enabled. A plugin being enabled is listed even before `config.json` names it, with `"version": null` and `"enabled": false`; the line goes away when the install ends, and the next list shows the switched entry. An install that fails answers the switch with its reason; a line that says the package could not be downloaded means the network, and sending the same request again retries it.
 
 A loaded harness plugin also answers `signedIn`, so the Agents page can show an installed agent that is not signed in without starting a session. `claude` reads `claude auth status` (kept for a short time), `pi` and `radian` read their own credentials file for a credential and never the secret, and `codex` reads `codex login status`. The answer is `true`, `false`, or absent when the harness cannot tell; a missing command, a file that cannot be read, or a plugin that is off gives absent. No endpoint shows a credential.
 
 The same list carries each loaded harness's `models`, with a description of each model beside its id: `name`, `provider`, the context `window` when known and the `capabilities` it truly knows. A client groups the models by `provider`, searches them and draws badges for `vision`, `reasoning`, `tools` and `web`. The client may label the search `Search models` and the badges `Vision`, `Reasoning`, `Tools` and `Web`; the server sends the data, not that text.
 
-`POST /v1/plugins` does what `operad plugin enable <name>` and `operad plugin disable <name>` do, on the same file: it sets `plugins.<name>.enabled` and keeps every other key. Enabling a shipped plugin the file does not list adds it, and enabling `claude` installs its package into the home first, as the command does. The refusals are the command line's, with its words:
+`POST /v1/plugins` does what `operad plugin enable <name>` and `operad plugin disable <name>` do, on the same file: it sets `plugins.<name>.enabled` and keeps every other key. Enabling a shipped plugin the file does not list adds it, and enabling `claude` installs its package into the home first, as the command does. Enabling `pi` installs operad's own pinned pi into the home when `PATH` has no `pi`, and uses the one on `PATH` otherwise. The refusals are the command line's, with its words:
 
 | Status | When |
 |---|---|

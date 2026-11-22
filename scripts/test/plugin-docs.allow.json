@@ -260,6 +260,7 @@
   "@operad-io/engine:EnsureInstalledOptions": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",
   "@operad-io/engine:InstallRun": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",
   "@operad-io/engine:InstallRunner": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",
+  "@operad-io/engine:InstallProgress": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",
   "@operad-io/engine:PLUGIN_PROJECT_DIRECTORY": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",
   "@operad-io/engine:ensureInstalledPackage": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",
   "@operad-io/engine:installedPackageFile": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",

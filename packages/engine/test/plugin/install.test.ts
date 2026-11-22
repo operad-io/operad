@@ -146,6 +146,41 @@ describe("ensuring a package is installed in the home", () => {
     ).rejects.toThrow(/bun install --omit=optional --no-summary.*exit code 7.*download failed/s);
   });
 
+  test("the install reports each line the command prints while it runs", async () => {
+    const root = await tempRoot();
+    const fixture = installFixture(root, "@operad-io/plugin-fixture");
+    const lines: string[] = [];
+    await ensureInstalledPackage({
+      home: fixture.home,
+      specifier: fixture.specifier,
+      version: fixture.version,
+      onProgress: (line) => lines.push(line),
+      run: (_cwd, _args, onProgress) => {
+        onProgress?.("Resolving dependencies");
+        onProgress?.("Resolved, downloaded and extracted [3]");
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    });
+    expect(lines).toEqual(["Resolving dependencies", "Resolved, downloaded and extracted [3]"]);
+  });
+
+  test("a network failure says the package could not be downloaded and to retry", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    await expect(
+      ensureInstalledPackage({
+        home,
+        specifier: "@operad-io/plugin-fixture",
+        version: "0.0.1",
+        run: () => ({
+          exitCode: 1,
+          stdout: "",
+          stderr: "error: getaddrinfo ENOTFOUND registry.npmjs.org\n",
+        }),
+      }),
+    ).rejects.toThrow(/could not be downloaded, so check the network and run the command again/);
+  });
+
   test("the loader falls back to the package in the home", async () => {
     const root = await tempRoot();
     const fixture = installFixture(root, "@operad-io/installed-fixture");

@@ -11,8 +11,16 @@
     "@operad-io/harness-process": "workspace:*",
     "@operad-io/mcp": "workspace:*"
   },
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "1.6.0"
+  },
+  "peerDependenciesMeta": {
+    "@earendil-works/pi-coding-agent": {
+      "optional": true
+    }
+  },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "1.5.0"
+    "@earendil-works/pi-coding-agent": "1.6.0"
   },
   "description": "operad: the pi harness, a client of the pi coding agent library",
   "repository": {

@@ -276,3 +276,10 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0674-M1 | packages/harness/pi/src/index.ts | the user's pi default model was not resolved and sent, so a run with no `model` setting gave the child no model | `pi/agent > pi's default model from its settings reaches the worker when neither the step nor the settings names one` |
+
+## T-0677 — the pi operad installs in the home
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0677-M3 | packages/harness/pi/src/pi-install.ts | `findPi` did not fall back to the home's package, so a home with operad's pi looked like no pi at all | `findPi > with no pi on PATH, the pi operad installed in the home is used` |
+| T-0677-M7 | packages/harness/pi/src/index.ts | `check` called `findPi` without the home, so `operad plugin check` failed on the pi operad installed | `pi check > passes with the pi operad installed in the home when PATH has none` |

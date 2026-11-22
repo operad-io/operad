@@ -1,9 +1,11 @@
 /**
- * Finds the user's installed pi (ADR 0023 D9).
+ * Finds the installed pi (ADR 0023 D9).
  * The `pi` command on PATH (or the `command` setting) is resolved to its real
  * path; walking up from there reaches the package directory whose
  * `package.json` is `@earendil-works/pi-coding-agent`, and the file its
- * `exports["."]` names is the library. Nothing here installs or bundles pi.
+ * `exports["."]` names is the library. When there is no such command, the pi
+ * operad installed in the home's plugin project is used instead. Nothing here
+ * installs or bundles pi; the CLI installs it when the plugin is enabled.
  */
 
 import { messageOf, readVersionText } from "@operad-io/engine";
@@ -15,6 +17,9 @@ import { isRecord } from "@operad-io/engine";
 
 /** The package the worker uses. */
 export const PI_PACKAGE = "@earendil-works/pi-coding-agent";
+
+/** The version operad installs into the home; it moves with an operad release (ADR 0023 D9). */
+export const PI_VERSION = "1.6.0";
 
 /** The oldest pi the worker's calls are written for. */
 export const PI_FLOOR = "1.5.0";
@@ -50,6 +55,11 @@ export interface FindPiOptions {
   readonly cwd?: string | undefined;
   /** The floor to compare with; defaults to `PI_FLOOR`. */
   readonly floor?: string | undefined;
+  /**
+   * The operad home: when the default `pi` command is not on PATH, the pi
+   * operad installed into the home's plugin project is used (ADR 0023 D9).
+   */
+  readonly home?: string | undefined;
 }
 
 function readJson(path: string): Record<string, unknown> | undefined {
@@ -108,44 +118,29 @@ export function entryOf(exportsField: unknown): string | undefined {
 /** Negative, zero or positive as `a` is below, equal to or above `b`. */
 export const compareVersions = strictVersionCompare((version) => new PiInstallError(`not a version: ${version}`));
 
-/** Finds the installed pi and checks its version against the floor. */
-export function findPi(command: string = DEFAULT_PI_COMMAND, options: FindPiOptions = {}): PiInstall {
-  const floor = options.floor ?? PI_FLOOR;
-  const located = locate(command, options);
-  if (located === undefined) {
-    throw new PiInstallError(
-      `no ${command === DEFAULT_PI_COMMAND ? "pi command" : `"${command}"`} was found on PATH; ` +
-        `pi needs ${PI_PACKAGE} ${floor} or newer installed (bun add -g ${PI_PACKAGE}, or npm i -g ${PI_PACKAGE})`,
-    );
-  }
-  let real: string;
-  try {
-    real = realpathSync(located);
-  } catch (error) {
-    throw new PiInstallError(`${located}: ${messageOf(error)}`);
-  }
+/** The home's Bun project, where operad installs a plugin's package (ADR 0012 D4). */
+const HOME_PLUGIN_PROJECT = "plugins";
 
-  let dir = dirname(real);
-  let packageDir: string | undefined;
-  let manifest: Record<string, unknown> | undefined;
-  for (;;) {
-    const candidate = readJson(join(dir, "package.json"));
-    if (candidate !== undefined && candidate.name === PI_PACKAGE) {
-      packageDir = dir;
-      manifest = candidate;
-      break;
-    }
-    const parent = dirname(dir);
-    if (parent === dir) break;
-    dir = parent;
-  }
-  if (packageDir === undefined || manifest === undefined) {
-    throw new PiInstallError(
-      `${command} resolves to ${real}, which is not inside a ${PI_PACKAGE} package ` +
-        `(a shell wrapper cannot be followed); set the pi "command" setting to the package's bin`,
-    );
-  }
+/** The package directory operad installs into the home's Bun project. */
+export function homePiPackageDir(home: string): string {
+  return join(home, HOME_PLUGIN_PROJECT, "node_modules", PI_PACKAGE);
+}
 
+/** The `pi` command of an installed package, for `pi --list-models`. */
+function packageCommand(packageDir: string, manifest: Record<string, unknown>): string {
+  const bin = join(dirname(dirname(packageDir)), ".bin", "pi");
+  if (existsSync(bin)) return bin;
+  const declared = manifest.bin;
+  const relative = typeof declared === "string" ? declared : isRecord(declared) ? declared.pi : undefined;
+  return typeof relative === "string" ? join(packageDir, relative) : packageDir;
+}
+
+/** Checks a package directory and describes it. */
+function installAt(packageDir: string, command: string, realPath: string, floor: string): PiInstall {
+  const manifest = readJson(join(packageDir, "package.json"));
+  if (manifest === undefined || manifest.name !== PI_PACKAGE) {
+    throw new PiInstallError(`${packageDir} is not a ${PI_PACKAGE} package`);
+  }
   const version = manifest.version;
   if (typeof version !== "string" || readVersionText(version) === undefined) {
     throw new PiInstallError(`${join(packageDir, "package.json")}: version is missing or not a version`);
@@ -164,7 +159,59 @@ export function findPi(command: string = DEFAULT_PI_COMMAND, options: FindPiOpti
   if (!entry.startsWith(packageDir + sep) || !existsSync(entry)) {
     throw new PiInstallError(`${join(packageDir, "package.json")}: exports["."] names ${relative}, which is not a file in the package`);
   }
-  return { command, realPath: real, dir: packageDir, version, entry };
+  return { command, realPath, dir: packageDir, version, entry };
+}
+
+/** Finds the installed pi and checks its version against the floor. */
+export function findPi(command: string = DEFAULT_PI_COMMAND, options: FindPiOptions = {}): PiInstall {
+  const floor = options.floor ?? PI_FLOOR;
+  const located = locate(command, options);
+  if (located === undefined) {
+    if (command === DEFAULT_PI_COMMAND && options.home !== undefined) {
+      const install = findHomePi(options.home, floor);
+      if (install !== undefined) return install;
+    }
+    throw new PiInstallError(
+      `no ${command === DEFAULT_PI_COMMAND ? "pi command" : `"${command}"`} was found on PATH` +
+        (options.home === undefined ? "" : " and the home has no pi installed") +
+        `; pi needs ${PI_PACKAGE} ${floor} or newer installed (bun add -g ${PI_PACKAGE}, or npm i -g ${PI_PACKAGE}), ` +
+        "or run `operad plugin enable pi` to install operad's own",
+    );
+  }
+  let real: string;
+  try {
+    real = realpathSync(located);
+  } catch (error) {
+    throw new PiInstallError(`${located}: ${messageOf(error)}`);
+  }
+
+  let dir = dirname(real);
+  let packageDir: string | undefined;
+  for (;;) {
+    const candidate = readJson(join(dir, "package.json"));
+    if (candidate !== undefined && candidate.name === PI_PACKAGE) {
+      packageDir = dir;
+      break;
+    }
+    const parent = dirname(dir);
+    if (parent === dir) break;
+    dir = parent;
+  }
+  if (packageDir === undefined) {
+    throw new PiInstallError(
+      `${command} resolves to ${real}, which is not inside a ${PI_PACKAGE} package ` +
+        `(a shell wrapper cannot be followed); set the pi "command" setting to the package's bin`,
+    );
+  }
+  return installAt(packageDir, command, real, floor);
+}
+
+/** The pi operad installed in the home, or undefined when the home has none. */
+export function findHomePi(home: string, floor: string = PI_FLOOR): PiInstall | undefined {
+  const dir = homePiPackageDir(home);
+  const manifest = readJson(join(dir, "package.json"));
+  if (manifest === undefined || manifest.name !== PI_PACKAGE) return undefined;
+  return installAt(dir, packageCommand(dir, manifest), dir, floor);
 }
 
 /** The library's own module type, for the call sites. */

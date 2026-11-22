@@ -1381,3 +1381,10 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0649-M1 | packages/engine/src/plugin/sqlite-store.ts | the migration's prepared statements were left to a later collection instead of being finalized | `closing a store closes its connection at once, not at a later collection` |
+
+## T-0677 — an install reports its lines and a network failure says so
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0677-M1 | packages/engine/src/plugin/install.ts | the package runner was called without the progress callback, so an install printed nothing while it ran | `ensuring a package is installed in the home > the install reports each line the command prints while it runs` |
+| T-0677-M2 | packages/engine/src/plugin/install.ts | `looksLikeNetworkFailure` always answered false, so a download failure lost the network reason and the retry hint | `ensuring a package is installed in the home > a network failure says the package could not be downloaded and to retry` |

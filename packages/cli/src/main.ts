@@ -1,7 +1,16 @@
-import { INIT_HARNESS_PLUGINS, INSTALL_ON_ENABLE, OPTIONAL_PLUGINS, defaultPluginModule, distributionConfig, pluginOffer } from "./defaults.ts";
-import { closeSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
+import {
+  INIT_HARNESS_PLUGINS,
+  INSTALL_ON_ENABLE,
+  OPTIONAL_PLUGINS,
+  PI_CODING_AGENT_PACKAGE,
+  PI_CODING_AGENT_VERSION,
+  defaultPluginModule,
+  distributionConfig,
+  pluginOffer,
+} from "./defaults.ts";
+import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { userInfo } from "node:os";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { isatty } from "node:tty";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
@@ -452,10 +461,72 @@ function printValue(io: CliIo, value: unknown): void {
   io.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
+/** True when an agent command is a path that exists, or a name on `PATH`. */
+function commandPresent(command: string): boolean {
+  if (command.includes("/") || command.includes("\\")) return existsSync(resolve(command));
+  return Bun.which(command, { PATH: process.env.PATH ?? "" }) !== null;
+}
+
+/** What installing a plugin's package needs beyond the plugin itself. */
+interface PluginInstallOptions {
+  readonly home: string;
+  readonly entry: OperadConfig["plugins"][number];
+  /** A test replaces the command; defaults to Bun. */
+  readonly run?: InstallRunner | undefined;
+  /** Receives each install line with the plugin it belongs to. */
+  readonly onProgress?: ((name: string, line: string) => void) | undefined;
+}
+
 /**
- * Makes sure the home has the distribution's configuration, and installs the
- * claude package when that configuration enables it. `operad init` and a bare
- * `operad` both start here; only `init` prints the checks.
+ * Installs what an enabled plugin needs beyond its own package (ADR 0012 D4,
+ * ADR 0023 D9): claude's SDK package, and pi's library when the machine has no
+ * pi of its own. A plugin whose config names another module is left alone.
+ */
+async function installPluginPackage(options: PluginInstallOptions): Promise<void> {
+  const name = options.entry.name;
+  if (name === undefined || !options.entry.enabled) return;
+  if (options.entry.module !== defaultPluginModule(name)) return;
+  const report =
+    options.onProgress === undefined
+      ? undefined
+      : (line: string) => options.onProgress?.(name, line);
+  if (name === "claude") {
+    // claude is not a CLI dependency: a home that enables it gets its package
+    // and SDK, skipping the platform binaries it does not use.
+    await ensureInstalledPackage({
+      home: options.home,
+      specifier: defaultPluginModule(name),
+      version: ENGINE_VERSION,
+      from: import.meta.dir,
+      omitOptional: true,
+      ...(options.run === undefined ? {} : { run: options.run }),
+      ...(report === undefined ? {} : { onProgress: report }),
+    });
+    return;
+  }
+  if (name === "pi") {
+    // pi is the user's own when PATH has one; otherwise operad installs its
+    // pinned copy into the home (ADR 0023 D9).
+    const settings = isRecord(options.entry.settings) ? options.entry.settings : {};
+    const command =
+      typeof settings["command"] === "string" && settings["command"] !== ""
+        ? settings["command"]
+        : "pi";
+    if (commandPresent(command)) return;
+    await ensureInstalledPackage({
+      home: options.home,
+      specifier: PI_CODING_AGENT_PACKAGE,
+      version: PI_CODING_AGENT_VERSION,
+      ...(options.run === undefined ? {} : { run: options.run }),
+      ...(report === undefined ? {} : { onProgress: report }),
+    });
+  }
+}
+
+/**
+ * Makes sure the home has the distribution's configuration, and installs what
+ * its enabled plugins need. `operad init` and a bare `operad` both start here;
+ * only `init` prints the checks.
  */
 async function ensureHomeConfig(
   home: string,
@@ -463,33 +534,37 @@ async function ensureHomeConfig(
     readonly created: boolean;
     readonly path: string;
     readonly harnesses: readonly string[];
+    readonly noAgent: boolean;
   }) => void) | undefined,
+  options: {
+    readonly run?: InstallRunner | undefined;
+    readonly onProgress?: ((name: string, line: string) => void) | undefined;
+  } = {},
 ): Promise<{
   readonly created: boolean;
   readonly path: string;
   readonly config: OperadConfig;
   readonly harnesses: readonly string[];
 }> {
-  // A new home turns on the agents this machine has. With none, it keeps the
-  // old default of radian and init's check says what to install.
+  // A new home turns on the agents this machine has. With none, it turns on pi
+  // and operad installs its own pi, so a first run needs no agent installed
+  // beforehand (ADR 0012 D2, ADR 0022 D6).
   const path = process.env.PATH ?? "";
-  const harnesses = INIT_HARNESS_PLUGINS.filter(
+  const found = INIT_HARNESS_PLUGINS.filter(
     (name) => Bun.which(name, { PATH: path }) !== null,
   );
+  const noAgent = found.length === 0;
+  const harnesses = noAgent ? ["pi"] : found;
   const ensured = await ensureConfig(home, distributionConfig(home, harnesses));
-  onConfig?.({ created: ensured.created, path: ensured.path, harnesses });
-  // claude is not a CLI dependency: a home that enables it gets its package
-  // and SDK now, as `operad plugin enable claude` would install them (ADR 0012
-  // D4). Reading the config first makes a second init retry an install that
-  // failed after the config was written.
-  const claude = ensured.config.plugins.find((entry) => entry.name === "claude" && entry.enabled);
-  if (claude !== undefined && (claude.module ?? defaultPluginModule("claude")) === defaultPluginModule("claude")) {
-    await ensureInstalledPackage({
+  onConfig?.({ created: ensured.created, path: ensured.path, harnesses, noAgent });
+  // Reading the config first makes a second init retry an install that failed
+  // after the config was written.
+  for (const entry of ensured.config.plugins) {
+    await installPluginPackage({
       home,
-      specifier: defaultPluginModule("claude"),
-      version: ENGINE_VERSION,
-      from: import.meta.dir,
-      omitOptional: true,
+      entry,
+      ...(options.run === undefined ? {} : { run: options.run }),
+      ...(options.onProgress === undefined ? {} : { onProgress: options.onProgress }),
     });
   }
   return {
@@ -500,17 +575,22 @@ async function ensureHomeConfig(
   };
 }
 
-async function commandInit(home: string, io: CliIo): Promise<number> {
-  const ensured = await ensureHomeConfig(home, (made) => {
-    io.write(
-      `${made.created ? "created" : "using"} ${made.path}\n`,
-    );
-    if (made.created && made.harnesses.length === 0) {
-      io.write(
-        "no agent found on PATH: install claude (https://code.claude.com), pi (bun add -g @earendil-works/pi-coding-agent) or radian, then run operad init again\n",
-      );
-    }
-  });
+async function commandInit(home: string, io: CliIo, installRun?: InstallRunner): Promise<number> {
+  const ensured = await ensureHomeConfig(
+    home,
+    (made) => {
+      io.write(`${made.created ? "created" : "using"} ${made.path}\n`);
+      if (made.created && made.noAgent) {
+        io.write(
+          "no agent found on PATH: installing operad's own pi for this home (it needs the network once)\n",
+        );
+      }
+    },
+    {
+      ...(installRun === undefined ? {} : { run: installRun }),
+      onProgress: (name, line) => io.write(`${name}: ${line}\n`),
+    },
+  );
   const config = ensured.config;
   const storeRoot = storeRootOf(config);
   const registry = await loadPluginRegistry({
@@ -2310,30 +2390,31 @@ async function checkPluginChange(
   }
 }
 
-/** Turns one plugin on or off in `config.json`, installing the package of a plugin that needs it. */
+/** Turns one plugin on or off in `config.json`, installing what it needs first. */
 async function changePlugin(
   context: Context,
   name: string,
   enable: boolean,
   refusals: PluginRefusals = COMMAND_REFUSALS,
   beforeWrite?: () => void,
+  options: {
+    readonly run?: InstallRunner | undefined;
+    readonly onProgress?: ((name: string, line: string) => void) | undefined;
+  } = {},
 ): Promise<void> {
   await checkPluginChange(context, name, enable, refusals);
   beforeWrite?.();
   const entry = context.config.plugins.find((item) => item.name === name);
-  if (enable && INSTALL_ON_ENABLE.includes(name)) {
-    const module = entry?.module ?? defaultPluginModule(name);
-    if (module === defaultPluginModule(name)) {
-      // The package is not a CLI dependency: put it in the home's Bun project
-      // first, with optional dependencies skipped (operad-plugins 11).
-      await ensureInstalledPackage({
-        home: context.home,
-        specifier: module,
-        version: ENGINE_VERSION,
-        from: import.meta.dir,
-        omitOptional: true,
-      });
-    }
+  if (enable) {
+    const target = entry === undefined
+      ? { name, module: defaultPluginModule(name), enabled: true, settings: {} }
+      : { ...entry, enabled: true };
+    await installPluginPackage({
+      home: context.home,
+      entry: target,
+      ...(options.run === undefined ? {} : { run: options.run }),
+      ...(options.onProgress === undefined ? {} : { onProgress: options.onProgress }),
+    });
   }
   await setPluginEnabled(context.home, name, enable, pluginOffer(context.home));
 }
@@ -2349,6 +2430,8 @@ export function pluginAdminFor(
   installRun?: InstallRunner,
 ): PluginAdmin {
   const loaded = new Map<string, PluginIdentity | null>();
+  /** The latest install line of a plugin being installed now, by plugin name. */
+  const installing = new Map<string, string>();
   const rowsNow = async (): Promise<(PluginInfo & { readonly key: string })[]> =>
     pluginRows(context.home, (await readConfig(context.home)).plugins, loaded, load);
   const publicRow = ({ key: _key, ...row }: PluginInfo & { readonly key: string }): PluginInfo => row;
@@ -2364,11 +2447,23 @@ export function pluginAdminFor(
       ...(models === undefined ? {} : { models }),
     };
   };
+  /** The rows, plus a plugin still being installed before the file names it. */
+  const rowsPublic = async (): Promise<PluginInfo[]> => {
+    const rows = await Promise.all(
+      (await rowsNow()).map(async ({ key: _key, ...row }) => withHarness(row)),
+    );
+    for (const [name, line] of installing) {
+      const row = rows.find((item) => item.name === name);
+      if (row === undefined) {
+        rows.push({ name, version: null, enabled: false, origin: "builtin", progress: line });
+      } else {
+        rows[rows.indexOf(row)] = { ...row, progress: line };
+      }
+    }
+    return rows;
+  };
   return {
-    list: async () =>
-      Promise.all(
-        (await rowsNow()).map(async ({ key: _key, ...row }) => withHarness(row)),
-      ),
+    list: rowsPublic,
     install: async (specifier, options) => {
       if (!options.confirmed) {
         throw new ViewError(
@@ -2395,16 +2490,30 @@ export function pluginAdminFor(
         unknown: (message) => new ViewError("not-found", message),
         active: (message) => new ViewError("unavailable", message),
       };
-      await changePlugin(fresh, key, enabled, refusals, () => {
-        // Turning a plugin off takes its commands, actions and automatic work
-        // away for every client at the next load, so a client says it meant it.
-        if (!enabled && !options.confirmed) {
-          throw new ViewError(
-            "confirm",
-            `turning off "${name}" removes its commands, actions and automatic work at the next load; send "confirmed": true to turn it off`,
-          );
-        }
-      });
+      try {
+        await changePlugin(
+          fresh,
+          key,
+          enabled,
+          refusals,
+          () => {
+            // Turning a plugin off takes its commands, actions and automatic work
+            // away for every client at the next load, so a client says it meant it.
+            if (!enabled && !options.confirmed) {
+              throw new ViewError(
+                "confirm",
+                `turning off "${name}" removes its commands, actions and automatic work at the next load; send "confirmed": true to turn it off`,
+              );
+            }
+          },
+          {
+            ...(installRun === undefined ? {} : { run: installRun }),
+            onProgress: (_plugin, line) => installing.set(key, line),
+          },
+        );
+      } finally {
+        installing.delete(key);
+      }
       const row = (await rowsNow()).find((item) => item.key === key);
       if (row === undefined) throw new ViewError("not-found", `plugins.${name}: no such plugin`);
       return withHarness(publicRow(row));
@@ -2441,7 +2550,10 @@ async function commandPluginAdmin(
     const name = argv[1];
     if (name === undefined) throw new UsageError(`plugin ${sub} needs a plugin name`);
     if (argv.length > 2) throw new UsageError(`plugin ${sub} takes one plugin name`);
-    await changePlugin(context, name, sub === "enable");
+    await changePlugin(context, name, sub === "enable", COMMAND_REFUSALS, undefined, {
+      ...(installRun === undefined ? {} : { run: installRun }),
+      onProgress: (plugin, line) => io.write(`${plugin}: ${line}\n`),
+    });
     io.write(`${name}: ${sub === "enable" ? "enabled" : "disabled"}\n`);
     return 0;
   }
@@ -2853,7 +2965,21 @@ export async function main(
       return 0;
     }
     if (command === undefined) {
-      const ensured = await ensureHomeConfig(home);
+      const ensured = await ensureHomeConfig(
+        home,
+        (made) => {
+          io.write(`${made.created ? "created" : "using"} ${made.path}\n`);
+          if (made.created && made.noAgent) {
+            io.write(
+              "no agent found on PATH: installing operad's own pi for this home (it needs the network once)\n",
+            );
+          }
+        },
+        {
+          ...(options.pluginInstall === undefined ? {} : { run: options.pluginInstall }),
+          onProgress: (name, line) => io.write(`${name}: ${line}\n`),
+        },
+      );
       const startChat = ensured.config.plugins.some(
         (entry) => entry.name === "bot" && entry.enabled,
       )
@@ -2867,7 +2993,7 @@ export async function main(
     }
 
     if (command === "init") {
-      return await commandInit(home, io);
+      return await commandInit(home, io, options.pluginInstall);
     }
 
     if (command === "mcp") {

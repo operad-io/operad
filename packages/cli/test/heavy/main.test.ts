@@ -12,6 +12,7 @@ import {
   readConfig,
   serveOnce,
   storeRootOf,
+  type InstallRunner,
 } from "@operad-io/engine";
 import { answerRun, makeHome } from "@operad-io/engine/testing";
 import { addRepository } from "../../../dev/src/service.ts";
@@ -62,6 +63,22 @@ interface Output {
   readonly io: CliIo;
   text(): string;
   errors(): string;
+}
+
+/** A pi install that writes the package a local tarball would have put there. */
+function fakePiInstall(): InstallRunner {
+  return (cwd) => {
+    const name = "@earendil-works/pi-coding-agent";
+    const dir = join(cwd, "node_modules", name);
+    mkdirSync(join(dir, "dist"), { recursive: true });
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name, version: "1.6.0", exports: { ".": "./dist/index.js" }, bin: { pi: "dist/cli.js" } }),
+    );
+    writeFileSync(join(dir, "dist", "index.js"), "export {};\n");
+    writeFileSync(join(dir, "dist", "cli.js"), "#!/bin/sh\nexit 1\n");
+    return { exitCode: 0, stdout: "", stderr: "" };
+  };
 }
 
 function capture(): Output {
@@ -228,7 +245,7 @@ describe("operad command", () => {
     expect(output.text()).toContain('cannot reach remote "origin"');
   });
 
-  test("init reports a missing radian and leaves a complete config", async () => {
+  test("init with no agent installs operad's own pi and leaves a complete config", async () => {
     const root = await tempRoot();
     const home = join(root, "home");
     const empty = join(root, "empty");
@@ -237,28 +254,28 @@ describe("operad command", () => {
     process.env.PATH = empty;
     try {
       const output = capture();
-      expect(await main(["init"], { home, io: output.io })).toBe(1);
-      expect(output.text()).toContain(
-        "radian: radian was not found on PATH",
-      );
+      expect(await main(["init"], { home, io: output.io, pluginInstall: fakePiInstall() })).toBe(0);
+      expect(output.text()).toContain("no agent found on PATH: installing operad's own pi");
+      expect(output.text()).toContain("pi: pi 1.6.0");
     } finally {
       if (previous === undefined) delete process.env.PATH;
       else process.env.PATH = previous;
     }
 
-    // The home and its config are complete; the failed check wrote nothing else.
+    // The home and its config are complete.
     const config = JSON.parse(
       readFileSync(join(home, "config.json"), "utf8"),
     ) as {
       plugins: Record<string, { enabled: boolean }>;
       store: { backend: string };
     };
-    expect(config.plugins["radian"]?.enabled).toBe(true);
+    expect(config.plugins["pi"]?.enabled).toBe(true);
+    expect(config.plugins["radian"]).toBeUndefined();
     expect(config.store.backend).toBe("sqlite");
 
     const list = capture();
     expect(await main(["plugin", "list"], { home, io: list.io })).toBe(0);
-    expect(list.text()).toContain("radian");
+    expect(list.text()).toContain("pi");
     expect(list.text()).toContain("chat");
     expect(list.text()).toContain("memory");
   });

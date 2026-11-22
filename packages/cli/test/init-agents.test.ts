@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { main, type CliIo } from "../src/main.ts";
+import type { InstallRunner } from "@operad-io/engine";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
 
 afterAll(cleanupTempRoots);
@@ -79,10 +80,51 @@ function fakeRadian(bin: string): void {
   executable(join(bin, "radian"), "#!/bin/sh\nexit 0\n");
 }
 
+/** Packs a local pi package, so an install never reaches a registry. */
+function packPiFixture(root: string): string {
+  const directory = join(root, "pi-fixture");
+  mkdirSync(join(directory, "dist", "bundle"), { recursive: true });
+  writeFileSync(
+    join(directory, "package.json"),
+    JSON.stringify({
+      name: "@earendil-works/pi-coding-agent",
+      version: "1.6.0",
+      exports: { ".": { import: "./dist/index.js" } },
+      bin: { pi: "dist/bundle/cli.js" },
+    }),
+  );
+  writeFileSync(join(directory, "dist", "index.js"), "export const marker = \"fixture-pi\";\n");
+  executable(join(directory, "dist", "bundle", "cli.js"), "#!/bin/sh\nexit 1\n");
+  const destination = join(root, "tarballs");
+  mkdirSync(destination, { recursive: true });
+  const packed = Bun.spawnSync(["bun", "pm", "pack", "--destination", destination, "--quiet"], {
+    cwd: directory,
+  });
+  return packed.stdout.toString().trim();
+}
+
+/** A home plugin project that names the local pi tarball. */
+function namePiTarball(home: string, tarball: string): void {
+  mkdirSync(join(home, "plugins"), { recursive: true });
+  writeFileSync(
+    join(home, "plugins", "package.json"),
+    JSON.stringify({
+      name: "operad-plugins",
+      private: true,
+      type: "module",
+      dependencies: { "@earendil-works/pi-coding-agent": `file:${tarball}` },
+    }),
+  );
+}
+
 async function initWith(
   root: string,
   bins: readonly string[],
-  options: { readonly emptyFirstProbe?: string | undefined } = {},
+  options: {
+    readonly emptyFirstProbe?: string | undefined;
+    readonly piTarball?: string | undefined;
+    readonly installRun?: InstallRunner | undefined;
+  } = {},
 ): Promise<{
   readonly code: number;
   readonly output: Output;
@@ -96,11 +138,16 @@ async function initWith(
     else if (name === "pi") fakePi(root, bin);
     else if (name === "radian") fakeRadian(bin);
   }
+  if (options.piTarball !== undefined) namePiTarball(home, options.piTarball);
   const previous = process.env.PATH;
   process.env.PATH = bin;
   try {
     const output = capture();
-    const code = await main(["init"], { home, io: output.io });
+    const code = await main(["init"], {
+      home,
+      io: output.io,
+      ...(options.installRun === undefined ? {} : { pluginInstall: options.installRun }),
+    });
     const config = JSON.parse(readFileSync(join(home, "config.json"), "utf8")) as {
       plugins: Record<string, { enabled: boolean }>;
     };
@@ -151,16 +198,60 @@ describe("`operad init` finds the agent on PATH", () => {
     expect(output.text()).not.toContain("pi:");
   });
 
-  test("no agent keeps radian and fails, naming the three agents and how to install one", async () => {
+  test("no agent enables pi and installs operad's own copy, so init passes", async () => {
     const root = await tempRoot();
-    const { code, output, plugins } = await initWith(root, []);
-    expect(code).toBe(1);
-    expect(plugins).toEqual(["chat", "bot", "memory", "radian"]);
-    expect(output.text()).toContain("no agent found on PATH");
-    expect(output.text()).toContain("claude (https://code.claude.com)");
-    expect(output.text()).toContain("pi (bun add -g @earendil-works/pi-coding-agent)");
-    expect(output.text()).toContain("radian");
-    expect(output.text()).toContain("radian: radian was not found on PATH");
+    const { code, output, plugins } = await initWith(root, [], { piTarball: packPiFixture(root) });
+    expect(code).toBe(0);
+    expect(plugins).toEqual(["chat", "bot", "memory", "pi"]);
+    expect(output.text()).toContain("no agent found on PATH: installing operad's own pi");
+    expect(output.text()).toContain("pi: pi 1.6.0");
+    expect(output.errors()).toBe("");
+  });
+
+  test("a failed pi install says the download failed, and init again installs it", async () => {
+    const root = await tempRoot();
+    const tarball = packPiFixture(root);
+    const first = await initWith(root, [], {
+      piTarball: tarball,
+      installRun: () => ({
+        exitCode: 1,
+        stdout: "",
+        stderr: "error: getaddrinfo ENOTFOUND registry.npmjs.org\n",
+      }),
+    });
+    expect(first.code).toBe(1);
+    expect(first.output.errors()).toContain("could not be downloaded");
+    expect(first.output.errors()).toContain("run the command again");
+
+    const second = await initWith(root, [], { piTarball: tarball });
+    expect(second.code).toBe(0);
+    expect(second.output.text()).toContain("pi: pi 1.6.0");
+  });
+
+  test("a new home with another agent installs no pi", async () => {
+    const root = await tempRoot();
+    const calls: string[] = [];
+    const { code } = await initWith(root, ["radian"], {
+      installRun: (_cwd, args) => {
+        calls.push(args.join(" "));
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    });
+    expect(code).toBe(0);
+    expect(calls.join("\n")).not.toContain("pi-coding-agent");
+  });
+
+  test("a new home with pi on PATH uses it and installs no pi of its own", async () => {
+    const root = await tempRoot();
+    const calls: string[] = [];
+    const { code, output } = await initWith(root, ["pi"], {
+      installRun: (_cwd, args) => {
+        calls.push(args.join(" "));
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    });
+    expect(code).toBe(0);
+    expect(calls.join("\n")).not.toContain("pi-coding-agent");
   });
 
   test("a home with a config.json keeps its plugins and switches on upgrade", async () => {

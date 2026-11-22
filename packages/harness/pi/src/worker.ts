@@ -206,10 +206,13 @@ export async function runWorker(
   const given = readGivenSkills(input.skills ?? []);
   for (const skip of given.skipped) note(`skill ${skip.path}: ${skip.reason}`);
 
-  // pi is the user's own install: found at start, never bundled.
+  // pi is the user's own install, or the one operad put in the home: found at
+  // start, never imported into the hub.
   let pi: Awaited<ReturnType<typeof loadPi>>;
   try {
-    const install = findPi(input.piCommand);
+    const install = findPi(input.piCommand, {
+      ...(input.piHome === undefined ? {} : { home: input.piHome }),
+    });
     io.log(`pi ${install.version} loaded from ${install.dir}`);
     pi = await loadPi(install);
   } catch (error) {

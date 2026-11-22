@@ -47,7 +47,7 @@ operad --help
 
 只要 `bun` 在 `PATH` 里，`npm install -g @operad-io/cli` 也行。
 
-你还需要 `git`、一个带 remote 的仓库，以及 `PATH` 里有 `claude`、`pi` 或 `radian` 之一。
+你还需要 `git` 和一个带 remote 的仓库。不用先装 agent：`PATH` 里没有 `claude`、`pi` 或 `radian` 时，operad 第一次运行会装一份自己的 pi，这需要联网一次。
 
 ## 快速上手
 
