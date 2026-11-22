@@ -363,3 +363,11 @@ the row fields.
 | T-0677-M4 | packages/cli/src/main.ts | a new home with no agent on `PATH` enabled no harness instead of `pi`, so init did not install one | `operad init finds the agent on PATH > no agent enables pi and installs operad's own copy, so init passes` |
 | T-0677-M5 | packages/cli/src/main.ts | enabling `pi` installed operad's copy even when `pi` was on `PATH` | `operad init finds the agent on PATH > a new home with pi on PATH uses it and installs no pi of its own` |
 | T-0677-M6 | packages/cli/src/main.ts | the HTTP plugin list never recorded an install line, so a client polling during the install saw no progress | `plugins over HTTP > GET /v1/plugins carries the line an install is on before the file names it` |
+
+## T-0690 — an error does not print the whole usage
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0690-M1 | packages/cli/src/main.ts | an unknown command did not add the closest command | `a command line mistake > an unknown command names the closest command, then points at --help` (also the version and plugin command tests) |
+| T-0690-M2 | packages/cli/src/main.ts | the catch dropped the command's own usage, so a missing argument printed no usage line | `a command line mistake > a missing argument prints the command's one-line usage` (also the missing subcommand test) |
+| T-0690-M3 | packages/cli/src/main.ts | a usage error no longer ended with the line pointing at `operad --help` | `a command line mistake > an unknown command names the closest command, then points at --help` (and the other usage tests) |

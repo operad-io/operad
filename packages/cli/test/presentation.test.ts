@@ -435,6 +435,16 @@ describe("operad presentation commands", () => {
     expect(freshStore(home).get("item", "one")?.data.auto).toBe("merge");
   });
 
+  test("a missing object id prints the action's one-line usage", async () => {
+    const { home } = await makePresentationHome();
+    const output = capture();
+    expect(await main(["demo:auto"], { home, io: output.io })).toBe(2);
+    expect(output.errors()).toContain('action "demo:auto" needs an object id');
+    expect(output.errors()).toContain("usage: operad demo:auto <id>");
+    expect(output.errors()).toContain("run `operad --help` for all commands");
+    expect(output.errors()).not.toContain("usage: operad <command> [options]");
+  });
+
   test("schema flags accept values that look like ids or negative numbers", async () => {
     const { home } = await makePresentationHome();
     seed(home, { title: "One", state: "new" }, "one");

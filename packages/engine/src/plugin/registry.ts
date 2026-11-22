@@ -477,6 +477,17 @@ export class PluginRegistry {
     return this.actionInfos;
   }
 
+  /** Every command a loaded plugin declares, as `<plugin> <verb>` or its short form. */
+  commandNames(): readonly string[] {
+    const names = new Set<string>(this.shortCommands.keys());
+    for (const plugin of this.plugins) {
+      for (const command of plugin.commands) {
+        names.add(`${plugin.name} ${command.name}`);
+      }
+    }
+    return [...names];
+  }
+
   /** The default and user key bindings in force, by key. */
   keyBindings(): readonly KeyBinding[] {
     return [...this.bindingByKey.values()];
