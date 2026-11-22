@@ -42,6 +42,7 @@ and `operad help` print the whole table.
 
 | Command | Arguments | What it does and prints |
 |---|---|---|
+| `operad` | none | Creates the home when it has none, starts `serve` when none answers, and opens [the terminal client](tui.md) on the default bot's new chat, with the cursor in its input. The first message creates the chat. |
 | `operad init` | none | Creates `config.json` when it is missing and checks each loaded plugin. Prints `created <file>` or `using <file>`, then one `<plugin>: <result>` line per check. A new home enables `chat`, `bot` and `memory`, and enables `radian`, `claude` and `pi` for the commands found on `PATH`; `shell`, `dev` and `pool` stay off until they are enabled. When `claude` is found it also installs `@operad-io/harness-claude` and its SDK in the home. With no agent found it enables `radian` and prints a message naming the three agents and how to install one. `codex` stays off until `operad plugin enable codex`. The checks of the enabled plugins: `shell` is ready when it is on, each enabled harness finds its agent on `PATH`, and `dev` reaches each registered repository's remote when it is on (see [dev commands](#dev-commands)). A failed check exits `1`. |
 | `operad serve` | none | Runs the loop for this home: starts waits, runs steps, serves HTTP and runs notify. Prints `http <url>` for each listen address and `serving <home>`. Exit `4` when another `serve` holds the home. |
 | `operad serve stop` | `--timeout <secs>` | Stops this home's `serve` with SIGTERM; see [Stopping serve](#stopping-serve). |

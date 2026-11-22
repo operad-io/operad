@@ -544,3 +544,9 @@ the row fields.
 | T-0644-M1 | packages/tui/src/app.ts | an action refreshed only the open object, not the separate row read | `live updates in the shell > an action refetches only its object and row, never the lists` |
 | T-0644-M2 | packages/tui/src/app.ts | an answer did not refresh the Pending list, so the answered row waited for the list window | `live updates in the shell > an answer refetches the object and row, and removes the Pending item at once` |
 | T-0644-M3 | packages/tui/src/state.ts | the chat Markdown memo was bypassed, so every draw built its text again | `chatMarkdown keeps its result for the same inputs, and the same local day` |
+
+## T-0676 — a bare `operad` opens the default bot's new chat
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0676-M2 | packages/tui/src/state.ts | the starting chat asked for its agent first instead of leaving the create action's arguments at their defaults and opening the first-message input | `a client with no chosen parent starts the default bot's new chat > the parent opens, then the first-message input is ready with the arguments left at their defaults` |

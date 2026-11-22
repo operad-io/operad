@@ -6,10 +6,12 @@
 
 ```sh
 bun add -g @operad-io/cli
-operad --help
+operad
 ```
 
-`npm install -g @operad-io/cli` also works while `bun` is on your `PATH`. Then run `operad init` and `operad serve` or `operad tui`.
+`npm install -g @operad-io/cli` also works while `bun` is on your `PATH`. With
+no command, `operad` creates the home, starts `serve`, and opens the default
+bot's new chat; `operad --help` lists every command.
 
 ## Documentation
 

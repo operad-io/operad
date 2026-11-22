@@ -693,6 +693,34 @@ export function startAction(
   return afterArgs(closed, action.name, object.id, {}, note, action.confirm);
 }
 
+/**
+ * Starts an action at its note, leaving every argument at the action's own
+ * defaults. A chat's first message is sent this way, so the create action does
+ * not ask for an agent, model or effort the bot already chose.
+ */
+export function startNote(state: TuiState, name: string): TuiState {
+  const object = state.object;
+  const closed: TuiState = { ...state, input: undefined };
+  if (object === undefined) return withNotice(closed, "no object is selected");
+  if (state.acting) return withNotice(closed, "the last action has not answered yet");
+  const action = object.actions.find((candidate) => candidate.name === name);
+  if (action === undefined) {
+    return withNotice(closed, `${name} is not available for ${bareId(object.id)}`);
+  }
+  if (action.note === undefined) return startAction(state, name);
+  return {
+    ...closed,
+    input: {
+      kind: "note",
+      action: action.name,
+      id: object.id,
+      text: "",
+      required: action.noteRequired,
+      confirm: action.confirm,
+    },
+  };
+}
+
 /** Opens the choice list of a pending question, on the choice the asker recommends. */
 export function startAnswer(state: TuiState, answer: TuiAnswer): TuiState {
   const closed: TuiState = { ...state, input: undefined };

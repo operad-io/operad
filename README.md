@@ -42,10 +42,13 @@ operad runs on [Bun](https://bun.com); install Bun first. Then:
 
 ```sh
 bun add -g @operad-io/cli
-operad --help
+operad
 ```
 
 `npm install -g @operad-io/cli` also works while `bun` is on your `PATH`.
+
+With no command, `operad` creates the home when it has none, starts `serve`,
+and opens the default bot's new chat. `operad --help` lists every command.
 
 You also need `git`, a repository with a remote, and one of `claude`, `pi` or `radian` on your `PATH`.
 

@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadTui, main, type CliIo, type TuiCommand, type TuiRunner } from "../src/main.ts";
@@ -166,5 +166,55 @@ describe("operad tui", () => {
       });
       expect(seen[0]?.theme).toBe("terminal");
     }
+  });
+});
+
+describe("operad with no command", () => {
+  test("creates the home and opens the default bot's new chat", async () => {
+    const root = mkdtempSync(join(tmpdir(), "operad-bare-"));
+    roots.push(root);
+    const home = join(root, "home");
+    const empty = join(root, "empty");
+    mkdirSync(empty, { recursive: true });
+    const previous = process.env.PATH;
+    process.env.PATH = empty;
+    const output = capture();
+    const seen: TuiCommand[] = [];
+    try {
+      expect(
+        await main([], {
+          home,
+          io: output.io,
+          isTTY: true,
+          tui: async (command) => {
+            seen.push(command);
+            return 0;
+          },
+        }),
+      ).toBe(0);
+    } finally {
+      if (previous === undefined) delete process.env.PATH;
+      else process.env.PATH = previous;
+    }
+    expect(output.text()).not.toContain("usage: operad");
+    const config = JSON.parse(readFileSync(join(home, "config.json"), "utf8")) as {
+      plugins: Record<string, { enabled: boolean }>;
+    };
+    expect(config.plugins.chat?.enabled).toBe(true);
+    expect(config.plugins.bot?.enabled).toBe(true);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.home).toBe(home);
+    expect(seen[0]?.startChat).toBe("bot:default");
+    expect(seen[0]?.noStart).toBeUndefined();
+  });
+
+  test("help still prints the usage and creates no home", async () => {
+    const root = mkdtempSync(join(tmpdir(), "operad-help-"));
+    roots.push(root);
+    const home = join(root, "home");
+    const output = capture();
+    expect(await main(["help"], { home, io: output.io })).toBe(0);
+    expect(output.text()).toContain("usage: operad");
+    expect(() => readFileSync(join(home, "config.json"))).toThrow();
   });
 });
