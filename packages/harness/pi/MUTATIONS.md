@@ -283,3 +283,9 @@ the row fields.
 |---|---|---|---|
 | T-0677-M3 | packages/harness/pi/src/pi-install.ts | `findPi` did not fall back to the home's package, so a home with operad's pi looked like no pi at all | `findPi > with no pi on PATH, the pi operad installed in the home is used` |
 | T-0677-M7 | packages/harness/pi/src/index.ts | `check` called `findPi` without the home, so `operad plugin check` failed on the pi operad installed | `pi check > passes with the pi operad installed in the home when PATH has none` |
+
+## T-0687 — the stall test read a marker before its pid was written
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0687-M1 | packages/harness/pi/test/heavy/plugin.test.ts | the stall test took the marker with `Number(readFileSync(...))` instead of `waitForPid`, so a read between the file's creation and its write took pid 0, which `kill -0` always finds; a fake worker that created the marker empty and filled it 500 ms later made the race deterministic | `pi/agent > silence without an open tool call is a stall` (the run ended as a stall, then the wait for the group to stop saw pid 0 present for 10 s) |
