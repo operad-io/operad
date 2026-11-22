@@ -118,6 +118,7 @@ import {
   serveSnapshots,
 } from "./code-reload.ts";
 import type { CodeSnapshot } from "./code-reload.ts";
+import { formatDoctor, runDoctor, type DoctorAgent, type DoctorEnv, type DoctorReport } from "./doctor.ts";
 import {
   BindFailed,
   HandOverStuck,
@@ -245,6 +246,8 @@ export interface MainOptions {
   readonly columns?: number | undefined;
   /** Replaces the OpenTUI app in a test; the real one is imported only by `tui`. */
   readonly tui?: TuiRunner | undefined;
+  /** Replaces what `operad doctor` asks the machine; a test supplies the facts. */
+  readonly doctor?: DoctorEnv | undefined;
   /** Replaces the `bun add` command in a test for `plugin add`; defaults to Bun. */
   readonly pluginInstall?: InstallRunner | undefined;
 }
@@ -275,6 +278,7 @@ const HELP = [
   "usage: operad <command> [options]",
   "",
   "  init                 create the operad home and check the plugins",
+  "  doctor [--json]      check the home, plugins, agents and serve; changes nothing",
   "  serve                run the kernel loop for this home",
   "  serve stop [--timeout <secs>]",
   "                       stop this home's serve (SIGTERM; default timeout 30)",
@@ -322,6 +326,7 @@ interface CommandCandidate {
 
 const COMMAND_CANDIDATES: readonly CommandCandidate[] = [
   { name: "init", summary: "create the operad home and check the plugins" },
+  { name: "doctor", summary: "check the home, plugins, agents and serve" },
   { name: "serve", summary: "run the serve process for this home" },
   { name: "serve stop", summary: "stop this home's serve" },
   { name: "pending", summary: "things waiting for a person" },
@@ -412,6 +417,8 @@ function commandUsage(args: readonly string[]): string | undefined {
   switch (command) {
     case "init":
       return "usage: operad init";
+    case "doctor":
+      return "usage: operad doctor [--json]";
     case "serve":
       return sub === "stop"
         ? "usage: operad serve stop [--timeout <secs>]"
@@ -801,6 +808,124 @@ async function commandInit(home: string, io: CliIo, installRun?: InstallRunner):
     io.write(`${check.plugin}: ${check.message}\n`);
   }
   return failed ? 1 : 0;
+}
+
+/** Asks the machine, not a test, each fact `operad doctor` prints. */
+function systemDoctorEnv(home: string, io: CliIo): DoctorEnv & { close(): Promise<void> } {
+  let opened: Promise<Context> | undefined;
+  const context = (): Promise<Context> => {
+    opened ??= openContext(home, { ...io, error: () => undefined });
+    return opened;
+  };
+  return {
+    close: async () => {
+      if (opened === undefined) return;
+      const ctx = await opened;
+      ctx.views.close();
+      await ctx.log.close();
+    },
+    homeExists: () => existsSync(home),
+    config: async () => {
+      if (!existsSync(join(home, "config.json"))) return { present: false };
+      await readConfig(home);
+      return { present: true };
+    },
+    plugins: async () => {
+      const { config, registry, problems } = await context();
+      const names = new Set(registry.names());
+      return config.plugins
+        .filter((entry) => entry.enabled)
+        .map((entry) => {
+          const name = entry.name ?? entry.module;
+          if (names.has(name)) return { name, loaded: true };
+          const refusal = registry.refusals().find((item) => item.plugin === name);
+          const logged = problems.find((line) => line.includes(`"${name}"`) || line.includes(entry.module));
+          return {
+            name,
+            loaded: false,
+            problem: refusal?.message ?? logged ?? "it was not loaded",
+          };
+        });
+    },
+    agents: async () => {
+      const { registry } = await context();
+      const checks = await registry.checks();
+      const agents: DoctorAgent[] = [];
+      for (const name of registry.loadedHarnesses()) {
+        const check = checks.find((item) => item.plugin === name);
+        const version = check?.message.match(/\d+\.\d+\.\d+[\w.-]*/)?.[0];
+        agents.push({
+          name,
+          ...(version === undefined ? {} : { version }),
+          signedIn: await registry.signedInFor(name),
+          ...(check !== undefined && !check.ok ? { problem: check.message } : {}),
+        });
+      }
+      return agents;
+    },
+    serve: async () => {
+      if (!lockHeld(serveLockPath(home))) return { answering: false };
+      const config = await readConfig(home);
+      const address = config.http.listen[0];
+      if (address === undefined || config.http.port === 0) return { answering: false };
+      const host = address.includes(":") ? `[${address}]` : address;
+      try {
+        // Any answer proves serve is up; the token is not needed, so none is read or made.
+        await fetch(`http://${host}:${config.http.port}/v1/types`, {
+          signal: AbortSignal.timeout(2_000),
+        });
+        return { answering: true };
+      } catch {
+        return { answering: false };
+      }
+    },
+    testHost: async () => {
+      const { registry } = await context();
+      const fromEnv = process.env.OPERAD_CHECK_HOST;
+      const setting = registry.settingsFor("dev").testHost;
+      const host = fromEnv ?? (typeof setting === "string" ? setting : "");
+      if (host.length === 0) return undefined;
+      const probe = Bun.spawn(
+        ["ssh", "-o", "BatchMode=yes", "-o", "ConnectTimeout=5", host, "true"],
+        { stdin: "ignore", stdout: "ignore", stderr: "ignore" },
+      );
+      return { host, reachable: (await probe.exited) === 0 };
+    },
+    setup: async () => {
+      const ctx = await context();
+      const pending = await listPending(
+        ctx.log,
+        ctx.registry,
+        kernelFor(ctx, { ...io, error: () => undefined }, []),
+        ctx.views,
+      );
+      return pending
+        .filter((item) => item.kind === "standing" && item.object === undefined)
+        .map((item) => ({ id: item.runId, prompt: item.prompt }));
+    },
+  };
+}
+
+/** `operad doctor [--json]`: read-only; exits 1 when any line is a problem. */
+async function commandDoctor(
+  home: string,
+  io: CliIo,
+  args: readonly string[],
+  env?: DoctorEnv,
+): Promise<number> {
+  const { args: rest, present } = splitFlag(args, "--json");
+  if (rest.length > 0) throw new UsageError("doctor takes no arguments");
+  // The system's environment opens the home only when a check asks, so an
+  // injected one leaves it closed and `close` has nothing to do.
+  const system = systemDoctorEnv(home, io);
+  let report: DoctorReport;
+  try {
+    report = await runDoctor(env ?? system);
+  } finally {
+    await system.close();
+  }
+  io.write(present ? `${JSON.stringify(report, null, 2)}\n` : formatDoctor(report));
+  return report.ok ? 0 : 1;
 }
 
 async function commandPending(
@@ -3199,6 +3324,10 @@ export async function main(
     if (command === "help" || command === "--help") {
       io.write(HELP);
       return 0;
+    }
+
+    if (command === "doctor") {
+      return await commandDoctor(home, io, args.slice(1), options.doctor);
     }
 
     if (command === "init") {

@@ -398,3 +398,8 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 | T-0692-M1 | packages/cli/src/main.ts | the loop over `PLUGIN_NEEDS[name]` was empty, so enabling dev turned on only dev | `plugin enable > enabling dev also enables pool and shell and names each` |
 | T-0692-M2 | packages/cli/src/main.ts | the "already on" skip was removed, so a plugin already on was named again | `plugin enable > enabling dev also enables pool and shell and names each` |
 | T-0695-M2 | packages/cli/src/main.ts | `pending` printed a standing item as `<plugin>:<item id>` again instead of its object | `Setup Dev on the command line > a piped dev.json proposes, and pending prints an id the item's actions take` |
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0693-M1 | packages/cli/src/doctor.ts | a serve that does not answer was reported as answering (`serve.answering \|\| true`) | `operad doctor > serve not answering names operad serve` |
+| T-0693-M2 | packages/cli/src/doctor.ts | a config.json that cannot be read still let the plugins load (`loadable = true` in the catch) | `operad doctor > a broken config.json is one problem and the rest is not loaded` |

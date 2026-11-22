@@ -23,6 +23,7 @@ import type { Actor, MaybePromise, PluginStore } from "./types.ts";
  */
 export const KERNEL_VERBS = [
   "init",
+  "doctor",
   "serve",
   "pending",
   "history",
