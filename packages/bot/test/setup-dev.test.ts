@@ -113,10 +113,9 @@ describe("Setup Dev", () => {
     expect(Object.keys(plugins(other))).toEqual(["bot"]);
   });
 
-  test("it refuses a directory without a remote, text that is not a JSON object and a registered repository", async () => {
+  test("it refuses a folder that is not a work tree root, text that is not a JSON object and a registered repository", async () => {
     const r = await rig();
     const bare = repository(r, false);
-    await expect(r.command("bot", "setup-dev", ["default", bare], DEV_JSON)).rejects.toThrow("no git remote");
     const path = join(r.root, "plain");
     mkdirSync(path);
     await expect(r.command("bot", "setup-dev", ["default", path], DEV_JSON)).rejects.toThrow("not the root of a git work tree");
@@ -128,6 +127,18 @@ describe("Setup Dev", () => {
     await expect(r.command("bot", "setup-dev", ["default", real], "not json")).rejects.toThrow("not JSON");
     await r.store.put("repo", "repo", { name: "repo", path: realpathSync(real) }, "test");
     await expect(r.command("bot", "setup-dev", ["default", real], DEV_JSON)).rejects.toThrow("already registered");
+  });
+});
+
+describe("Setup Dev without a remote", () => {
+  test("a git repository with no remote is proposed, and the file written names no remote", async () => {
+    const r = await rig();
+    const path = repository(r, false);
+    await r.command("bot", "setup-dev", ["default", path], DEV_JSON);
+    await r.act(PROPOSAL_TYPE, await proposalId(r), "approve");
+    const written = JSON.parse(readFileSync(join(path, ".operad", "dev.json"), "utf8")) as Record<string, unknown>;
+    expect("remote" in written).toBe(false);
+    expect(written.mainBranch).toBe("main");
   });
 });
 

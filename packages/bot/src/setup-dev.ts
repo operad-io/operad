@@ -71,9 +71,6 @@ function rootOf(path: string): string {
   if (top === undefined || top.length === 0 || realpathSync(top) !== real) {
     throw new BotError(`setup-dev: "${path}" is not the root of a git work tree`);
   }
-  if ((git(real, ["remote"]) ?? "").length === 0) {
-    throw new BotError(`setup-dev: "${path}" has no git remote; add one first`);
-  }
   return real;
 }
 
@@ -121,6 +118,8 @@ export async function proposeDev(
     throw new BotError(`setup-dev: the dev.json text is not JSON: ${messageOf(error)}`);
   }
   if (!isRecord(parsed)) throw new BotError("setup-dev: the dev.json text must be a JSON object");
+  // A repository with no remote works on its local main branch: the file names none.
+  if ((git(repo, ["remote"]) ?? "").length === 0) delete parsed.remote;
   if ((await registeredPaths(store)).some((path) => resolve(path) === repo)) {
     throw new BotError(`setup-dev: "${repo}" is already registered`);
   }
