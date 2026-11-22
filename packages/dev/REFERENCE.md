@@ -296,7 +296,7 @@ own worktree instead.
 The step also records where the main checkout's HEAD stands. A commit made
 there during the attempt, with a clean tree afterwards, is named the same way:
 `changed the main checkout: <branch> (moved <old>..<new>)`, and the review's
-major finding says the work committed in the main checkout. A task that waits
+major finding says the work committed in the main checkout. Only commits that are not on the remote's main count (after a fetch; for a repository without that ref, commits not reachable from the attempt's base): dev's own fast-forward after a merge and a commit a person pushed are not findings. A branch switch counts only when the clone was left on another branch than it began on. A task that waits
 with `work did nothing` says in its prompt that the worker changed nothing in
 its worktree but changed the main checkout, when it did.
 

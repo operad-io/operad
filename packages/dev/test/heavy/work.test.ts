@@ -219,6 +219,27 @@ function fakeHarness(record: string) {
               "outside the worktree",
             ]);
           }
+          if (mode === "main-pushed" || mode === "main-fast-forward") {
+            const main = join(input.cwd, "..", "..");
+            const who = ["-c", "user.name=person", "-c", "user.email=person@example.com"];
+            if (mode === "main-pushed") {
+              // A person commits in the main clone and pushes it.
+              writeFileSync(join(main, "pushed.txt"), "pushed\n");
+              gitOrThrow(main, ["add", "pushed.txt"]);
+              gitOrThrow(main, [...who, "commit", "-qm", "pushed outside"]);
+              gitOrThrow(main, ["push", "-q", "origin", "HEAD:refs/heads/main"]);
+            } else {
+              // Another task merged on the remote; dev fast-forwards the clone.
+              const url = gitOrThrow(main, ["remote", "get-url", "origin"]).trim();
+              const other = join(mkdtempSync(join(tmpdir(), "t0739-")), "other");
+              gitOrThrow(main, ["clone", "-q", url, other]);
+              writeFileSync(join(other, "merged.txt"), "merged\n");
+              gitOrThrow(other, ["add", "merged.txt"]);
+              gitOrThrow(other, [...who, "commit", "-qm", "another task"]);
+              gitOrThrow(other, ["push", "-q", "origin", "HEAD:refs/heads/main"]);
+              gitOrThrow(main, ["pull", "-q", "--ff-only", "origin", "main"]);
+            }
+          }
           if (mode === "main-change-again") {
             appendFileSync(
               join(input.cwd, "..", "..", "before.txt"),
@@ -962,6 +983,24 @@ describe("dev/work", () => {
     expect(task.brief).toContain(line);
     expect(task.attempt?.finalMessage).toBe(line);
     expect(String(result.data?.message)).toContain(line);
+  });
+
+  test("a commit pushed to the remote's main during work is not a finding (T-0739)", async () => {
+    const state = await fixture("main-pushed");
+    const result = await runWork(state);
+    expect(result.result).toBe("nothing");
+    const task = await taskDataOf(state);
+    expect(String(task.attempt?.finalMessage ?? "")).not.toContain("changed the main checkout");
+    expect(String(result.data?.message ?? "")).not.toContain("changed the main checkout");
+  });
+
+  test("dev's own fast-forward of the main clone during work is not a finding (T-0739)", async () => {
+    const state = await fixture("main-fast-forward");
+    const result = await runWork(state);
+    expect(result.result).toBe("nothing");
+    const task = await taskDataOf(state);
+    expect(String(task.attempt?.finalMessage ?? "")).not.toContain("changed the main checkout");
+    expect(String(result.data?.message ?? "")).not.toContain("changed the main checkout");
   });
 
   test("a further edit to a file the main checkout already had changed is reported", async () => {

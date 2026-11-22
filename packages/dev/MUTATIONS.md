@@ -1629,3 +1629,4 @@ the row fields.
 | T-0739-M1 | packages/dev/src/steps.ts | a moved HEAD of the main clone was not compared, only its status | `dev/work > a commit on the main clone's branch with a clean tree is reported (T-0739)` |
 | T-0739-M2 | packages/dev/src/gate.ts | a moved-HEAD entry was reported as a changed file | `dev/review and the main checkout > a moved main clone is a major finding about the commit, not a file (T-0739)` |
 | T-0739-M3 | packages/dev/src/announce.ts | the "work did nothing" reason dropped the main-checkout note | `a visit that changed nothing carries the main-checkout note (T-0739)` |
+| T-0739-M4 | packages/dev/src/steps.ts | a moved HEAD was reported for every gained commit, not only those not on the remote's main | `dev/work > a commit pushed to the remote's main during work is not a finding (T-0739)` and `dev/work > dev's own fast-forward of the main clone during work is not a finding (T-0739)` |

@@ -396,15 +396,39 @@ const NO_CHECKOUT_BEFORE: CheckoutBefore = { entries: [], position: undefined };
 
 // A moved or switched HEAD, in words that end with `(moved a..b)` or
 // `(switched a..b)`; the review reads that ending as a commit, not a file.
+// A move counts only for commits the clone gained that are not on the remote's
+// main: dev's own fast-forward after a merge and a commit a person pushed are
+// on it. A repository without that remote ref compares with the attempt's
+// recorded base instead, which is the main the worktree started from. A branch
+// switch counts only when the clone was left on another branch than it began on.
+interface MainReach {
+  readonly remote: string;
+  readonly mainRef: string;
+  readonly base: string | null;
+}
+
 function movedHead(
+  checkout: string,
   before: CheckoutPosition | undefined,
   after: CheckoutPosition | undefined,
+  reach: MainReach,
 ): string | undefined {
   if (before === undefined || after === undefined) return undefined;
   const name = after.branch ?? "HEAD";
   const short = (sha: string): string => sha.slice(0, 7);
   if (before.head !== after.head) {
-    return `${name} (moved ${short(before.head)}..${short(after.head)})`;
+    // Reads the remote's current main; a failed fetch leaves the ref as it was.
+    git(checkout, ["fetch", "--quiet", reach.remote]);
+    const known = git(checkout, ["rev-parse", "--verify", "--quiet", `${reach.mainRef}^{commit}`]);
+    const floor = known.ok && known.out.length > 0 ? reach.mainRef : reach.base;
+    const gained = git(checkout, [
+      "rev-list",
+      `${before.head}..${after.head}`,
+      ...(floor === null ? [] : ["--not", floor]),
+    ]);
+    if (gained.ok && gained.out.trim().length > 0) {
+      return `${name} (moved ${short(before.head)}..${short(after.head)})`;
+    }
   }
   if (before.branch !== after.branch) {
     return `${name} (switched ${before.branch ?? "HEAD"}..${name})`;
@@ -436,9 +460,10 @@ function newCheckoutChanges(
   checkout: string,
   worktree: string,
   before: CheckoutBefore,
+  reach: MainReach,
 ): readonly string[] {
   const seen = new Map(before.entries.map((entry) => [checkoutEntryKey(entry), entry]));
-  const moved = movedHead(before.position, checkoutPosition(checkout));
+  const moved = movedHead(checkout, before.position, checkoutPosition(checkout), reach);
   const changed: string[] = moved === undefined ? [] : [moved];
   for (const entry of checkoutEntries(checkout)) {
     const was = seen.get(checkoutEntryKey(entry));
@@ -2080,7 +2105,11 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
     // that throws still reports what the step left there.
     mainChanges = inPlace
       ? []
-      : newCheckoutChanges(context.repository.path, path, mainCheckoutBefore);
+      : newCheckoutChanges(context.repository.path, path, mainCheckoutBefore, {
+          remote: context.settings.remote,
+          mainRef: `${context.settings.remote}/${context.settings.mainBranch}`,
+          base,
+        });
     if (startTimer !== undefined) startClock.clearTimeout(startTimer);
     sayClosed = true;
     await sayChain;
