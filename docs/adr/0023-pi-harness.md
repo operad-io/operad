@@ -67,3 +67,30 @@ The worker is found by a record under `<home>/harness/pi/kept/`, keyed by the ch
 Access is decided per reply, never remembered by the worker: each prompt carries the reply's access profile, its asker and its grants. A question, a mid-run message and a late answer work on a kept worker as they do on a new one. A kept worker that cannot be reached, has died, or does not answer its first line in time is given up silently; the same message is answered by a new worker and the chat records no failure. The worker is ended before the new one starts, so no message is answered twice.
 
 Only the owner may connect. The kept directory is `0700`, the record and socket are `0600`, and a record is offered only for the same home, the same chat scope and the same key; another user cannot open the socket, another chat has another scope, and another configuration has another key. The record names the worker's pid and a random token that is also on its command line; a stop verifies that token before it signals a pid, so a reused pid belonging to another program is never touched. Task workers, reviews and the other agents do not keep a worker.
+
+### D11: A login runs in a child process and offers only ChatGPT's subscription
+
+`pi/login` (ADR 0022 D13) starts `bun login-worker.ts` with the rule of D2: the
+library is imported only in that child, never in the hub. The child creates the
+`ModelRuntime` of D4, reports the providers that can sign in, and waits for the
+step's commands; the step puts every prompt, notice and question of the login
+to the person with `ctx.ask` (ADR 0008) and writes the answer back on the
+child's stdin. The login has 300 seconds from its start and can be cancelled; a
+timeout or a cancel stops the child, and no credential is written then.
+
+The only subscription route is `openai-codex`, pi's ChatGPT login: its browser
+callback on `127.0.0.1:1455` and, when the browser cannot reach it, a pasted
+final redirect URL whose state the child checks. The step checks the
+authorization URL before it is shown: `https` on `auth.openai.com` and the
+login's own redirect on the loopback callback. Every other provider, Anthropic
+included, gets only its API-key login; a person who wants another subscription
+logs in with pi itself (ADR 0024 D3 gives the reason for Anthropic).
+
+The providers and the models are pi's own catalog, read through the child and
+`ctx.harnessModels`; operad names no provider or model of its own. The model
+preselected after a login is the harness's declared default when it belongs to
+the provider, else the first model the catalog lists for that provider; the
+step checks the choice against the catalog before it returns. The credential is
+written to `authPath` (D4). The step's result carries the model, and the caller
+writes it (ADR 0030 D14).
+
