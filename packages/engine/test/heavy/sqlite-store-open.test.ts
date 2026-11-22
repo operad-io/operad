@@ -1,6 +1,13 @@
 import { Database } from "bun:sqlite";
 import { afterAll, expect, test } from "bun:test";
-import { existsSync, mkdtempSync, readdirSync, readlinkSync, rmSync } from "node:fs";
+import {
+  existsSync,
+  mkdtempSync,
+  readdirSync,
+  readlinkSync,
+  realpathSync,
+  rmSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BUSY_TIMEOUT_MS } from "../../src/platform/index.ts";
@@ -82,14 +89,24 @@ function openFiles(): string[] {
     .map((line) => line.slice(1));
 }
 
+/** The open files of one store: its database and the journals SQLite makes. */
+function ownStoreFiles(file: string): string[] {
+  const own = realpathSync(file);
+  return openFiles().filter(
+    (path) => path === own || path === `${own}-wal` || path === `${own}-shm`,
+  );
+}
+
 test.skipIf(!CAN_LIST_FILES)("closing a store closes its connection at once, not at a later collection", () => {
   const file = tempFile();
   const store = new SqlitePluginStore({ root: join(file, ".."), file });
-  expect(openFiles().some((path) => path.includes("/plugins.sqlite"))).toBe(true);
+  // Look only at this store. Other test files in the same process leave their
+  // own stores open, and those must not be mistaken for this one still open.
+  expect(ownStoreFiles(file).length).toBeGreaterThan(0);
   store.close();
   // Bun keeps the file handles of a closed database open while a statement made
   // from it is not finalized, so a statement left behind shows as an open file.
-  expect(openFiles().filter((path) => path.includes("/plugins.sqlite"))).toEqual([]);
+  expect(ownStoreFiles(file)).toEqual([]);
 });
 
 test("a store created in delete mode is WAL after it is opened", () => {
