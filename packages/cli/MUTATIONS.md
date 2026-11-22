@@ -397,3 +397,4 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 |---|---|---|---|
 | T-0692-M1 | packages/cli/src/main.ts | the loop over `PLUGIN_NEEDS[name]` was empty, so enabling dev turned on only dev | `plugin enable > enabling dev also enables pool and shell and names each` |
 | T-0692-M2 | packages/cli/src/main.ts | the "already on" skip was removed, so a plugin already on was named again | `plugin enable > enabling dev also enables pool and shell and names each` |
+| T-0695-M2 | packages/cli/src/main.ts | `pending` printed a standing item as `<plugin>:<item id>` again instead of its object | `Setup Dev on the command line > a piped dev.json proposes, and pending prints an id the item's actions take` |

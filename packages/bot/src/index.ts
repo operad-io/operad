@@ -551,13 +551,13 @@ const setupDevAction: ActionTypeDefinition = {
     type: "object",
     description: "Opens a chat that has the bot's agent set up dev for a repository and propose the result.",
     properties: {
-      repo: {
+      path: {
         type: "string",
         minLength: 1,
         description: "The directory of the repository: the root of a git work tree that has a remote.",
       },
     },
-    required: ["repo"],
+    required: ["path"],
   },
   when: (state, env) => state.removed !== true && typeof state.problem !== "string" && (env.harnesses ?? []).length > 0,
   async why(object, env) {
@@ -567,7 +567,7 @@ const setupDevAction: ActionTypeDefinition = {
     return undefined;
   },
   async run(ctx, args) {
-    const repo = (args as { readonly repo: string }).repo.trim();
+    const repo = (args as { readonly path: string }).path.trim();
     if (repo.length === 0) throw new BotError("setup-dev needs the repository's directory");
     const where = isAbsolute(repo) ? repo : resolve(ctx.cwd, repo);
     const id = await openChat({

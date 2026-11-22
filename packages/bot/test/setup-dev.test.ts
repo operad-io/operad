@@ -3,7 +3,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 import { createViews } from "@operad-io/engine";
-import { PROPOSAL_TYPE, proposalData, setupDevPrompt } from "../src/index.ts";
+import { PROPOSAL_TYPE, proposalData, readPiped, setupDevPrompt } from "../src/index.ts";
 import { cleanupRoots, rig } from "./support.ts";
 
 afterAll(cleanupRoots);
@@ -57,7 +57,7 @@ describe("Setup Dev", () => {
   test("the action opens a chat whose first message is the prepared prompt", async () => {
     const r = await rig();
     const path = repository(r);
-    const text = String(await r.act("bot", "default", "setup-dev", { repo: path }));
+    const text = String(await r.act("bot", "default", "setup-dev", { path }));
     const chat = /C-\d+/.exec(text)?.[0];
     if (chat === undefined) throw new Error(`no chat in ${text}`);
     const messages = (await r.store.facts().filter((fact) => fact.object?.id === chat && fact.type === "chat.message"))
@@ -132,6 +132,24 @@ describe("Setup Dev", () => {
 });
 
 describe("the Setup Dev page", () => {
+  test("piped input: a stream with dev.json is read whole; a silent one or a given text is not waited for", async () => {
+    async function* chunks(): AsyncGenerator<string> {
+      yield DEV_JSON.slice(0, 5);
+      yield DEV_JSON.slice(5);
+    }
+    expect(await readPiped(undefined, { stream: chunks() })).toBe(DEV_JSON);
+    expect(await readPiped("given", { stream: chunks() })).toBe("given");
+    let destroyed = false;
+    const silent = {
+      [Symbol.asyncIterator]: () => ({ next: () => new Promise<IteratorResult<string>>(() => undefined) }),
+      destroy: () => {
+        destroyed = true;
+      },
+    };
+    expect(await readPiped(undefined, { stream: silent, giveUp: Promise.resolve() })).toBe("");
+    expect(destroyed).toBe(true);
+  });
+
   test("shows the prompt the bot is given", () => {
     const page = readFileSync(join(import.meta.dir, "../../../docs/user/setup-prompt.md"), "utf8");
     expect(page).toContain(setupDevPrompt("default", "<repository directory>"));

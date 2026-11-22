@@ -9,7 +9,7 @@ Setup Dev (配置开发流程) turns operad's dev on for one repository. A new h
 Start it in either of two ways:
 
 - Say it in a bot chat: "set up dev for ~/code/myrepo". The bot's agent knows how to propose it.
-- Run the bot's Setup Dev action from the new-object entry, giving the repository's directory, which opens a bot chat that starts with the prepared prompt below. On the command line `--repo` names a repository, not a directory, so the action's `repo` argument is not set with that flag.
+- Run the bot's Setup Dev action from the new-object entry, giving the repository's directory, which opens a bot chat that starts with the prepared prompt below. On the command line: `operad bot:setup-dev <bot> --path <repository directory>`.
 
 The bot reads the repository and runs its checks under the chat's access level, so it asks as any chat does (see [access](access.md)); Setup Dev gives it no extra permission. It does not write `.operad/dev.json` itself. It proposes, and you see one pending item for the repository. `Review` shows the plugins that would be turned on (`dev`, `shell` and `pool`, those that are off), the `.operad/dev.json` that would be written and, when there is one, the file it replaces. `approve` turns the plugins on, writes the file and registers the repository, so `operad dev repo list` shows it a moment later, after `serve` reloads. `reject` changes nothing.
 
