@@ -104,7 +104,7 @@ describe("the TUI view", () => {
         expect(lines[23]?.startsWith(" j/k move")).toBe(true);
         expect(lines[4]?.startsWith(" ❯ ● one")).toBe(true);
         expect(lines[5]?.startsWith("     new")).toBe(true);
-        expect(lines[7]?.startsWith("   ◐ two")).toBe(true);
+        expect(lines[7]?.startsWith("   ⊙ two")).toBe(true);
         expect(lines.join("\n")).not.toMatch(/[╭╮╰╯]/);
         const at = lines.slice(2, 22).map((line) => line.indexOf("│"));
         view.destroy();
