@@ -132,6 +132,7 @@ import { QrTooLongError, encodeQr, renderQr } from "./qr.ts";
 import {
   DEFAULT_STOP_TIMEOUT_SECS,
   parseStopTimeout,
+  recordSupervisor,
   serveStop,
 } from "./serve-stop.ts";
 
@@ -3520,6 +3521,8 @@ export async function main(
         restored: boolean,
       ): Promise<"stopped" | "reload"> => {
         const lock = acquireLock(serveLockPath(home));
+        // `serve stop` reaches the supervisor too, so it can stop a reload that is in flight.
+        if (isSupervised) recordSupervisor(home);
         // Held across a reload's wait for the stores, so a busy write that
         // work of the old context left running is never unguarded.
         const unguard = guardBackgroundBusy({
