@@ -94,6 +94,8 @@ and `operad help` print the whole table.
 | `operad bot setup-dev <bot> <repository directory>` | `< dev.json` | Setup Dev: with no input it prints the steps for the agent; with the repository's `dev.json` on stdin it proposes turning `dev` on for that repository, and a person approves it. |
 | `operad bot setup <bot> <plugin> [target]` | | Setup <name>: prints what the plugin's own check finds missing and the steps of its setup guide, for a bot's agent to follow. In a bot chat, `/setup <plugin> [target]` sends the same to the chat. |
 | `operad bot schedule <bot> add\|edit\|remove <name>` | `--words <text>`, `--schedule <cron>`, `--prompt <text>`, `--model <model>`, `--effort <effort>` | Proposes adding, changing or removing a scheduled prompt; a person approves it. |
+| `operad bot follow-up <chat> --at <time> --do <sentence>` | `--at <time>`, `--do <sentence>` | Sets a Follow-up in a bot chat; it takes effect at once. For the chat's agent; see [Follow-ups](chats-and-bots.md#follow-ups). |
+| `operad bot follow-ups <chat>` | `--cancel <id>` | Lists the chat's follow-ups, or cancels one with `--cancel`. |
 | `operad memory search <query>` | `--scope <scope>`, `--field <name>=<value>`, `--limit <n>` | Searches the shared wiki, the bot's memory and the bot's chats. Prints each result's document id, title, line range and snippet, then the directory notes that came back with it. `--scope` takes `wiki`, `memory` or `chats`; `--field` narrows by frontmatter; `--limit` caps the results. The same arguments may be given as JSON on stdin. |
 | `operad memory read <id>` | `from`, `to`, `--json` | Reads one document a search returned, or the line range named by `from` and `to` (both 1-based). A read of a note another note links to ends with its `Backlinks`, each with the linking note's path, line and an excerpt. Prints text by default; `--json` gives the same result, including a `backlinks` array. The id and range may also be given as JSON on stdin. |
 
@@ -147,6 +149,9 @@ A client of `serve` does the same over HTTP with `GET /v1/plugins` and `POST /v1
 | `--prompt <text>` | `bot schedule` | The first message of the chat a firing opens. |
 | `--model <model>` | `bot schedule` | The model a firing's chat uses; `--model ""` clears it. |
 | `--effort <effort>` | `bot schedule` | The effort a firing's chat uses; `--effort ""` clears it. |
+| `--at <time>` | `bot follow-up` | When the follow-up is due: `2026-12-01 09:00` (local time) or relative, such as `+2h`. At most 30 days ahead. |
+| `--do <sentence>` | `bot follow-up` | One sentence of what to do when it is due. |
+| `--cancel <id>` | `bot follow-ups` | The follow-up to cancel. |
 | `--scope <scope>` | `memory search` | The part of the index to search: `wiki`, `memory` or `chats`. The default is all three; a comma-separated list is accepted. |
 | `--field <name>=<value>` | `memory search` | One frontmatter field a result must have; may be repeated. A frontmatter field with several values matches any of them. |
 
