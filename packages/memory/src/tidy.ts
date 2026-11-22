@@ -261,7 +261,53 @@ export function tidyCommitForChat(
   return found.ok && found.out.length > 0 ? found.out : undefined;
 }
 
-/** A tidy commit's subject, whether it was voided, and its diff-stat line. */
+/** Where a tidy commit's run is read from: its memory directory and bot. */
+export interface TidySummaryScope {
+  /** The memory directory the run changed; the repository's directory by default. */
+  readonly directory?: string | undefined;
+  /** The bot whose tidy this is; without it a commit must touch the directory. */
+  readonly bot?: string | undefined;
+}
+
+/**
+ * The tidy commit a run measured from: the latest tidy commit before `commit`,
+ * or undefined before the first one.
+ */
+function previousTidyCommit(
+  repository: Repository,
+  directory: string,
+  commit: string,
+  bot?: string,
+): string | undefined {
+  const found = memoryGit(repository.root, [
+    "log",
+    "-1",
+    "--format=%H",
+    `${commit}^`,
+    `--grep=^${TIDY_SUBJECT}${bot === undefined ? "" : ` bot ${bot},`}`,
+    ...(bot === undefined ? ["--", scoped(repository, directory)] : []),
+  ]);
+  return found.ok && found.out.length > 0 ? found.out : undefined;
+}
+
+/** The diff stat of a run from its baseline, or from an empty tree before one. */
+function runStat(
+  repository: Repository,
+  directory: string,
+  baseline: string | undefined,
+  commit: string,
+): string {
+  const paths = ["--", scoped(repository, directory)];
+  if (baseline !== undefined) {
+    return memoryGit(repository.root, ["diff", "--stat", baseline, commit, ...paths]).out;
+  }
+  const empty = memoryGit(repository.root, ["mktree"]);
+  return empty.ok && empty.out.length > 0
+    ? memoryGit(repository.root, ["diff", "--stat", empty.out, commit, ...paths]).out
+    : memoryGit(repository.root, ["show", "--stat", "--format=", commit, ...paths]).out;
+}
+
+/** A tidy commit's subject, whether it was voided, and its run's diff-stat line. */
 export interface TidyCommitSummary {
   readonly hash: string;
   readonly subject: string;
@@ -270,14 +316,21 @@ export interface TidyCommitSummary {
   readonly summary: string;
 }
 
-/** Reads what a tidy commit did, for the result card or the automatic notice. */
+/**
+ * Reads what a tidy run did, for the result card or the automatic notice. The
+ * stat runs from the commit the run measured from, so a chat's ordinary memory
+ * commit between the two is part of the run.
+ */
 export function tidyCommitSummary(
   repository: Repository,
   commit: string,
+  scope: TidySummaryScope = {},
 ): TidyCommitSummary {
+  const directory = scope.directory ?? repository.directory;
   const body = memoryGit(repository.root, ["show", "-s", "--format=%s%n%b", commit]);
-  const stat = memoryGit(repository.root, ["show", "--stat", "--format=", commit]);
-  const lines = stat.out.split("\n").map((line) => line.trim()).filter((line) => line.length > 0);
+  const baseline = previousTidyCommit(repository, directory, commit, scope.bot);
+  const stat = runStat(repository, directory, baseline, commit);
+  const lines = stat.split("\n").map((line) => line.trim()).filter((line) => line.length > 0);
   const summary = lines.at(-1) ?? "No file statistics.";
   return {
     hash: commit,

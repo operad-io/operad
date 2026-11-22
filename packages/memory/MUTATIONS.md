@@ -174,3 +174,9 @@ the row fields.
 |---|---|---|---|
 | T-0604-M1 | packages/memory/src/wiki.ts | `noteRow` put a space before `(untrusted)` even when the note had no time, so a zero-time untrusted note's row began with a space | `the wiki objects > a note row shows its local modified time, and only the mark at zero` |
 | T-0604-M2 | packages/memory/src/wiki.ts | `wikiModifiedText` formatted in UTC when no time zone was given, ignoring the process's local zone | `the wiki objects > a note row shows its local modified time, and only the mark at zero` |
+
+## T-0683 — a tidy result covers the whole run
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0683-M1 | packages/memory/src/tidy.ts | `tidyCommitSummary` read only the tidy commit's own stat instead of the run from its baseline, so a chat's ordinary memory commit was missing | `a tidy run's summary > covers the chat's own memory commit before an empty tidy commit`, `Run and Skip > a result card reads the chat's own memory commit before an empty tidy commit` |

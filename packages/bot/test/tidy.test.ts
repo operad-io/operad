@@ -87,6 +87,13 @@ function note(memory: string, name: string, text: string): void {
   writeFileSync(join(memory, "topics", name), text);
 }
 
+function commitMemory(memory: string, message: string): void {
+  ensureRepository(memory);
+  const identity = ["-c", "user.name=Test", "-c", "user.email=test@example.com", "-c", "commit.gpgsign=false"];
+  expect(memoryGit(memory, [...identity, "add", "-A"]).ok).toBe(true);
+  expect(memoryGit(memory, [...identity, "commit", "--allow-empty", "--no-verify", "-m", message]).ok).toBe(true);
+}
+
 async function failChat(r: Awaited<ReturnType<typeof rig>>, chat: string): Promise<void> {
   await r.store.append({
     type: "chat.entry",
@@ -393,6 +400,42 @@ describe("Run and Skip", () => {
       s.clock.value = Date.parse("2026-01-02T03:31:00Z");
       await s.source.poll();
       expect((await tidy(s.r))?.state).toBe("pending");
+    } finally {
+      s.views.close();
+    }
+  });
+
+  test("a result card reads the chat's own memory commit before an empty tidy commit", async () => {
+    const s = await setup();
+    try {
+      commitMemory(s.memory, "memory: bot default, chat C-0");
+      commitMemory(s.memory, "tidy: bot default, chat C-0");
+
+      writeFileSync(
+        join(s.memory, "index.md"),
+        "# Memory index\n\n- [one](topics/one.md): first\n- [two](topics/two.md): second\n",
+      );
+      note(s.memory, "two.md", "second\n");
+      commitMemory(s.memory, "memory: bot default, chat C-1");
+
+      s.clock.value = Date.parse("2026-01-01T03:31:00Z");
+      await s.source.poll();
+      expect((await tidy(s.r))?.state).toBe("pending");
+      await s.r.act(TIDY_TYPE, "default", "bot/run");
+      await s.source.poll();
+      const id = (await chats(s.r))[0];
+      if (id === undefined) throw new Error("no tidy chat");
+
+      await s.r.reply(id);
+      await s.source.settled();
+
+      const data = await tidy(s.r);
+      expect(data?.state).toBe("result");
+      expect(data?.outcome?.changed).toBe(true);
+      expect(data?.outcome?.summary).toContain("2 files changed");
+      const result = (await s.r.registry.standing())[0];
+      expect(result?.prompt).toContain("2 files changed");
+      expect(result?.prompt).not.toContain("no memory change");
     } finally {
       s.views.close();
     }

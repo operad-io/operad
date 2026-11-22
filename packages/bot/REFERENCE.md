@@ -294,8 +294,9 @@ notes link to, and unlinked mentions, with guidance to fix a clear broken link,
 leave a link to an unwritten page, consider linking an orphan, and suggest but
 not force linking a mention. A note marked `untrusted: true` is left out of
 those lists, so the tidy is never pointed at one to link. The source watches for the memory plugin's
-`memory.tidy` fact and then reads the commit's diff summary. A non-automatic run
-leaves a result card with the cost and diff; a failure leaves a failed card. An
-automatic run returns to idle and calls `notify` when the commit changed something
-or the run failed. A card left running without a chat, such as after a crash
-between starting the chat and recording it, becomes a failed card on the next start.
+`memory.tidy` fact and then reads the run's diff summary, from the last tidy
+commit to the tidy commit. A non-automatic run leaves a result card with the
+cost and diff; a failure leaves a failed card. An automatic run returns to idle
+and calls `notify` when the run changed something or the run failed. A card left
+running without a chat, such as after a crash between starting the chat and
+recording it, becomes a failed card on the next start.
