@@ -209,6 +209,53 @@ function claimKey(runId: string, waitId: string): string {
   return `${runId}:ask:${waitId}`;
 }
 
+/**
+ * The full answers of a secret question, kept only for the step that is running
+ * in this process (ADR 0008 D8). They never reach a fact, an input or history.
+ */
+const secretAnswers = new Map<string, readonly AskQuestionAnswer[]>();
+
+function secretKey(runId: string, waitId: string): string {
+  return `${runId}:secret:${waitId}`;
+}
+
+/** True when any question of the form takes a secret answer. */
+export function hasSecretQuestion(
+  questions: readonly AskQuestion[] | undefined,
+): boolean {
+  return questions?.some((question) => question.secret === true) ?? false;
+}
+
+/** Takes the secret answers a running step is waiting for; they are used once. */
+export function takeSecretAnswers(
+  runId: string,
+  waitId: string,
+): readonly AskQuestionAnswer[] | undefined {
+  const key = secretKey(runId, waitId);
+  const found = secretAnswers.get(key);
+  secretAnswers.delete(key);
+  return found;
+}
+
+/** The answers a fact or an input carries: a secret question's text is left out. */
+function recordedAnswers(
+  answers: readonly AskQuestionAnswer[] | undefined,
+  questions: readonly AskQuestion[] | undefined,
+): readonly AskQuestionAnswer[] | undefined {
+  if (answers === undefined || !hasSecretQuestion(questions)) return answers;
+  const secret = new Set(
+    (questions ?? [])
+      .filter((question) => question.secret === true)
+      .map((question) => question.id),
+  );
+  return answers.map((answer) => {
+    if (!secret.has(answer.id)) return answer;
+    const choices = answer.choices;
+    if (choices !== undefined && choices.length > 0) return { id: answer.id, choices };
+    return { id: answer.id, skipped: true as const };
+  });
+}
+
 /** The answer a person claimed for the question, when someone claimed it. */
 async function claimedAnswer(
   log: LogBackend,
@@ -372,13 +419,31 @@ export async function answerAsk(options: AnswerAskOptions): Promise<void> {
   if (current.status === "timed_out" || !live) {
     await refuse("the question is closed, its step has ended");
   }
+  if (hasSecretQuestion(ask.questions)) {
+    const given = new Set(
+      (resolved.answers ?? [])
+        .filter((answer) => typeof answer.text === "string" && answer.text.trim().length > 0)
+        .map((answer) => answer.id),
+    );
+    const missing = (ask.questions ?? []).some(
+      (question) => question.secret === true && !given.has(question.id),
+    );
+    if (missing) {
+      await refuse("a secret question takes an answer with its text");
+    }
+  }
+  const secret = hasSecretQuestion(ask.questions);
+  const recorded = recordedAnswers(resolved.answers, ask.questions);
+  if (secret && resolved.answers !== undefined) {
+    secretAnswers.set(secretKey(runId, ask.waitId), resolved.answers);
+  }
 
   const payload: Record<string, JsonValue> = {
     kind: "ask_answer",
     waitId: ask.waitId,
     choice: resolved.choice ?? null,
     note: options.note ?? null,
-    ...(resolved.answers === undefined ? {} : { answers: answersJson(resolved.answers) }),
+    ...(recorded === undefined ? {} : { answers: answersJson(recorded) }),
     actor: { via: actor.via, id: actor.id },
   };
   const claim = await log.recordInput(
@@ -388,18 +453,20 @@ export async function answerAsk(options: AnswerAskOptions): Promise<void> {
     payload,
   );
   if (claim.duplicate) {
+    secretAnswers.delete(secretKey(runId, ask.waitId));
     throw new StateError(`run ${runId}: already answered`);
   }
   const answer: AskedAnswer = {
     choice: resolved.choice,
     note: options.note,
     actor,
-    answers: resolved.answers,
+    answers: recorded,
   };
   const written = await appendWhen(log, runId, (asks) =>
     asks.get(ask.waitId)?.status === "open" ? [answeredFact(ask.waitId, answer)] : [],
   );
   if (written.length === 0) {
+    secretAnswers.delete(secretKey(runId, ask.waitId));
     const closed = (await scanAsks(log, runId)).asks.get(ask.waitId);
     // The reconciling step wrote the fact from this claim: that is success.
     if (closed?.status === "answered" && closed.answer?.choice === choice) return;
@@ -526,6 +593,7 @@ export class AskHost {
           throw new Error(`the question ${waitId} is gone from the log`);
         }
         if (record.status === "answered" && record.answer !== undefined) {
+          const shown = takeSecretAnswers(runId, waitId);
           return {
             kind: "answered",
             answer: {
@@ -533,9 +601,9 @@ export class AskHost {
               ...(record.answer.note === undefined
                 ? {}
                 : { note: record.answer.note }),
-              ...(record.answer.answers === undefined
+              ...(record.answer.answers === undefined && shown === undefined
                 ? {}
-                : { answers: record.answer.answers }),
+                : { answers: shown ?? record.answer.answers }),
               actor: record.answer.actor,
             },
           };

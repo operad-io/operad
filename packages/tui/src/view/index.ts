@@ -827,6 +827,10 @@ function withBar(text: string, cursor: number | undefined, bar: string): string 
   return units.join("");
 }
 
+function choiceRows(state: TuiState, reserved: number): number {
+  return Math.max(1, state.height - 4 - reserved);
+}
+
 /** The palette or the note input, drawn in the box; undefined when neither is open. */
 function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefined {
   const input = state.input;
@@ -885,7 +889,13 @@ function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefi
     const chunks: TextChunk[] = [
       chunk(`${input.answer.prompt}\n`, palette.accent, TextAttributes.BOLD),
     ];
-    input.answer.choices.forEach((choice, at) => {
+    const rows = choiceRows(state, 2);
+    const start = Math.max(
+      0,
+      Math.min(input.cursor - Math.floor(rows / 2), input.answer.choices.length - rows),
+    );
+    input.answer.choices.slice(start, start + rows).forEach((choice, offset) => {
+      const at = start + offset;
       const info = input.answer.choiceInfo?.[choice];
       const label = info?.label ?? choice;
       const colour =
@@ -896,6 +906,39 @@ function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefi
       chunks.push(chunk("\n"));
     });
     chunks.push(chunk("j/k or arrows move · enter answers · esc cancels", palette.weak));
+    return styled(chunks);
+  }
+  if (input.kind === "form") {
+    const chunks: TextChunk[] = [
+      chunk(`${sanitize(input.answer.prompt)}\n`, palette.accent, TextAttributes.BOLD),
+    ];
+    const question = input.answer.questions?.[input.question];
+    if (question !== undefined) {
+      if (question.header !== undefined) chunks.push(chunk(`${sanitize(question.header)}\n`, palette.weak));
+      chunks.push(chunk(`${sanitize(question.text)}\n`, palette.text));
+      if (question.url !== undefined) chunks.push(chunk(`${sanitize(question.url)}\n`, palette.accent));
+      if (question.code !== undefined) {
+        chunks.push(chunk(`${sanitize(question.code)}\n`, palette.text, TextAttributes.BOLD));
+      }
+      const choices = question.choices ?? [];
+      if (choices.length > 0) {
+        const rows = choiceRows(state, 5);
+        const start = Math.max(0, Math.min(input.cursor - Math.floor(rows / 2), choices.length - rows));
+        choices.slice(start, start + rows).forEach((choice, offset) => {
+          const at = start + offset;
+          chunks.push(chunk(at === input.cursor ? "❯ " : "  ", palette.accent));
+          chunks.push(chunk(sanitize(choice.label), at === input.cursor ? palette.accent : palette.text));
+          if (choice.description !== undefined) chunks.push(chunk(`  ${sanitize(choice.description)}`, palette.weak));
+          chunks.push(chunk("\n"));
+        });
+        chunks.push(chunk("j/k or arrows move · enter answers · esc cancels", palette.weak));
+      } else {
+        // A secret answer is masked; the value is never drawn again.
+        const shown = question.secret === true ? "•".repeat(graphemes(input.text).length) : input.text;
+        chunks.push(chunk(`${shown}${bar}\n`, palette.text));
+        chunks.push(chunk("enter sends · esc cancels", palette.weak));
+      }
+    }
     return styled(chunks);
   }
   if (input.kind === "themes") {
@@ -1038,7 +1081,15 @@ function inputLines(state: TuiState): number {
     const entries = paletteEntries(state);
     return entries.length === 0 ? 3 : 2 + paletteDisplayLines(entries).length;
   }
-  if (input?.kind === "answer") return input.answer.choices.length + 2;
+  if (input?.kind === "answer") {
+    return Math.min(input.answer.choices.length, choiceRows(state, 2)) + 2;
+  }
+  if (input?.kind === "form") {
+    const question = input.answer.questions?.[input.question];
+    const choices = question?.choices?.length ?? 0;
+    const shown = Math.min(choices, choiceRows(state, 5));
+    return 1 + (question?.header === undefined ? 0 : 1) + 1 + (question?.url === undefined ? 0 : 1) + (question?.code === undefined ? 0 : 1) + (choices > 0 ? shown + 1 : 2);
+  }
   if (input?.kind === "themes") return Math.max(1, state.themeNames.length) + 1;
   if (input?.kind === "pages") return Math.max(1, pageEntries(state).length) + 1;
   return 0;

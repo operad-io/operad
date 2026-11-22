@@ -7,6 +7,8 @@
 import { bareId, formatElapsed, objectKey, parseObjectId } from "@operad-io/engine";
 export { bareId };
 import type {
+  AskQuestion,
+  AskQuestionAnswer,
   ChoiceInfo,
   PendingItem,
   RowMark,
@@ -73,7 +75,7 @@ const WAITING_KEEPS: readonly RowMark[] = [
   "ready_to_merge",
 ];
 
-/** One pending question a person answers with one of its choices. */
+/** One pending question a person answers with choices, a form or a secret text. */
 export interface TuiAnswer {
   readonly runId: string;
   readonly waitId: string;
@@ -81,6 +83,8 @@ export interface TuiAnswer {
   readonly choices: readonly string[];
   /** What each choice says about itself; see `ChoiceInfo`. */
   readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
+  /** The form to fill in, when the item asks one a choice cannot answer. */
+  readonly questions?: readonly AskQuestion[] | undefined;
 }
 
 /** One line of a list, in the words the view renders. */
@@ -249,6 +253,19 @@ export type TuiInput =
       readonly cursor: number;
     }
   | {
+      /** One question of a pending form is being filled in. */
+      readonly kind: "form";
+      readonly answer: TuiAnswer;
+      /** The question being asked; the TUI draws one. */
+      readonly question: number;
+      /** The cursor in a choice list. */
+      readonly cursor: number;
+      /** What is typed into a free-text answer. */
+      readonly text: string;
+      /** Why the last answer was refused. */
+      readonly error?: string | undefined;
+    }
+  | {
       /** One argument of an action is being asked: a list, a number or a text. */
       readonly kind: "args";
       readonly action: string;
@@ -303,7 +320,8 @@ export interface TuiActionRequest {
 export interface TuiAnswerRequest {
   readonly runId: string;
   readonly waitId: string;
-  readonly choice: string;
+  readonly choice?: string | undefined;
+  readonly answers?: readonly AskQuestionAnswer[] | undefined;
   readonly note?: string | undefined;
   readonly confirmed?: boolean | undefined;
 }
@@ -791,7 +809,25 @@ export function rowFromView(row: ViewRow, type?: string): TuiRow {
 
 /** The item's answer, when its choices are not the object's actions. */
 function answerOfPending(item: PendingItem): TuiAnswer | undefined {
-  if (item.waitId === undefined || item.choices.length === 0) return undefined;
+  if (item.waitId === undefined) return undefined;
+  const questions = item.questions;
+  if (questions !== undefined) {
+    // The TUI draws a form of one question; a larger form stays for a client
+    // that draws all of it.
+    if (questions.length !== 1) return undefined;
+    const names = new Set(item.actions.map((action) => action.action));
+    const asChoice = item.choices.length > 0 && item.choices.every((choice) => names.has(choice));
+    if (asChoice) return undefined;
+    return {
+      runId: item.runId,
+      waitId: item.waitId,
+      prompt: item.prompt,
+      choices: item.choices,
+      questions,
+      ...(item.choiceInfo === undefined ? {} : { choiceInfo: item.choiceInfo }),
+    };
+  }
+  if (item.choices.length === 0) return undefined;
   const names = new Set(item.actions.map((action) => action.action));
   // A choice that is also an action stays with the actions, as it works today.
   if (item.choices.every((choice) => names.has(choice))) return undefined;
@@ -806,7 +842,13 @@ function answerOfPending(item: PendingItem): TuiAnswer | undefined {
 
 function rowFromPending(item: PendingItem): TuiRow {
   const answer = answerOfPending(item);
-  const answerDetail = answer === undefined ? [] : [`choices: ${answer.choices.join(", ")}`];
+  const asked = answer?.questions?.map((question) => question.text) ?? [];
+  const answerDetail = [
+    ...asked,
+    ...(answer === undefined || answer.questions !== undefined || answer.choices.length === 0
+      ? []
+      : [`choices: ${answer.choices.join(", ")}`]),
+  ];
   // A server that sends the object's row saves a read per item: the row names
   // the object, and the question stays visible as the note. An older server
   // sends no row, and the item shows its question and flow as before.

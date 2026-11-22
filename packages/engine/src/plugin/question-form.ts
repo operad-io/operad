@@ -24,6 +24,12 @@ export const MAX_QUESTION_BODY = 256 * 1024;
 /** The longest header a question may carry. */
 export const MAX_QUESTION_HEADER = 40;
 
+/** The longest address a question may carry. */
+export const MAX_QUESTION_URL = 2048;
+
+/** The longest code a question may carry for a person to copy. */
+export const MAX_QUESTION_CODE = 80;
+
 /** The longest choice label. */
 export const MAX_QUESTION_CHOICE_LABEL = 80;
 
@@ -33,7 +39,7 @@ export const MAX_QUESTION_CHOICE_DESCRIPTION = 280;
 /** The longest free-text answer. */
 export const MAX_QUESTION_ANSWER_TEXT = 4000;
 
-const QUESTION_FIELDS = new Set(["id", "text", "body", "header", "choices", "multiple", "freeText"]);
+const QUESTION_FIELDS = new Set(["id", "text", "body", "header", "choices", "multiple", "freeText", "url", "code", "secret"]);
 const CHOICE_FIELDS = new Set(["label", "description"]);
 const ANSWER_FIELDS = new Set(["id", "choices", "text", "skipped"]);
 
@@ -129,6 +135,27 @@ export function questionsProblem(value: unknown): string | undefined {
         return `${at}.${field}: must be true or false`;
       }
     }
+    if (raw.url !== undefined) {
+      if (typeof raw.url !== "string") return `${at}.url: must be a string`;
+      if (raw.url.length > MAX_QUESTION_URL) {
+        return `${at}.url: must be at most ${MAX_QUESTION_URL} characters`;
+      }
+      if (!URL.canParse(raw.url) || !["http:", "https:"].includes(new URL(raw.url).protocol)) {
+        return `${at}.url: must be an absolute http or https address`;
+      }
+    }
+    if (raw.code !== undefined) {
+      if (!nonEmpty(raw.code)) return `${at}.code: must be a non-empty string`;
+      if (raw.code.length > MAX_QUESTION_CODE) {
+        return `${at}.code: must be at most ${MAX_QUESTION_CODE} characters`;
+      }
+    }
+    if (raw.secret !== undefined && raw.secret !== true) {
+      return `${at}.secret: must be true when it is set`;
+    }
+    if (raw.secret === true && raw.freeText !== true) {
+      return `${at}.secret: needs freeText true, because the answer is the person's own text`;
+    }
   }
   return undefined;
 }
@@ -157,6 +184,9 @@ export function normalizeQuestions(value: unknown): readonly AskQuestion[] | und
       ...(choices.length === 0 ? {} : { choices }),
       ...(raw.multiple === true ? { multiple: true } : {}),
       ...(raw.freeText === true ? { freeText: true } : {}),
+      ...(typeof raw.url === "string" ? { url: raw.url } : {}),
+      ...(typeof raw.code === "string" ? { code: raw.code } : {}),
+      ...(raw.secret === true ? { secret: true as const } : {}),
     });
   }
   return questions.length === 0 ? undefined : questions;

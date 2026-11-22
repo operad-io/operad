@@ -1399,3 +1399,12 @@ resume window`. Rows are append-only, so the old lines stay as history.
 |---|---|---|---|
 | T-0677-M1 | packages/engine/src/plugin/install.ts | the package runner was called without the progress callback, so an install printed nothing while it ran | `ensuring a package is installed in the home > the install reports each line the command prints while it runs` |
 | T-0677-M2 | packages/engine/src/plugin/install.ts | `looksLikeNetworkFailure` always answered false, so a download failure lost the network reason and the retry hint | `ensuring a package is installed in the home > a network failure says the package could not be downloaded and to retry` |
+
+## T-0678 — a question's address, code and secret answer
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0678-M1 | packages/engine/src/runner/ask.ts | a secret answer's text was written into the answer fact like any other answer | `a question with an address, a code and a secret answer > the item carries the address and the code, and the secret text reaches the step but not the log` |
+| T-0678-M2 | packages/engine/src/plugin/registry.ts | a secret question was allowed to wait past its grace, where its text cannot reach the step | `a question with an address, a code and a secret answer > a secret question that would wait past its grace is refused before anyone is asked` |
+| T-0678-M3 | packages/engine/src/runner/ask.ts | an answer that carried no text for a secret question was accepted | `a question with an address, a code and a secret answer > an answer that drops the secret text is refused while the step runs` |
+| T-0678-M4 | packages/engine/src/plugin/question-form.ts | a question's address was not checked, so a `javascript:` address passed | `a question's address, code and secret > an address must be an absolute http or https one` |

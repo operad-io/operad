@@ -141,6 +141,8 @@ export interface PluginRegistryOptions {
   readonly requireDependencies?: boolean | undefined;
   /** Whether to validate each plugin's settings section. */
   readonly validateSettings?: boolean | undefined;
+  /** The kernel's runs, so a standing or action hook can tell a live one. */
+  readonly runLookup?: RunLookup | undefined;
   /**
    * Called when an action sends an event with `ctx.emit`: the kernel routes it
    * through the rules. Without it an action has no `emit`.
@@ -239,6 +241,8 @@ export class PluginRegistry {
     | ((runId: string) => MaybePromise<boolean | void>)
     | undefined;
   private readonly onEvent: ((event: TriggerEvent) => MaybePromise<void>) | undefined;
+  /** The kernel's runs when the host supplies them; a hook can tell a live one. */
+  private runLookup: RunLookup | undefined;
   private readonly plugins: readonly LoadedPlugin[];
   private readonly byName: ReadonlyMap<string, LoadedPlugin>;
   private readonly viewByType: ReadonlyMap<string, { readonly plugin: LoadedPlugin; readonly views: ObjectViews }>;
@@ -275,6 +279,7 @@ export class PluginRegistry {
     this.onCancelRun = options.onCancelRun;
     this.onRunActive = options.onRunActive;
     this.onEvent = options.onEvent;
+    this.runLookup = options.runLookup;
 
     const clock = options.clock ?? (() => Date.now());
     this.store =
@@ -986,6 +991,14 @@ export class PluginRegistry {
       const onTimeout =
         found.step.resumable === false ? "reject_once" : request.onTimeout;
       if (
+        questions?.some((question) => question.secret === true) === true &&
+        onTimeout !== "reject_once"
+      ) {
+        throw new PluginError(
+          `step "${use}": ask: a secret question cannot wait, so its onTimeout must be "reject_once"`,
+        );
+      }
+      if (
         onTimeout !== "reject_once" &&
         !found.step.results.includes("waiting")
       ) {
@@ -1047,6 +1060,7 @@ export class PluginRegistry {
       settings: this.settingsFor(found.plugin.name),
       secrets: this.secretsFor(found.plugin.name),
       runId: options.runId,
+      harnesses: this.plugins.filter((plugin) => plugin.kind === "harness").map((plugin) => plugin.name),
       object: options.object,
       params: options.params ?? null,
       flow: options.flow,
@@ -1257,6 +1271,7 @@ export class PluginRegistry {
       harnesses: this.loadedHarnesses(),
       models: this.loadedModels(),
       efforts: this.loadedEfforts(),
+      stepLoaded: (use) => this.stepIndex.has(use),
       ...(this.onCancelRun === undefined ? {} : { runs: this.runControl() }),
     };
   }
@@ -1389,6 +1404,8 @@ export class PluginRegistry {
       actor,
       answer,
       harnesses: this.loadedHarnesses(),
+      ...(this.runLookup === undefined ? {} : { runLookup: this.runLookup }),
+      stepLoaded: (use) => this.stepIndex.has(use),
       models: this.loadedModels(),
       efforts: this.loadedEfforts(),
       actions: object === undefined ? [] : await this.actionInfosFor(object),
@@ -1599,11 +1616,12 @@ export class PluginRegistry {
    * The items plugins ask a person to know about. A hook that throws is
    * logged and shows nothing, so one plugin cannot hide the others.
    */
-  async standing(): Promise<readonly StandingEntry[]> {
+  async standing(runs?: RunLookup): Promise<readonly StandingEntry[]> {
     const items: StandingEntry[] = [];
     for (const plugin of this.plugins) {
       if (plugin.standing === undefined) continue;
       try {
+        const lookup = runs ?? this.runLookup;
         const found = await plugin.standing({
           plugin: plugin.name,
           home: this.home,
@@ -1615,6 +1633,10 @@ export class PluginRegistry {
           settings: this.settingsFor(plugin.name),
           secrets: this.secretsFor(plugin.name),
           loaded: this.plugins.map((item) => item.name),
+          harnesses: this.plugins.filter((item) => item.kind === "harness").map((item) => item.name),
+          ...(lookup === undefined ? {} : { runLookup: lookup }),
+          signedIn: (harness) => this.signedInFor(harness),
+          stepLoaded: (use) => this.stepIndex.has(use),
         });
         for (const item of found) {
           const object =
@@ -1708,6 +1730,14 @@ export class PluginRegistry {
       });
     }
     return entries;
+  }
+
+  /**
+   * Gives the standing and action hooks the kernel's runs, so a plugin does not
+   * offer a second run while one is live. `serve` calls it once its log is open.
+   */
+  useRunLookup(runs: RunLookup | undefined): void {
+    this.runLookup = runs;
   }
 
   /** Runs each plugin's `onTick` once; a failure is logged, not raised. */

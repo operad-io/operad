@@ -550,3 +550,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0676-M2 | packages/tui/src/state.ts | the starting chat asked for its agent first instead of leaving the create action's arguments at their defaults and opening the first-message input | `a client with no chosen parent starts the default bot's new chat > the parent opens, then the first-message input is ready with the arguments left at their defaults` |
+
+## T-0678 — a question's address, code and secret answer
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0678-M7 | packages/tui/src/view/index.ts | a secret answer was drawn as typed instead of masked | `a pending form with an address, a code and a secret > shows the address and the code, masks the answer, and sends it as answers` |

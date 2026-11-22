@@ -82,3 +82,30 @@ play no part. The flow edge a late form answer takes is the one the asker named
 in `resume.choice` when that is an edge of the wait step, else the answer's own
 choice when it is an edge, else the wait step's first choice. A harness that
 only gives text has no form and keeps D1 to D6 exactly as they are.
+
+### D8: A question may show an address and a code, and take a secret answer
+
+A question may carry `url`, an absolute `http:` or `https:` address a client
+shows and may open; `code`, a short bounded text a client shows for a person to
+copy (a device code); and `secret: true`, which makes the person's answer a
+secret. `secret` needs `freeText: true`, because the answer is the person's own
+text. The kernel checks the scheme and length of the address, the length of the
+code and the flags before anyone is asked, then carries the fields unchanged
+beside the question: into the wait's record, the pending view, the HTTP pending
+read, the MCP `pending` tool, a channel event and the resumed step's
+`askAnswer`. The question's text, address and code are not secret and are shown
+as written.
+
+A secret answer never enters a fact, an input payload, `history`, a log line or
+an error message. The kernel records only that the question was answered; the
+text reaches the step that asked while that step runs, and a step that is not
+running cannot receive it. A secret question therefore cannot wait past its
+grace: its `onTimeout` must be `reject_once`, and the kernel refuses the ask
+before anyone sees it otherwise. An answer to a secret question whose step has
+ended is refused like any other late answer, and the person is asked again. A
+client masks the input and never echoes the value.
+
+An address is the plugin's to validate, not the kernel's: the kernel checks the
+scheme and length, and the plugin checks the host and path of a login address
+before it puts it on a question. A client opens only an address that passed
+those checks.

@@ -347,3 +347,9 @@ changes for bots, in the order they were recorded. The root
 | T-0685-M4 | packages/bot/src/tidy.ts | a failed run's card showed the outcome line and cost instead of one short reason | `Run and Skip > a tidy run that fails leaves a failed card` |
 | T-0685-M5 | packages/bot/src/tidy.ts | the notice line left out that only additions were kept for a voided rewrite | `Run and Skip > the notice line names the change, the cost and a voided rewrite` |
 | T-0685-M6 | packages/bot/src/tidy.ts | the failed state offered neither `run` nor `skip` | `Run and Skip > a tidy run that fails leaves a failed card` |
+
+## T-0678 — a bot without a model login
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0678-M6 | packages/bot/src/login.ts | the login step returned the model but never wrote it into the bot's settings | `a bot without a model login > the flow calls the agent's login step and writes the model into the bot's settings` |

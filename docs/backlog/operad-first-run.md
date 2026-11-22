@@ -79,12 +79,11 @@ owner 2026-11-21：用户也可能只装桌面应用就开始用。下面的现�
 - **pi 1.6.0 下 pi harness 能回复**：`pi.model` 写明 `openai-codex/gpt-5.6-terra` 时，一条消息正常收到回复。
 - **没写模型时 pi 的 chat 失败，这正是新 home 的状态**：`pi.model` 没设时，回复以 "No API key found for the selected model" 失败；pi 1.5.2 和 1.6.0 都一样，而 `pi -p` 用自己的默认模型（`~/.pi/agent/settings.json` 的 `defaultProvider`、`defaultModel`）是正常的。ADR 0023 D4 说默认用用户 pi 的默认模型，worker 实际没有做到；根因没有查完（`index.ts` 的 `piDefaultModel` 只用在模型列表里，worker 在 `input.model` 为空时让 pi 自己选）。这是一个 bug，任务 1 之前要修。
 - memory 开着并跑过 serve 之后，`default` 这个名字有歧义（`bot-tidy:default` 和 `bot:default`），命令行要写 `bot:default`。
+- **`ModelRuntime.login` 在 Bun 子进程里的 OAuth 回调可用**（T-0678 探针，pi 1.6.0，离线模拟 token 交换）：`openai-codex` 的浏览器回调在 `127.0.0.1:1455` 收到 200 并完成登录、写入 `auth.json`；浏览器不回来时粘贴跳转地址可以完成；state 不对被拒；取消立即结束；1455 被占用时自动退回粘贴地址。探针保留在 `packages/harness/pi/test/heavy/oauth.test.ts`。
 
 ## 没有核实的
 
-- `ModelRuntime.login` 只读了 pi 1.5.2 和 1.6.0 的类型声明，没有实际跑一次登录；在 Bun 子进程里跑 OAuth 回调是否正常未核。
 - operad 装的 pi 和用户自己的 pi 是两个版本时，读写同一份 `auth.json`（含 token 刷新）是否安全未核（研究第 6 节已记）。
-- 一台完全没有 pi 登录的机器上，登录之后默认模型选哪个没有定：用户没有 pi 的 `settings.json`，要在登录那一步顺带选出默认模型。
 - dev 关着时仓库上的 chat（`dev:chat`）没有；默认 `mcp.actions` 除 `chat:close` 外全是 `dev:*`。
 - README、quickstart、troubleshooting 里写"需要一个带 remote 的仓库和一个 agent"的地方要跟着改。
 
@@ -96,7 +95,7 @@ owner 2026-11-21：用户也可能只装桌面应用就开始用。下面的现�
 1. **新 home 默认走助理**（已完成 T-0675）。`defaultPluginsFor` 改成 `chat`、`bot`、`memory` 加找到的 agent；`dev`、`shell`、`pool` 不开；默认 `mcp.actions` 去掉没开的插件的动作；已有 home 不变。改 ADR 0012 D2、0034。README 和 quickstart 的第一段跟着改（定位不变）。
 2. **`operad` 不带参数进默认 bot 的对话**（已完成 T-0676）。没有 home 就建，没有 serve 就起，打开 tui 并落在默认 bot 的新 chat 上。
 3. **没有 agent 时由 operad 装 pi**（已完成 T-0677）。`@operad-io/harness-pi` 依赖 `@earendil-works/pi-coding-agent`（钉版本），按 ADR 0012 D4 在开启时装进 home；`PATH` 上有 `pi` 就用用户的；有 `claude` 或 `radian` 也不装；`operad init` 在没有 agent 时不再失败。改 ADR 0022 D6、0023 D9。安装进度能从 serve 读到，断网时说明原因并可重试。
-4. **第一次登录是一个待处理项**。问题的形状里加地址、设备码、密文输入（改 ADR 0008、0014），TUI 先画出来；用 `ModelRuntime.login`；登录后选出默认模型。先做一个探针核实 Bun 子进程里的 OAuth 回调。
+4. **第一次登录是一个待处理项**（已完成 T-0678）。问题的形状里加地址、设备码、密文输入（改 ADR 0008、0014），TUI 先画出来；用 `ModelRuntime.login`；登录后选出默认模型。先做一个探针核实 Bun 子进程里的 OAuth 回调。
 5. **`Setup Dev`（配置开发流程）**。入口把准备好的 prompt 交给 bot；bot 读仓库时走一次性的 ask；结果是一个待处理项（开启 dev、`dev.json`、注册仓库），批准后落盘。`docs/user/setup-prompt.md` 改成这个流程的来源。
 6. **operad-desktop**（在那个仓库开任务，依赖 1 到 5）：引导的 agent 一步不再拦人并显示安装进度；引导里完成登录（地址、设备码、密文输入）；引导结束进默认 bot 的对话；dev 关着时 Dev 分组收成 `Setup Dev` 入口；引导完成的标记跟着 home；自带的 operad 和 `PATH` 上的比较版本，用新的并提醒。
 7. **iOS**：登录的待处理项的显示（地址、设备码、密文输入）。

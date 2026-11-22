@@ -629,6 +629,19 @@ export interface AskQuestion {
   readonly multiple?: boolean | undefined;
   /** True when the person may answer in their own words. */
   readonly freeText?: boolean | undefined;
+  /**
+   * An absolute `http:` or `https:` address a client shows and may open, such
+   * as a login page. The plugin checks the host and path before it puts one
+   * here; the kernel checks only the scheme and the length (ADR 0008 D8).
+   */
+  readonly url?: string | undefined;
+  /** A short bounded text a client shows for the person to copy, such as a device code. */
+  readonly code?: string | undefined;
+  /**
+   * True when the person's own text is a secret: a client masks the input, and
+   * the kernel keeps the answer out of every fact and record. Needs `freeText`.
+   */
+  readonly secret?: true | undefined;
 }
 
 /** The person's answer to one question of a form. */
@@ -741,6 +754,8 @@ export interface StepAsker {
 /** The context a step run receives. */
 export interface StepContext extends PluginBaseContext {
   readonly runId: string;
+  /** The names of the loaded plugins of kind `harness`. */
+  readonly harnesses: readonly string[];
   readonly object: RunObject | undefined;
   /** Fixed JSON the flow was started with; null when it was given none. */
   readonly params: JsonValue;
@@ -1113,6 +1128,8 @@ export interface ActionEnv {
   readonly models?: Readonly<Record<string, HarnessModels>> | undefined;
   /** The efforts each loaded harness plugin declares, by plugin name. */
   readonly efforts?: Readonly<Record<string, HarnessEfforts>> | undefined;
+  /** Whether a plugin that declares this step is loaded now. */
+  readonly stepLoaded?: ((use: string) => boolean) | undefined;
   /**
    * Whether a run still exists and has not ended, so an offer can tell a live
    * run from one the host says has ended; absent when the host cannot tell.
@@ -1333,6 +1350,10 @@ export interface ActionEvent {
 export interface ActionContext extends PluginBaseContext {
   /** The names of the loaded plugins of kind `harness`. */
   readonly harnesses: readonly string[];
+  /** The kernel's runs, when the host supplies them; a plugin can avoid starting a second one. */
+  readonly runLookup?: RunLookup | undefined;
+  /** Whether a plugin that declares this step is loaded now. */
+  readonly stepLoaded?: ((use: string) => boolean) | undefined;
   /** The models each loaded harness plugin declares, by plugin name. */
   readonly models: Readonly<Record<string, HarnessModels>>;
   /** The efforts each loaded harness plugin declares, by plugin name. */
@@ -1510,6 +1531,19 @@ export interface StandingItem {
 export interface StandingContext extends PluginBaseContext {
   /** The names of the plugins this process loaded. */
   readonly loaded: readonly string[];
+  /** The names of the loaded plugins of kind `harness`. */
+  readonly harnesses?: readonly string[] | undefined;
+  /** The kernel's runs, when the host supplies them; a standing item can tell a live run. */
+  readonly runLookup?: RunLookup | undefined;
+  /**
+   * Whether a loaded harness reports its agent signed in (ADR 0022);
+   * undefined when it cannot tell or is not loaded.
+   */
+  readonly signedIn?:
+    | ((harness: string) => MaybePromise<boolean | undefined>)
+    | undefined;
+  /** Whether a plugin that declares this step is loaded now. */
+  readonly stepLoaded?: ((use: string) => boolean) | undefined;
 }
 
 /** A plugin's declared dependencies: plugins and the plugin API version. */
