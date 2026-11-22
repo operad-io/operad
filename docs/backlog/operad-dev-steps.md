@@ -1,7 +1,7 @@
 # operad-dev-steps：dev 从单线程一步一步走到并行
 
-- 状态：方向和待决 1 至 7 owner 已定（2026-11-22）；「提议的形状」按已定修正过；ADR 0020、0028 的改动和新决定 0039 已写，随后面的任务落地生效
-- 涉及 ADR：0039（`workIn`）、0028 D3（仓库对话在主 clone 只读）、0020 D3 和 D4（dev 在开头加 worktree、结尾加 integrate；改动只经 integrate 到 main）、0020 D9（`commit`）、0021（并发）、0025（访问档）。只读了 0020 和 0028 的正文，其余是估计，开工前核对
+- 状态：方向和待决 1 至 7 owner 已定（2026-11-22）；「提议的形状」按已定修正过；ADR 0020、0028 的改动和新决定 0039 还没写进 docs/adr：草稿在 tag `draft/dev-steps-adr`，T-0716 至 T-0721 各自带上自己那部分，和代码一起合并
+- 涉及 ADR：0039（`workIn`，待写）、0028 D3（仓库对话在主 clone 只读）、0020 D3 和 D4（dev 在开头加 worktree、结尾加 integrate；改动只经 integrate 到 main）、0020 D9（`commit`）、0021（并发）、0025（访问档）。只读了 0020 和 0028 的正文，其余是估计，开工前核对
 - 涉及：`operad-first-run.md`（`Setup Dev`）；`operad-setup-guides.md`（每一步由 bot 提议）；`operad-desktop.md` 待决 4（owner 2026-11-22 已定：没有 remote 的仓库可以加，合并不推送）；`operad-dev-flows.md`
 - 来源：owner 2026-11-22 的讨论
 
@@ -28,6 +28,14 @@ dev 今天的基本形态是多 agent 加 git worktree：每个任务一个 work
 11. **branch 方式下，等人决定、可以合并、暂停的任务一直占着主 clone 的名额**，直到合并、取消或被拒（A）。并发是 1，所以此时不开第二个任务。
 12. **`dev.json` 在一次尝试开始时读一次并记下来**（B）：就地时主 clone 在任务分支上，读到的是任务分支的版本，所以以尝试开始时记下的为准，不在中途重读。
 13. **pool 仍然是必需的**（D）：第 1 步也要开 pool 插件。
+14. **没有 git 也能用**（owner 2026-11-22，原话"还是开任务的时候需要git吧，没有git可以对话。并且改动项目内的文件"）：没有 git 的文件夹可以加进来、可以对话，对话可以改里面的文件；开任务才需要 git。
+15. **电脑上没装 git 时，开任务之前什么都不问**（owner 2026-11-22，原话"开任务的时候吧，用户需要可以按现有的agent模式，不开任务的，通过会话完成任务"）。没装 git 和文件夹里没有 git 是同一个起点：只用对话。检测 git 不能在加文件夹时把系统的安装框弹出来（macOS 没装命令行工具时 `/usr/bin/git` 会弹框；先用 `xcode-select -p` 之类判断，未核实）。
+16. **operad 不内置 git**（owner 2026-11-22，"不内置git"）。开任务时没装 git，bot 带用户装。怎么带是提议（operad-c4，owner 未逐条确认）：按系统给命令（macOS `xcode-select --install`，Windows `winget install Git.Git`，Linux 用包管理器），bot 要跑的每条命令都是人批准的待处理项；开任务时用大白话说"开任务需要 git，还没装"和下一步；doctor 和 dev 的 setup 检查也列出这一项。
+
+未定（问了 owner）：
+- 文件夹没有 git 时开任务：bot 提议"在这里建 git 并做第一次提交"（先写 `.gitignore`，列出要提交的文件，批准后成为没有 remote 的 branch 方式仓库，见 T-0722），还是拒绝并说明。lead 建议前者。
+- git 仓库的子目录（monorepo 的一个包）：先拒绝并提示加仓库根目录（lead 建议），还是支持。
+- 有 git 但还没有任何提交：任务分支需要起点提交，代码里怎么处理没有核实。
 
 ## 提议的形状（草稿）
 
