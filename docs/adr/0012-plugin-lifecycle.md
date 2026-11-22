@@ -14,7 +14,7 @@ The SDK carries a version number (`operadPlugin: 1`). `operad plugin check <path
 
 ### D2: Plugins can be enabled and disabled
 
-`plugins.<name>.enabled` in `config.json` (boolean, default `true`). `operad init` writes `shell`, `chat`, `dev` and `pool` into a new home, and a harness plugin for each agent command it finds on `PATH`: `radian`, `claude` and `pi`, in that order. When it finds none, it writes `radian` and fails with a message naming the three agents and how to install one. `codex` is not part of this choice: it needs Codex's own app-server and stays off until `operad plugin enable codex`. A home that already has a `config.json` is not rewritten.
+`plugins.<name>.enabled` in `config.json` (boolean, default `true`). `operad init` writes `chat`, `bot` and `memory` into a new home, and a harness plugin for each agent command it finds on `PATH`: `radian`, `claude` and `pi`, in that order. A new home leaves `shell`, `dev` and `pool` off; a person turns them on when a repository's work needs them. When it finds no agent command, it writes `radian` and fails with a message naming the three agents and how to install one. `codex` is not part of this choice: it needs Codex's own app-server and stays off until `operad plugin enable codex`. A home that already has a `config.json` is not rewritten, so an upgrade keeps the plugins and switches that home already had.
 
 A repository whose `.operad/dev.json` names neither `worker` nor `workers`, and leaves `reviewer.use` out, uses the first enabled harness plugin in `config.json` in the fixed order `radian`, `claude`, `pi`, `codex`. With no enabled harness it uses `radian/agent`.
 
