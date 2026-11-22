@@ -43,31 +43,33 @@ The user layer is a JSON file with a Schema that a person can open, edit by hand
 
 ### D8: A chat's access level composes its profile
 
-A chat's access level is one of `plan`, `ask`, `edits` and `full`. It is a field of the access profile, `level`, so every harness receives the same profile and judges it with the same matcher. The level adds asks to the profile. It never removes a deny, a secret rule, a `readOnly` rule, an `askCommands` or `askPaths` rule: the stricter rule wins.
+A chat's access level is one of `plan`, `ask`, `edits` and `full`. It is a field of the access profile, `level`, so every harness receives the same profile and judges it with the same matcher. The level adds asks to the profile. A deny, a secret rule and a `readOnly` rule always win. `plan`, `ask` and `edits` also keep the profile's own `askCommands` and `askPaths`; `full` asks nothing, so those asks and the outward-write questions do not apply there.
 
 - `plan`: the working directory is read-only, as `readOnly: true` is today. A write there and a command not known to only read ask.
 - `ask`: every write and every command not known to only read asks.
 - `edits`: a write inside the working directory does not ask; a write outside it asks, and a command not known to only read asks.
-- `full`: the level adds no ask. A command the matcher cannot follow — inline code, a shell expansion, a path after a directory change it cannot follow — runs without a question, unless a deny plainly matches what the matcher can see (a `denyCommands` part or a `denyPaths` path). Inline code that would be refused while `denyCommands` is set and no `askCommands` is set is allowed too, unless the same plain deny matches. The profile's own `denyCommands`, `denyPaths`, `askCommands` and `askPaths` still hold, as do outward-write questions in a background run. `plan`, `ask` and `edits` keep asking about a command the matcher cannot follow.
+- `full`: the level adds no ask, and the profile's own `askCommands`, `askPaths`, unlisted MCP tools and outward-write questions do not ask either. A `denyCommands` or `denyPaths` match still refuses, a `readOnly` working directory still asks about a write or a command not known to only read, and a write under `readPaths` still asks. A command the matcher cannot follow — inline code, a shell expansion, a path after a directory change it cannot follow — runs without a question, unless a deny plainly matches what the matcher can see (a `denyCommands` part or a `denyPaths` path). Inline code that would be refused while `denyCommands` is set and no `askCommands` is set is allowed too, unless the same plain deny matches. `plan`, `ask` and `edits` keep asking about a command the matcher cannot follow.
 
 A level is composed into the profile by `@operad-io/access-match`; the kernel does not interpret it. `claude` and `pi` carry every level and declare `level` among the profile fields they enforce. `codex` and `radian` carry none: a reply at any level is refused at its start with a message naming the level, never answered with the level ignored.
 
 The level is read for each call, not once per reply. A `chat:access` change while a reply runs applies to every call that reply makes after the change, in every harness that takes an access profile; a lowering applies the same way, so a call at `full` that comes after a change to `ask` asks. A question that is open when the level changes is checked again under the new level; when the new level would not ask it, it is answered `allow_once` and the question's history note is the level's own title.
 
-The user-visible names are `Plan only`, `Ask each time`, `Accept edits` and `Full access` (Chinese: 仅规划, 逐次确认, 自动接受编辑, 完全访问), under the menu title `Access` (权限模式). Each level has a short description in the chat action's information; `full` says that it skips every question the level adds while the profile's deny and ask rules still hold.
+The user-visible names are `Plan only`, `Ask each time`, `Accept edits` and `Full access` (Chinese: 仅规划, 逐次确认, 自动接受编辑, 完全访问), under the menu title `Access` (权限模式). Each level has a short description in the chat action's information; `full` says that it skips every question while a deny still refuses and a read-only working directory still asks.
 
 ### D9: One built-in default, which can only be tightened
 
-The default profile lives in `@operad-io/access-match`, beside the matcher and free of engine internals, as `defaultAccess()`. Every chat and every generated step starts from it. A bot adds the operad home, its skills and the repositories it knows; a repository chat adds its read-only main clone and its skills; a flow may add rules to a step it generates. Each addition appends to the default's deny and ask lists and may turn `readOnly` on; none removes a default deny or ask. The access level is composed after the additions, so `full`, too, keeps the default's deny and ask rules. A harness applies the default to a generated step that names no profile. The default is shipped with operad; this decision does not add another file a user could replace it with.
+The default profile lives in `@operad-io/access-match`, beside the matcher and free of engine internals, as `defaultAccess()`. Every chat and every generated step starts from it. A bot adds the operad home, its skills and the repositories it knows; a repository chat adds its read-only main clone and its skills; a flow may add rules to a step it generates. Each addition appends to the default's deny and ask lists and may turn `readOnly` on; none removes a default deny, and an added ask still applies below `full`. The access level is composed after the additions: `full` keeps the default's deny rules while the default's and added ask rules do not apply. A harness applies the default to a generated step that names no profile. The default is shipped with operad; this decision does not add another file a user could replace it with.
 
-A dev task is the exception: every agent it runs — the worker, the reviewer, the integration's conflict fixer — starts from the default's deny rules but not its ask rules, so the inline-code ask those rules trigger does not stop a scripted edit. Each works in its own worktree and the change reaches main only through checks, review and a merge. A flow profile still adds: it cannot remove a default deny, and its own asks still hold. Chats and other generated steps keep the default in full, asks included. A task's step is never stopped because of the default: a command the matcher cannot follow (inline code, a shell expansion, a path after a directory change it cannot follow) is allowed for it, where a chat below `full` would be asked or refused, and a chat at `full` has the same rule (D8); only a plain match of a deny refuses it. No person is there to answer a task's question, and its change still passes checks, review and a merge.
+A dev task is the exception: every agent it runs — the worker, the reviewer, the integration's conflict fixer — starts from the default's deny rules but not its ask rules, so the inline-code ask those rules trigger does not stop a scripted edit. Each works in its own worktree and the change reaches main only through checks, review and a merge. A flow profile still adds: it cannot remove a default deny, and its own asks still hold. Chats and other generated steps keep the default at levels below `full`, asks included; at `full` only its deny rules and `readOnly` apply. A task's step is never stopped because of the default: a command the matcher cannot follow (inline code, a shell expansion, a path after a directory change it cannot follow) is allowed for it, where a chat below `full` would be asked or refused, and a chat at `full` has the same rule (D8); only a plain match of a deny refuses it. No person is there to answer a task's question, and its change still passes checks, review and a merge.
 
 ### D10: A run no person started asks before every outward write
 
 A run is **person-started** when a person wrote a message in the run's chat
 (`personStarted` in `@operad-io/harness-process`). Every other run — a schedule,
 a webhook, incoming mail, another event — is a background run. In a background
-run, an **outward write** asks a person before it happens.
+run below `full`, an **outward write** asks a person before it happens. At
+`full`, D8 leaves only a deny, `readOnly` and a write under `readPaths`, so an
+outward write does not ask.
 
 An outward write is a message, mail or post sent out; a `git push`; or a write
 call to an outside service. It is not outward when it goes to one of the owner's
@@ -124,11 +126,11 @@ target (`mcp <server>.<tool>`); a tool the allowlist names is not outward. The
 check has the same place the bot guard already has in front of a server's tools.
 
 `@operad-io/harness-process` sets `background: true` on the profile it hands a
-worker when no person started the run. The matcher then treats an outward
-command or MCP call as an ask, and the host turns it into the pending item of
-D10. The harness flows that carry a question to a `wait_person` keep their
-existing permission choices; a question answered while the step is alive uses
-`send_once`.
+worker when no person started the run. Below `full`, the matcher then treats an
+outward command or MCP call as an ask, and the host turns it into the pending
+item of D10. At `full` the flag adds no outward question. The harness flows that
+carry a question to a `wait_person` keep their existing permission choices; a
+question answered while the step is alive uses `send_once`.
 
 What was looked at: the Telegram senders (replies, commands, pending items, progress) are a source plugin, not a step or action, and every target is a chat that a listed owner user opened with operad, so they are owner channels and not outward. A bot proposal writes only local files, and only after a person approves it. A chat reply goes to the chat's own bound channels, also owner channels. `shell/command` and `shell/check` declare `reachesOutside` and guard each line; `dev/integrate` declares it and guards its push with the repository and main branch as the target. This decision does not cover the paths that start a process without the profile: `shell/probe`, the other git and editor commands of `dev`, and a bot's MCP server start.
 
