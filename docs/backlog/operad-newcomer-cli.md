@@ -1,6 +1,6 @@
 # operad-newcomer-cli：命令行对新手的说法
 
-- 状态：草稿（2026-11-22，owner 要求整理成 backlog 交 lead）；各条是一次试用得出的建议，owner 没有逐条确认；没有切任务
+- 状态：owner 2026-11-22 同意方向和 lead 对三个待决的建议（见「决定」）；先切第 1、2、3 条和 `operad doctor`，第 4 到 8 条之后再切
 - 涉及 ADR：没有逐条核对。估计会碰 0012（插件开关，第 3 条）、0013（动作即命令，第 1、2、5 条的报错和帮助）、0017（设置，第 6 条）；开工前由 lead 核对
 - 涉及：`operad-first-run.md`（新 home 默认 dev 关着，是第 2、3 条的起因）；`operad-setup-guides.md`（第 2、3 条指向 `Setup Dev`）
 - 来源：owner 2026-11-22 问"可用性、新手友好还有什么建议"；用一个临时 home（`OPERAD_HOME` 指到临时目录，main `fb7d1ea3`）把命令逐条敲了一遍，下面的输出都是实测
@@ -44,11 +44,11 @@
    - 现状：`docs/user/quickstart.md` 第二节就讲 `failed.match`、`failed.stress`；`docs/user/dev.md` 有 1114 行。
    - 建议：一个示例仓库加每一步的预期输出，走完一次"任务、检查、评审、合并"；配置放在这之后。
 
-## 等 owner 决定
+## 决定（owner 2026-11-22，按 lead 的建议）
 
-1. **要不要有一个"检查一切是否正常"的命令。** 新手会敲 `operad status` 或 `operad doctor`。现状：`operad status` 得到 `action "status" needs an object id`，`operad doctor` 是未知命令；这件事今天靠重跑 `operad init`。这是新的用户词，要 owner 批准。
-2. **开启 dev 时是顺带开启 shell 和 pool，还是只提示。**（第 3 条）
-3. **第 5 条"高级"一组放哪些命令。**
+1. **加 `operad doctor`**（新用户词，已批准）。只读不改：列出插件、agent、登录、serve、测试机是否正常；有问题的每一项给下一步要敲的命令。不用 `status`：`operad status` 已是 chat 的动作。
+2. **开启 dev 时顺带开启它依赖的 pool 和 shell**，并当场说一句开了哪些；以后可以单独关。
+3. **`--help` 分三组**：日常（不带参数的 `operad`、`pending`、`list`、`show`、`history`、`running`）；设置（`init`、`settings`、`plugin`、`secret`、`pair`）；高级（`trigger`、`trigger rules`、`operad:start`、`operad:dismiss`、`flows`、`plugin check`、`http token rotate`、`mcp`、`serve stop`）。
 
 ## 核实过的
 
