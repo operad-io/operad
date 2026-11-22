@@ -656,7 +656,13 @@ describe("operad command", () => {
   test("plugin enable adds a shipped plugin the default config leaves out", async () => {
     const { home } = await makeNamedHome({});
     const enabled = capture();
-    expect(await main(["plugin", "enable", "pi"], { home, io: enabled.io })).toBe(0);
+    expect(
+      await main(["plugin", "enable", "pi"], {
+        home,
+        io: enabled.io,
+        pluginInstall: fakePiInstall(),
+      }),
+    ).toBe(0);
     expect(enabled.text()).toContain("pi: enabled");
 
     const listed = capture();

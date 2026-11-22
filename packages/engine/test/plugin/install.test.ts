@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
@@ -12,7 +12,24 @@ import {
 } from "../../src/index.ts";
 import { cleanupTempRoots, tempRoot } from "./support.ts";
 
-afterAll(cleanupTempRoots);
+// The installs here are local tarballs. A cache this file made empty and a
+// registry that cannot answer keep them from depending on the machine's cache
+// or on the network; a local install that tried either would fail here.
+const previousCache = process.env.BUN_INSTALL_CACHE_DIR;
+const previousRegistry = process.env.BUN_CONFIG_REGISTRY;
+
+beforeAll(async () => {
+  process.env.BUN_INSTALL_CACHE_DIR = await tempRoot("operad-bun-cache-");
+  process.env.BUN_CONFIG_REGISTRY = "http://127.0.0.1:9/";
+});
+
+afterAll(async () => {
+  if (previousCache === undefined) delete process.env.BUN_INSTALL_CACHE_DIR;
+  else process.env.BUN_INSTALL_CACHE_DIR = previousCache;
+  if (previousRegistry === undefined) delete process.env.BUN_CONFIG_REGISTRY;
+  else process.env.BUN_CONFIG_REGISTRY = previousRegistry;
+  await cleanupTempRoots();
+});
 
 interface InstalledFixture {
   readonly home: string;

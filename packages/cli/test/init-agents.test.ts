@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { main, type CliIo } from "../src/main.ts";
 import type { InstallRunner } from "@operad-io/engine";
@@ -140,7 +140,13 @@ async function initWith(
   }
   if (options.piTarball !== undefined) namePiTarball(home, options.piTarball);
   const previous = process.env.PATH;
+  const previousCache = process.env.BUN_INSTALL_CACHE_DIR;
+  const previousRegistry = process.env.BUN_CONFIG_REGISTRY;
   process.env.PATH = bin;
+  // The pi install is a local tarball; an empty cache and a registry that
+  // cannot answer keep the test off both the machine's cache and the network.
+  process.env.BUN_INSTALL_CACHE_DIR = mkdtempSync(join(root, "bun-cache-"));
+  process.env.BUN_CONFIG_REGISTRY = "http://127.0.0.1:9/";
   try {
     const output = capture();
     const code = await main(["init"], {
@@ -155,6 +161,10 @@ async function initWith(
   } finally {
     if (previous === undefined) delete process.env.PATH;
     else process.env.PATH = previous;
+    if (previousCache === undefined) delete process.env.BUN_INSTALL_CACHE_DIR;
+    else process.env.BUN_INSTALL_CACHE_DIR = previousCache;
+    if (previousRegistry === undefined) delete process.env.BUN_CONFIG_REGISTRY;
+    else process.env.BUN_CONFIG_REGISTRY = previousRegistry;
   }
 }
 
