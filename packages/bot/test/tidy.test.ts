@@ -8,6 +8,7 @@ import {
   BotTidySource,
   TIDY_TYPE,
   tidyDataOf,
+  tidyOutcomeLine,
   tidyPrompt,
   tidyWork,
   type ScheduleNotice,
@@ -364,7 +365,28 @@ describe("the link lists in the tidy prompt", () => {
 });
 
 describe("Run and Skip", () => {
-  test("Run starts the tidy after no chat is replying, and Skip closes the result until the next check", async () => {
+  test("Skip closes a pending card until the next check finds work", async () => {
+    const s = await setup();
+    try {
+      note(s.memory, "tea.md", "likes tea\n");
+      s.clock.value = Date.parse("2026-01-01T03:31:00Z");
+      await s.source.poll();
+      expect((await tidy(s.r))?.state).toBe("pending");
+
+      await s.r.act(TIDY_TYPE, "default", "bot/skip");
+      expect((await tidy(s.r))?.state).toBe("skipped");
+      expect(await s.r.registry.standing()).toEqual([]);
+
+      note(s.memory, "coffee.md", "likes coffee\n");
+      s.clock.value = Date.parse("2026-01-02T03:31:00Z");
+      await s.source.poll();
+      expect((await tidy(s.r))?.state).toBe("pending");
+    } finally {
+      s.views.close();
+    }
+  });
+
+  test("Run starts the tidy after no chat is replying and leaves no pending item when it finishes", async () => {
     const s = await setup();
     try {
       note(s.memory, "tea.md", "likes tea\n");
@@ -388,24 +410,17 @@ describe("Run and Skip", () => {
       await s.r.reply(id);
       await s.source.settled();
       expect((await tidy(s.r))?.state).toBe("result");
-      const result = (await s.r.registry.standing())[0];
-      expect(result?.prompt).toContain("finished");
-      expect(result?.prompt).toContain("cost unknown");
-
-      await s.r.act(TIDY_TYPE, "default", "bot/skip");
-      expect((await tidy(s.r))?.state).toBe("skipped");
       expect(await s.r.registry.standing()).toEqual([]);
-
-      note(s.memory, "coffee.md", "likes coffee\n");
-      s.clock.value = Date.parse("2026-01-02T03:31:00Z");
-      await s.source.poll();
-      expect((await tidy(s.r))?.state).toBe("pending");
+      expect(s.notices).toHaveLength(1);
+      expect(s.notices[0]?.summary).toContain("default:");
+      expect(s.notices[0]?.summary).toContain("cost unknown");
+      expect(s.notices[0]?.summary).not.toContain("ok");
     } finally {
       s.views.close();
     }
   });
 
-  test("a result card reads the chat's own memory commit before an empty tidy commit", async () => {
+  test("a finished run's full result stays in the tidy object's own section", async () => {
     const s = await setup();
     try {
       commitMemory(s.memory, "memory: bot default, chat C-0");
@@ -433,12 +448,80 @@ describe("Run and Skip", () => {
       expect(data?.state).toBe("result");
       expect(data?.outcome?.changed).toBe(true);
       expect(data?.outcome?.summary).toContain("2 files changed");
-      const result = (await s.r.registry.standing())[0];
-      expect(result?.prompt).toContain("2 files changed");
-      expect(result?.prompt).not.toContain("no memory change");
+      expect(await s.r.registry.standing()).toEqual([]);
+
+      const page = await s.views.section(`${TIDY_TYPE}:default`, "tidy");
+      expect(page.markdown).toContain("2 files changed");
+      expect(page.markdown).toContain("Reply: ok");
+
+      expect(s.notices).toHaveLength(1);
+      expect(s.notices[0]?.summary).toContain("default:");
+      expect(s.notices[0]?.summary).toContain("2 files changed");
+      expect(s.notices[0]?.summary).toContain("cost unknown");
+      expect(s.notices[0]?.summary).not.toContain("Reply:");
     } finally {
       s.views.close();
     }
+  });
+
+  test("a stored result state is not a pending item", async () => {
+    const s = await setup();
+    try {
+      const before = await tidy(s.r);
+      if (before === undefined) throw new Error("no tidy state");
+      await s.r.store.put(
+        TIDY_TYPE,
+        "default",
+        {
+          ...before,
+          state: "result",
+          outcome: {
+            chatId: "C-0",
+            at: s.clock.value,
+            costMicros: null,
+            changed: true,
+            voided: false,
+            summary: "1 file changed, 1 insertion(+)",
+            reply: "the agent's raw reply",
+          },
+        },
+        "test",
+      );
+
+      expect(await s.r.registry.standing()).toEqual([]);
+      const row = (await s.views.list(TIDY_TYPE)).rows.find((entry) => entry.id === "default");
+      expect(row).toMatchObject({ state: "result", waiting: false });
+      const page = await s.views.section(`${TIDY_TYPE}:default`, "tidy");
+      expect(page.markdown).toContain("1 file changed");
+      expect(page.markdown).toContain("the agent's raw reply");
+    } finally {
+      s.views.close();
+    }
+  });
+
+  test("the notice line names the change, the cost and a voided rewrite", () => {
+    expect(
+      tidyOutcomeLine("default", {
+        chatId: "C-1",
+        at: 0,
+        costMicros: 1_500_000,
+        changed: true,
+        voided: true,
+        summary: "1 file changed, 2 insertions(+)",
+        reply: "raw reply",
+      }),
+    ).toBe("default: 1 file changed, 2 insertions(+); cost $1.50; only additions were kept");
+    expect(
+      tidyOutcomeLine("default", {
+        chatId: "C-1",
+        at: 0,
+        costMicros: null,
+        changed: false,
+        voided: false,
+        summary: "No memory change.",
+        reply: "",
+      }),
+    ).toBe("default: no memory change; cost unknown");
   });
 
   test("a Run waits while a chat of the bot is writing a reply", async () => {
@@ -608,7 +691,13 @@ describe("Run and Skip", () => {
       await s.source.settled();
 
       expect((await tidy(s.r))?.state).toBe("failed");
-      expect((await s.r.registry.standing())[0]?.prompt).toContain("failed");
+      const card = (await s.r.registry.standing())[0];
+      expect(card?.prompt).toBe("Memory tidy for bot default failed: The reply failed: quota.");
+      expect(card?.prompt).not.toContain("\n");
+      expect(card?.actions).toEqual([
+        { plugin: "bot", action: "run" },
+        { plugin: "bot", action: "skip" },
+      ]);
     } finally {
       s.views.close();
     }

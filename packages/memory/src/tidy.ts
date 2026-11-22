@@ -317,7 +317,7 @@ export interface TidyCommitSummary {
 }
 
 /**
- * Reads what a tidy run did, for the result card or the automatic notice. The
+ * Reads what a tidy run did, for the tidy object's section or the notice. The
  * stat runs from the commit the run measured from, so a chat's ordinary memory
  * commit between the two is part of the run.
  */
