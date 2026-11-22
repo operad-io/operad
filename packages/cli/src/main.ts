@@ -822,7 +822,9 @@ async function commandPending(
     return;
   }
   for (const item of pending) {
-    io.write(`${item.runId}  ${item.flow}  ${item.step ?? "-"}\n`);
+    // A standing item is named by its object, which its actions take; a run is named by its id.
+    const name = item.kind === "standing" && item.object !== undefined ? item.object : item.runId;
+    io.write(`${name}  ${item.flow}  ${item.step ?? "-"}\n`);
     if (item.row !== undefined) io.write(`  ${item.row.title}\n`);
     io.write(`  waiting: ${item.prompt}\n`);
     if (item.choices.length > 0) {

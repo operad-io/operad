@@ -392,3 +392,4 @@ T-0691 rework: the two rows above were written without running the mutation. The
 
 Survived: replacing the `resolveCommand(...) === undefined` guard alone with `true`, or dropping `!enabledInConfig` alone, fails no test, because the `registry.names()` guard already covers a loaded plugin. Those two guards only matter when a plugin is enabled in the config but did not load.
 | T-0694-M2 | packages/cli/src/main.ts | a pi entry without `module` skipped the install | `` `operad init` finds the agent on PATH > a pi entry written without a module still gets the install `` |
+| T-0695-M2 | packages/cli/src/main.ts | `pending` printed a standing item as `<plugin>:<item id>` again instead of its object | `Setup Dev on the command line > a piped dev.json proposes, and pending prints an id the item's actions take` |
