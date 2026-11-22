@@ -47,6 +47,24 @@ export function loginHarness(
   return able.length === 1 ? able[0] : undefined;
 }
 
+/**
+ * The bot whose login runs `agent`'s own login: `default` first, then the
+ * others by name. Undefined when no bot would log in to that agent.
+ */
+export function loginBotFor(
+  agent: string,
+  bots: Readonly<Record<string, unknown>>,
+  loaded: readonly string[],
+  canLogin: ((harness: string) => boolean) | undefined,
+): string | undefined {
+  return Object.keys(bots)
+    .sort((a, b) => (a === "default" ? -1 : b === "default" ? 1 : a.localeCompare(b)))
+    .find((name) => {
+      const entry = bots[name];
+      return loginHarness(isRecord(entry) ? entry.harness : undefined, loaded, canLogin) === agent;
+    });
+}
+
 /** True when a loaded plugin declares the login step of `harness`. */
 function stepCanLogin(
   stepLoaded: ((use: string) => boolean) | undefined,

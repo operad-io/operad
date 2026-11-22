@@ -381,3 +381,4 @@ changes for bots, in the order they were recorded. The root
 | T-0701-M2 | packages/bot/src/bot.ts | a bot without the setting resolved to `full` instead of `ask` | `a bot's accessLevel setting > unset stays ask, and the same write asks` |
 | T-0701-M5 | packages/bot/src/index.ts | the settings step gave a scheduled chat the bot's level, so it left `full` | `a bot's accessLevel setting > a scheduled chat stays full whatever the setting` |
 | T-0701-M6 | packages/bot/src/bot.ts | the schema took any string as `accessLevel` | `a bot's accessLevel setting > a value that is not a level is refused by the schema` |
+| T-0700-M1 | packages/bot/src/login.ts | `loginBotFor` sorted the bots by name only, dropping the default-first order | `loginBotFor > default comes first, then the others by name; a named agent is the one that logs in` |
