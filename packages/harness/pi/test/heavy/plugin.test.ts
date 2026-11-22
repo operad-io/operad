@@ -627,7 +627,7 @@ describe("pi/agent", () => {
     const data = dataOf(result);
     expect(data.reason).toBe("signal");
     expect(String(data.message)).toContain("SIGKILL");
-    expect(await gone(Number(readFileSync(env.marker, "utf8")))).toBe(true);
+    expect(await gone(await waitForPid(env.marker))).toBe(true);
     expect(alive(process.pid)).toBe(true);
   });
 
@@ -671,7 +671,7 @@ describe("pi/agent", () => {
     });
     await waitForFile(env.marker);
     await env.clock.when(() => env.clock.clears > 0);
-    const pid = Number(readFileSync(env.marker, "utf8"));
+    const pid = await waitForPid(env.marker);
     env.clock.fireUpTo(1000);
 
     const result = await running;
@@ -708,7 +708,7 @@ describe("pi/agent", () => {
       stallSecs: 300,
     });
     await waitForFile(env.marker);
-    const pid = Number(readFileSync(env.marker, "utf8"));
+    const pid = await waitForPid(env.marker);
     env.clock.fireUpTo(1_000);
 
     const result = await running;
@@ -744,7 +744,7 @@ describe("pi/agent", () => {
       { signal: controller.signal },
     );
     await waitForFile(env.marker);
-    const pid = Number(readFileSync(env.marker, "utf8"));
+    const pid = await waitForPid(env.marker);
     controller.abort();
 
     const result = await running;

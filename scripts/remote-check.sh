@@ -21,6 +21,8 @@
 # OPERAD_CHECK_TREE  the clone on the host, relative to its home (default Code/operad)
 # OPERAD_CHECK_PATH  directories put first on the host's PATH (default
 #                    $HOME/.bun-operad/bin:$HOME/.bun/bin)
+# OPERAD_CHECK_WAIT_SECS  seconds between the lines a check waiting for a slot
+#                    prints (default 60; the tests shorten it)
 # OPERAD_CHECK_SSH, OPERAD_CHECK_SCP  the ssh and scp commands (tests replace them)
 set -uo pipefail
 cd "$(dirname "$0")/.."
@@ -59,6 +61,8 @@ if [ -z "$host" ]; then
 fi
 tree=${OPERAD_CHECK_TREE:-Code/operad}
 path_dirs=${OPERAD_CHECK_PATH:-'$HOME/.bun-operad/bin:$HOME/.bun/bin'}
+wait_secs=${OPERAD_CHECK_WAIT_SECS:-60}
+case "$wait_secs" in ''|*[!0-9]*|0) wait_secs=60 ;; esac
 read -r -a ssh_cmd <<<"${OPERAD_CHECK_SSH:-ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=4}"
 read -r -a scp_cmd <<<"${OPERAD_CHECK_SCP:-scp -q -o BatchMode=yes}"
 
@@ -74,9 +78,9 @@ if ! git merge-base --is-ancestor HEAD origin/main; then
 fi
 
 echo "remote-check: checking $sha on $host"
-quoted=$(printf '%q ' "$sha" "$bundle" "$tree" "$path_dirs" "$command" "$slots" "$lane" "$host")
+quoted=$(printf '%q ' "$sha" "$bundle" "$tree" "$path_dirs" "$command" "$slots" "$lane" "$host" "$wait_secs")
 "${ssh_cmd[@]}" "$host" "bash -s -- $quoted" <<'REMOTE'
-sha=$1; bundle=$2; tree=$3; path_dirs=$4; command=$5; slots=$6; lane=$7; host=$8
+sha=$1; bundle=$2; tree=$3; path_dirs=$4; command=$5; slots=$6; lane=$7; host=$8; wait_secs=${9:-60}
 watch=
 child=
 session=${TMPDIR:-/tmp}/operad-check-session-$$
@@ -150,9 +154,24 @@ export OPERAD_CHECK_SLOTS=$slots
 if [ -n "$lane" ]; then export OPERAD_CHECK_LANE=$lane; else unset OPERAD_CHECK_LANE; fi
 # Names the slots this check may take: the integration slot, or task slots 1..N.
 if [ "$lane" = integration ]; then names=integration; else names=$(seq 1 "$slots"); fi
+case "$wait_secs" in ''|*[!0-9]*|0) wait_secs=60 ;; esac
+if [ "$lane" = integration ]; then
+  wait_for="the integration lane (~/.operad-check-integration.lock)"
+elif [ "$slots" = 1 ]; then
+  wait_for="task slot 1 (~/.operad-check-1.lock)"
+else
+  wait_for="a task slot from 1 to $slots (~/.operad-check-1.lock to ~/.operad-check-$slots.lock)"
+fi
+# A check waiting for a slot says so at once and then about once a minute, so
+# the stall watchdog never takes a waiting check for a silent one.
+wait_line() {
+  echo "remote-check: waiting for $wait_for on $host; held by another check"
+}
 use_flock=
 command -v flock >/dev/null 2>&1 && use_flock=1
 slot=
+waiting=
+wait_next=
 while [ -z "$slot" ]; do
   for name in $names; do
     lock="$HOME/.operad-check-$name.lock"
@@ -167,7 +186,15 @@ while [ -z "$slot" ]; do
       break
     fi
   done
-  [ -n "$slot" ] || sleep 1
+  if [ -z "$slot" ]; then
+    now=$(date +%s)
+    if [ -z "$waiting" ]; then waiting=1; wait_next=$now; fi
+    if [ "$now" -ge "$wait_next" ]; then
+      wait_line
+      wait_next=$((now + wait_secs))
+    fi
+    sleep 1
+  fi
 done
 case "$slot" in
   1) slot_tree=$tree ;;

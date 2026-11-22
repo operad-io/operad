@@ -30,6 +30,7 @@ message named in the row.
 | `OPERAD_CHECK_HOST` | ssh destination | unset: the check runs here | `user@host` | When `remote-check.sh` runs a command: with it set, the command runs on that host. Empty means here. |
 | `OPERAD_CHECK_SLOTS` | integer | `1` | whole number, 1 or more | How many task checks run at once on the host; each slot has its own lock and tree. Any other value stops the script with a message that names the variable. |
 | `OPERAD_CHECK_LANE` | string | unset | `integration` | `integration` takes the one integration slot instead of a task slot; any other value stops the script with a message that names the variable. |
+| `OPERAD_CHECK_WAIT_SECS` | integer | `60` | a whole number of seconds, 1 or more | While `remote-check.sh` waits for a slot on the host: how often it prints the line that says it is waiting. Any other value falls back to 60. |
 | `OPERAD_CHECK_TREE` | path | `Code/operad` | A path relative to the host's home | The clone on the host the checks run in; every other slot uses a worktree of it. |
 | `OPERAD_CHECK_PATH` | list of directories | `$HOME/.bun-operad/bin:$HOME/.bun/bin` | Directories separated by `:` | Put first on the host's `PATH` before the check line runs, expanded on the host. |
 | `OPERAD_CHECK_SSH` | command | `ssh -o BatchMode=yes -o ServerAliveInterval=30 -o ServerAliveCountMax=4` | An ssh command line | When a check connects to its host. |

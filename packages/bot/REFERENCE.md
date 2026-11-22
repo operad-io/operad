@@ -279,11 +279,12 @@ nothing about links.
 
 With work and `runWithoutAsking` off, the object becomes a pending card. Its
 actions are `run` and `skip`, offered by the plugin on `TIDY_TYPE`; `tidyItems`
-turns the pending, result and failed states into the bot's pending items. `run`
-only marks the card requested, because an action has no client to open a chat;
-the source starts the chat on its next poll, and waits while any chat of the bot
-is writing a reply. The model is `backgroundModel`, else the harness's declared
-`capabilities.backgroundModel`, else the bot's model.
+turns the pending and failed states into the bot's pending items, because a card
+is only for a decision. `run` only marks the card requested, because an action
+has no client to open a chat; the source starts the chat on its next poll, and
+waits while any chat of the bot is writing a reply. The model is
+`backgroundModel`, else the harness's declared `capabilities.backgroundModel`,
+else the bot's model.
 
 The tidy chat is opened through `bot:chat` with the actor
 `{ via: "bot", id: TIDY_ORIGIN }`, so its chat data records the tidy origin and
@@ -295,8 +296,13 @@ leave a link to an unwritten page, consider linking an orphan, and suggest but
 not force linking a mention. A note marked `untrusted: true` is left out of
 those lists, so the tidy is never pointed at one to link. The source watches for the memory plugin's
 `memory.tidy` fact and then reads the run's diff summary, from the last tidy
-commit to the tidy commit. A non-automatic run leaves a result card with the
-cost and diff; a failure leaves a failed card. An automatic run returns to idle
-and calls `notify` when the run changed something or the run failed. A card left
-running without a chat, such as after a crash between starting the chat and
-recording it, becomes a failed card on the next start.
+commit to the tidy commit. A run started from the card leaves no pending item
+when it succeeds; it calls `notify` with one line naming the bot, the change or
+`no memory change`, the cost and, when the rewrite was voided, that only
+additions were kept. The line never carries the agent's reply; the diff summary,
+cost and reply stay in the tidy object's section. A failed run leaves a failed
+card whose `run` and `skip` actions are the decision it needs, with one short
+line giving the reason. An automatic run returns to idle and calls `notify` when
+the run changed something or the run failed. A card left running without a
+chat, such as after a crash between starting the chat and recording it, becomes
+a failed card on the next start.

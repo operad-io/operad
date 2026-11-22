@@ -79,6 +79,27 @@ index is cut at about 8,000 characters, with a line saying it was cut; keep the
 file shorter than that by moving detail into topic notes. These notes are not
 part of the transcript and do not change the message you sent.
 
+## The nightly tidy
+
+Once a night, at the bot's `tidyTime` (`03:30` by default), the bot checks
+whether its memory changed since the last tidy and whether `index.md` is over
+its limit. The check costs no model call. A night with nothing to do ends there.
+
+When there is work, the bot has one pending item with how many notes and chats
+need checking and whether the index is over its limit. Run (运行) starts it;
+Skip (跳过) closes it until the next check finds work. With `runWithoutAsking`
+on, the tidy runs without the item. A tidy waits while any chat of the bot is
+writing a reply.
+
+A tidy started from Run leaves no pending item when it finishes. Like an
+automatic run, it sends one line through the configured
+[`notify` command](notifications.md). The line names the bot, the files and
+lines it changed (or that memory did not change), the cost, and that only
+additions were kept when a rewrite dropped too much of the index. The bot's
+reply is not in the line; the full result stays on the memory tidy's page. A
+failed tidy keeps one pending item, with Run and Skip, and one short line saying
+why it failed.
+
 ## The memory skill
 
 While the plugin is enabled, every bot mounts the `memory` skill

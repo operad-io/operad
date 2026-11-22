@@ -344,6 +344,48 @@ describe("remote-check.sh", () => {
       }
     });
 
+    test("a check waiting for a slot says which one, at once and again while it waits", async () => {
+      const { root, local, env } = setup();
+      const holder = blocker(local, env, root, "holder");
+      let waiting: Bun.Subprocess<"ignore", "pipe", "pipe"> | undefined;
+      try {
+        await holder.started();
+        waiting = Bun.spawn(["bash", join(local, "scripts", "remote-check.sh"), "echo waited"], {
+          cwd: local,
+          env: { ...cleanEnv(), ...env, OPERAD_CHECK_WAIT_SECS: "1" },
+          stdin: "ignore",
+          stdout: "pipe",
+          stderr: "pipe",
+        });
+        const reader = waiting.stdout.getReader();
+        const decoder = new TextDecoder();
+        let out = "";
+        const waitLines = () => out.split("\n").filter((line) => line.startsWith("remote-check: waiting for "));
+        // The interval is shortened, but the second line still comes from the
+        // wait itself: the holder stays until both lines have arrived.
+        while (waitLines().length < 2) {
+          const chunk = await reader.read();
+          if (chunk.done) throw new Error(`the waiting check ended before it printed twice: ${out}`);
+          out += decoder.decode(chunk.value);
+        }
+        expect(waitLines()[0]).toContain("task slot 1");
+        expect(waitLines()[0]).toContain(".operad-check-1.lock");
+        expect(waitLines()[0]).toContain("held by another check");
+        await holder.release();
+        while (!(await reader.read()).done) {
+          // Drain the rest of the output.
+        }
+        expect(await waiting.exited).toBe(0);
+      } finally {
+        await holder.release();
+        await holder.done;
+        if (waiting !== undefined) {
+          if (waiting.exitCode === null && waiting.signalCode === null) waiting.kill("SIGKILL");
+          await waiting.exited;
+        }
+      }
+    }, 30_000);
+
     test("with every task slot taken an integration check runs at once, in its own tree", async () => {
       const { root, local, home, env } = setup();
       const e = { ...env, OPERAD_CHECK_SLOTS: "2" };
