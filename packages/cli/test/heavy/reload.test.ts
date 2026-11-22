@@ -702,7 +702,12 @@ describe("a reload with two listen addresses", () => {
       while (blocked === port) blocked = await freePort();
       const second = secondAddress();
       const s = await setup({ port, listen: ["127.0.0.1", second] });
-      s.env.OPERAD_BIND_RETRY_MS = "800";
+      // Both the new code and the restored old code retry for this long. The
+      // test frees the address only after it reads the new code's give-up
+      // line, so the restored code's window must outlast a slow reader: at
+      // 800 ms a busy machine let the window close first and the restored
+      // serve ended ("the old code could not listen either").
+      s.env.OPERAD_BIND_RETRY_MS = "5000";
       s.env.OPERAD_BIND_RETRY_STEP_MS = "50";
       const serve = spawnOperad(s, ["serve"]);
       const output = new Output(serve.stdout, serve.stderr);
