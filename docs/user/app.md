@@ -217,7 +217,8 @@ approves the change in Pending.
 
 Every chat has an access level, shown in the **Access** menu: **Plan only**,
 **Ask each time**, **Accept edits** or **Full access**. A repository chat starts
-at Plan only and a bot chat at Ask each time; choosing a level changes it for
+at Plan only and a bot chat at Ask each time, except a chat a scheduled prompt
+opens, which starts at Full access; choosing a level changes it for
 that chat and every later reply. Raising a repository chat that still works in
 the main clone to Accept edits or Full access first opens its worktree, and a
 failure leaves the level as it was and says why; a bot chat works in its own

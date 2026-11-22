@@ -224,8 +224,9 @@ export async function openChat(input: OpenChat): Promise<string> {
     throw new BotError(messageOf(error));
   }
   const effortDefault = input.efforts?.[harness]?.default ?? undefined;
-  // A scheduled prompt runs at full access; a person may still change it with
-  // `/access` afterwards. A chat a person opens starts at ask (ADR 0030 D10).
+  // A scheduled prompt runs at full access (ADR 0030 D10); a chat a person
+  // opens starts at ask (ADR 0026 D15). A person may still change the level
+  // with `/access` afterwards.
   const startingLevel = input.scheduled === undefined ? "ask" : "full";
   mkdirSync(bot.cwd, { recursive: true });
   ensureBotMemory(bot.cwd, input.home);
