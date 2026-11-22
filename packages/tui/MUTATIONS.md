@@ -562,3 +562,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0710-M1 | packages/tui/src/view/index.ts | the folder icon went back to `▤` (U+25A4), which common terminal fonts lack | `two-line rows > repository groups draw as a folder row with a note line, and their plans are indented` |
+
+## T-0714 — the dev list is titled Projects
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0714-M1 | packages/tui/src/state.ts | a plugin tab ignored the served list title and used the plugin name | `one tab per plugin > a plugin that serves a list title is named by it, not by its name` |

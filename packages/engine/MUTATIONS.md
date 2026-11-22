@@ -1424,3 +1424,9 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0696-M3 | packages/engine/src/plugin/registry.ts | the guide's front matter was kept in its text | `guideBody > drops the front matter and keeps text that has none` |
 | T-0696-M4 | packages/engine/src/http/server.ts | the setup answer carried the guide's text | `plugins over HTTP > an off plugin's setup is readable and says it is off; one without a guide is not found` |
 | T-0696-M5 | packages/engine/src/plugin/load.ts | an offered plugin that `config.json` does not name was not counted as off | `the setup reader > an offered plugin that config.json does not name yet has its guide readable; a named one that is on does not` |
+
+## T-0714 — the dev list is titled Projects
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0714-M2 | packages/engine/src/views/types.ts | the types listing dropped the plugin's list title | `the types listing > a plugin's list title is served as pluginTitle on each of its types, and absent otherwise` |

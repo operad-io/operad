@@ -33,7 +33,8 @@ export interface TuiLevel {
 }
 
 /** One object type a client can list; an older server may name no plugin. */
-export type TuiTypeInfo = Omit<ViewTypeInfo, "plugin" | "settings"> & {
+export type TuiTypeInfo = Omit<ViewTypeInfo, "plugin" | "settings" | "pluginTitle"> & {
+  readonly pluginTitle?: string | undefined;
   readonly plugin?: string | undefined;
   readonly settings?: boolean | undefined;
 };

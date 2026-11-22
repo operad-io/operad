@@ -2464,7 +2464,8 @@ function applyTypes(state: TuiState, types: readonly TuiTypeInfo[]): TuiState {
     const id = `plugin:${name}`;
     // A server that names no plugin gives each type its own tab, titled as the type.
     const first = group[0];
-    const title = first?.plugin === undefined || first.plugin === "" ? typeTitle(first) : name;
+    const title = first?.plugin === undefined || first.plugin === "" ? typeTitle(first)
+        : (first.pluginTitle ?? name);
     const fresh = { ...makeTab(id, "plugin", title, group), plugin: name };
     const old = existing.get(id);
     if (old === undefined) {

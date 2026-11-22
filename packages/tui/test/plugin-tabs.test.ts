@@ -200,6 +200,13 @@ describe("one tab per plugin", () => {
     expect(tabOf(state, "plugin:dev")?.types?.map((t) => t.type)).toEqual(["repo", "plan", "task"]);
   });
 
+  test("a plugin that serves a list title is named by it, not by its name", () => {
+    const titled = TYPES.map((t) => (t.plugin === "dev" ? { ...t, pluginTitle: "Projects" } : t));
+    const state = reduce(initialState({ width: 120, height: 24 }), { type: "types", types: titled });
+    expect(state.tabs.map((tab) => tab.title)).toEqual(["Pending", "Running", "Projects", "notes"]);
+    expect(tabOf(state, "plugin:dev")?.plugin).toBe("dev");
+  });
+
   test("objects whose parent belongs to another plugin are grouped by that parent, newest first", async () => {
     const { view, shell } = open(new TreeClient(CHATS, CHAT_TYPES));
     await view.until((state) => tabOf(state, "plugin:chat")?.list.loaded === true);
