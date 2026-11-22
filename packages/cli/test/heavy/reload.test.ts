@@ -658,6 +658,15 @@ async function openEvents(home: string, url: string): Promise<() => void> {
   return () => controller.abort();
 }
 
+/** Points the test home's http server at another port, as a settings change would. */
+function setHttpPort(home: string, port: number): void {
+  const path = join(home, "config.json");
+  const config = JSON.parse(readFileSync(path, "utf8")) as { http?: { port?: number } };
+  if (config.http === undefined) throw new Error("the test home has no http config");
+  config.http.port = port;
+  writeFileSync(path, JSON.stringify(config));
+}
+
 describe("a reload with two listen addresses", () => {
   test("ends with the new code serving both, while an event stream is open on the second", async () => {
     const port = await freePort();
@@ -689,33 +698,31 @@ describe("a reload with two listen addresses", () => {
   for (const changed of ["plugin", "engine"] as const) {
     test(`a bind that keeps failing after a ${changed} change leaves the old code serving both addresses; the next real change reloads`, async () => {
       const port = await freePort();
+      let blocked = await freePort();
+      while (blocked === port) blocked = await freePort();
       const second = secondAddress();
       const s = await setup({ port, listen: ["127.0.0.1", second] });
       s.env.OPERAD_BIND_RETRY_MS = "800";
       s.env.OPERAD_BIND_RETRY_STEP_MS = "50";
       const serve = spawnOperad(s, ["serve"]);
       const output = new Output(serve.stdout, serve.stderr);
-      let blocker: ReturnType<typeof Bun.serve> | undefined;
+      // Another process holds the port the changed settings name, on the second
+      // address, before the change is made: the new code cannot listen there.
+      const blocker = Bun.serve({ hostname: second, port: blocked, fetch: () => new Response("") });
       // A file of the engine package that no module imports: it counts as engine code.
       const marker = fileURLToPath(new URL("../../../engine/zz-reload-test-marker.txt", import.meta.url));
       try {
         await output.until(/serving /);
         const supervisorPid = serve.pid;
+        // The changed settings point the next serve at the port another
+        // process holds; the code change is the one that starts the reload.
+        setHttpPort(s.home, blocked);
         if (changed === "plugin") writeFileSync(s.plugin, pluginSource("v2", s.work));
         else writeFileSync(marker, "changed\n");
         await output.until(/reloading: /);
-        // Take the second address the moment the old code lets it go, and keep it.
-        while (blocker === undefined) {
-          try {
-            blocker = Bun.serve({ hostname: second, port, fetch: () => new Response("") });
-          } catch {
-            await new Promise<void>((resolve) => setImmediate(resolve));
-          }
-        }
         await output.until(/the old code tries every address again/);
         // The new code is gone; free the address for the old code to take back.
         await blocker.stop(true);
-        blocker = undefined;
         await output.until(/serving /, 2);
         // The restored serve imported the plugin again, so only an engine change
         // leaves it on older code; it does not try that change again.
@@ -726,13 +733,14 @@ describe("a reload with two listen addresses", () => {
           expect(await runOperad(s, ["pending", "--json"])).not.toContain("serve runs older code");
         }
         expect(output.text.match(/reloading: /g)).toHaveLength(1);
-        expect(await answers(urlOf("127.0.0.1", port))).toBe(true);
-        expect(await answers(urlOf(second, port))).toBe(true);
+        expect(await answers(urlOf("127.0.0.1", blocked))).toBe(true);
+        expect(await answers(urlOf(second, blocked))).toBe(true);
         expect(output.text.match(/the old code tries every address again/g)).toHaveLength(1);
         expect(serve.pid).toBe(supervisorPid);
         expect(serve.exitCode).toBeNull();
 
-        // The next real change goes through the load check and reloads.
+        // The next real change puts the port back and goes through the load check.
+        setHttpPort(s.home, port);
         writeFileSync(s.plugin, pluginSource("v3", s.work));
         await output.until(/reloading: /, 2);
         await output.until(/serving /, 3);
@@ -742,9 +750,10 @@ describe("a reload with two listen addresses", () => {
         expect(lines[1]).toContain("plugin reloadflow");
         expect(serve.exitCode).toBeNull();
         expect(await answers(urlOf("127.0.0.1", port))).toBe(true);
+        expect(await answers(urlOf(second, port))).toBe(true);
       } finally {
         rmSync(marker, { force: true });
-        await blocker?.stop(true);
+        await blocker.stop(true);
         await stopServe(s);
         expect(await serve.exited).toBe(0);
       }
