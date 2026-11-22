@@ -19,6 +19,7 @@ dev 今天的基本形态是多 agent 加 git worktree：每个任务一个 work
    4. 提高并发：今天的工作方式。
 3. **"在哪里工作"这个设置的两个值是：主 clone 里的新分支，或 worktree**（owner 2026-11-22）。就地的任务不直接改当前分支：dev 在主 clone 里为任务开一个新分支，任务在那个分支上工作；worktree 照今天的做法。对话在第 1 步是否也开分支，没有定（待决 7）。
 4. **用词**（owner 2026-11-22，待决 1 已定）：设置 `workIn`，写在 `.operad/dev.json`，标题 Work in / 工作位置；值 `branch`（A branch in this folder / 本目录的新分支）和 `worktree`（A separate worktree / 独立的 worktree）。四步不单独起名。
+5. **Setup Dev 让用户选**（owner 2026-11-22，待决 6 已定）：项目起始的提示词（dev 的 Setup Dev guide，`packages/dev/skills/setup/SKILL.md`，以及 `docs/user/setup-prompt.md`）要写清 `branch` 和 `worktree` 的区别（在哪里改、并发、能不能边让 agent 改边自己用这个目录、合并方式），由 bot 问用户选哪一个，写进它提议的 `.operad/dev.json`。
 
 ## 提议的形状（草稿）
 
@@ -79,7 +80,7 @@ dev 今天的基本形态是多 agent 加 git worktree：每个任务一个 work
 3. **就地的任务被 reject 或 cancel 时任务分支怎么办**：删掉，还是留着可以找回。建议留着，和 worktree 的任务一致。
 4. **就地的任务在跑时对话怎么办**。
 5. **就地时要不要保留评审阶段**，还是第 2 步的默认 flow 只有 code 和 test，评审留到第 3 步。
-6. **新仓库的起点**：所有新仓库都从第 1 步开始，还是 `Setup Dev` 里让人选。
+6. ~~新仓库的起点~~：已定，见「owner 已定」第 5 条。
 
 7. **对话就地工作时是否也开新分支**：已定第 3 条说的是"在哪里工作"这个设置；第 1 步的对话是在当前分支上直接改，还是也在一个新分支上改。
 
