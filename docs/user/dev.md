@@ -568,10 +568,10 @@ bun (`bun add -g @earendil-works/pi-coding-agent`) or npm
 installs `@earendil-works/pi-coding-agent` `1.6.0` into the home's plugin
 project on first use; that needs the network once, and a failed download says so
 and is retried by running the enable or `operad init` again. The oldest pi it
-accepts is `1.5.0`; `operad plugin check` names both versions when yours is
-older and fails when it finds neither a `pi` on `PATH` nor the one operad
-installed in the home (before the first install, a home with no `pi` fails the
-check until you run `operad plugin enable pi` or `operad init`). To use another pi, set `command` in the
+accepts is `1.5.0`. `operad plugin check` fails when it finds neither a `pi` on
+`PATH` nor the one operad installed in the home, so a home with no `pi` fails
+the check until you run `operad plugin enable pi` or `operad init`. When your
+pi is older, the check names both versions. To use another pi, set `command` in the
 `pi` section of `config.json` to its path. A `pi` that is a shell wrapper script
 is refused with its path; point `command` at the package's bin instead
 (`.../@earendil-works/pi-coding-agent/dist/bundle/cli.js`).
