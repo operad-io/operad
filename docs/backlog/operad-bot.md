@@ -81,7 +81,7 @@
 
 已定（owner，2026-11-22）：
 
-1. **用户词是"跟进"**。英文暂写 Follow-up，owner 只说了中文，英文待确认。
+1. **用户词是 Follow-up，中文"跟进"**（owner 2026-11-22 批准，中英文都已确认）。
 2. **bot 在 chat 里定的跟进直接生效，不走提议**。这和定时 prompt 不同（ADR 0030 D11 仍是提议）。理由（research consultant 的理解，owner 未逐条确认）：跟进是一次性的，到点只是回到同一个 chat 再说一句；对外写仍受 ADR 0025 D10 约束。
 
 提议（research consultant，owner 未定）：
