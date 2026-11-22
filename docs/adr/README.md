@@ -54,4 +54,4 @@ An ADR states a decision that is in force, as if it had always been the decision
 | [0036](0036-test-rules.md) | How Tests Are Kept Fast and Few | Simulation first, `test/heavy/`, no incident replays, slowest listed |
 | [0037](0037-chat-commands.md) | Chat Commands | `command` on an action, `chat:send` runs it, one transcript entry, `/help` |
 | [0038](0038-full-text-search.md) | Full-Text Search | One FTS5 index per home, trigram with a substring fallback, scopes bound to a bot, `search` and `read` tools |
-| [0039](0039-where-a-repository-works.md) | Where a Repository Works | `workIn` `branch` or `worktree`, concurrency 1, waiting tasks hold the clone, clean start, kept branches, `dev.json` read per attempt |
+| [0039](0039-where-a-repository-works.md) | Where a Repository Works | `workIn` `branch` or `worktree`, concurrency 1 and `pool` required for `branch`, `dev.json` read once per attempt |
