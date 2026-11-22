@@ -4,11 +4,11 @@
   "concurrency": 3,
   "maxAutoRework": 4,
   "workers": {
-    "pi": {
-      "use": "pi/agent",
+    "claude": {
+      "use": "claude/agent",
       "args": [
         "--model",
-        "opencode-go/deepseek-v4.1-flash"
+        "sonnet"
       ],
       "count": 3,
       "stallSecs": 900,
@@ -17,7 +17,7 @@
   },
   "pools": {
     "default": [
-      "pi"
+      "claude"
     ]
   },
   "reviewer": {
