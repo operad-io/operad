@@ -19,6 +19,7 @@ import {
   createDevPlugin,
   taskData,
 } from "../../src/index.ts";
+import { taskViews } from "../../src/views.ts";
 import { readDevSettings } from "../../src/settings.ts";
 import { commitIn, gitOrThrow, silentGit } from "../git-support.ts";
 import { cleanupTempRoots, guardLockHandles, storeAt, tempRoot } from "../support.ts";
@@ -176,6 +177,18 @@ describe("a repository with no remote", () => {
     expect(task.attempt?.verify?.result).toBe("pass");
   }, 60_000);
 
+  test("the diff of a task is read against the local main branch", async () => {
+    const state = await fixture();
+    await verified(state);
+    const object = await state.store.get("task", state.taskKey);
+    if (object === undefined) throw new Error("task disappeared");
+    const section = (await taskViews.load({ store: state.store } as never, object, "diff", {})) as {
+      readonly markdown: string;
+    };
+    expect(section.markdown).toContain("worker.txt");
+    expect(section.markdown).not.toContain("no diff to show");
+  }, 60_000);
+
   test("integrate moves the local main branch and the clone on it follows", async () => {
     const state = await fixture();
     await verified(state);
@@ -189,6 +202,26 @@ describe("a repository with no remote", () => {
     expect(cleaned.result).toBe("done");
     expect((await taskOf(state)).attempt?.cleanup?.failures).toEqual([]);
     expect(gitOrThrow(state.clone, ["branch", "--list", `work/${state.taskId}`])).toBe("");
+  }, 60_000);
+
+  test("a scheduled integrate asks nothing: no push leaves the machine", async () => {
+    const state = await fixture();
+    await verified(state);
+    const asked: string[] = [];
+    const result = await state.registry.runStep("dev/integrate", {}, {
+      runId: "integrate-scheduled",
+      object: { type: "task", id: state.taskKey, data: {} },
+      trigger: { source: "cron", type: "tick", key: "t-scheduled", hops: 0 },
+      asker: {
+        ask: (request) => {
+          asked.push(request.prompt);
+          return Promise.resolve({ kind: "answered", answer: { choice: "reject_once" } });
+        },
+        useGrant: () => Promise.resolve(false),
+      },
+    });
+    expect(result.result).toBe("merged");
+    expect(asked).toEqual([]);
   }, 60_000);
 
   test("integrate with the clone on another branch moves main and leaves the clone alone", async () => {
