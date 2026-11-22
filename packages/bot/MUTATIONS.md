@@ -316,3 +316,9 @@ changes for bots, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0670-M7 | packages/bot/src/index.ts | a scheduled entry's new chat started at `ask` instead of `full` | `scheduled prompts > an entry fires on time, opens a new chat under the bot with its prompt, and the reply's notification carries a summary` |
+
+## T-0681 — a tidy waits only for a reply that is really writing
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0681-M1 | packages/bot/src/tidy.ts | `botChatReplying` kept counting a latest run the host said had ended as writing | `Run and Skip > a Run waits while the latest reply run is active, and starts once it has ended` |
