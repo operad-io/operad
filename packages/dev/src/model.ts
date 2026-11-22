@@ -391,6 +391,12 @@ export type TaskAttempt = {
   readonly worktree?: string | null;
   readonly branch?: string | null;
   readonly base?: string | null;
+  /**
+   * The text of `.operad/dev.json` as the attempt's first step read it (empty
+   * when the file did not exist). The attempt's steps use it and do not read
+   * the file again (ADR 0039 D6).
+   */
+  readonly settingsText?: string;
   readonly sessionId?: string | null;
   /** The cost in dollars, when the harness reported one. */
   readonly cost?: number | null;

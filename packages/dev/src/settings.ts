@@ -1702,15 +1702,33 @@ function readDefaults(repositoryPath: string): ReadSettings {
  * repository that never had valid settings gets the error.
  */
 export function readDevSettingsNow(repositoryPath: string): DevSettings {
+  return readDevSettingsText(repositoryPath).settings;
+}
+
+/**
+ * Like `readDevSettingsNow`, with the file's text as well (empty when the file
+ * does not exist). A step records the text when an attempt starts (ADR 0039 D6).
+ */
+export function readDevSettingsText(repositoryPath: string): {
+  readonly settings: DevSettings;
+  readonly text: string;
+} {
   try {
     const read = readSettingsNow(repositoryPath);
     keep(repositoryPath, read);
-    return read.settings;
+    return read;
   } catch (error) {
     const kept = recall(repositoryPath);
-    if (kept !== undefined) return kept.settings;
+    if (kept !== undefined) return kept;
     throw error;
   }
+}
+
+/** The settings a recorded text gives, read the way the file is read. */
+export function devSettingsFromText(repositoryPath: string, text: string): DevSettings {
+  return text === ""
+    ? readDefaults(repositoryPath).settings
+    : settingsFromText(repositoryPath, join(repositoryPath, DEV_SETTINGS_FILE), text).settings;
 }
 
 /** Reads a repository's settings; an action's schema uses the synchronous form. */

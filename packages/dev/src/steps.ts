@@ -71,7 +71,9 @@ import {
 import { MAX_WORK_WAITS, STEP_TIMEOUT_SECS } from "./timeouts.ts";
 import {
   assertInsideRepository,
+  devSettingsFromText,
   readDevSettings,
+  readDevSettingsText,
   readWorkerBrief,
   type DevSettings,
 } from "./settings.ts";
@@ -118,12 +120,30 @@ export interface TaskContext {
   /** The name of the task's worktree and branch: the task id, or the chat worktree it was opened on. */
   readonly workName: string;
   readonly settings: DevSettings;
+  /** The dev.json text `settings` came from; empty when the file does not exist. */
+  readonly settingsText?: string;
 }
 
-export async function taskContext(ctx: StepContext): Promise<TaskContext> {
+/**
+ * The task's context. The settings are the ones the task's attempt recorded
+ * when it started (ADR 0039 D6); `fresh` reads the file instead, for the step
+ * that starts an attempt.
+ */
+export async function taskContext(
+  ctx: StepContext,
+  fresh: boolean = false,
+): Promise<TaskContext> {
   const parts = await taskParts(ctx);
-  const settings = await readDevSettings(parts.repository.path);
-  return { ...parts, settings };
+  const recorded = parts.task.attempt?.settingsText;
+  if (!fresh && typeof recorded === "string") {
+    return {
+      ...parts,
+      settings: devSettingsFromText(parts.repository.path, recorded),
+      settingsText: recorded,
+    };
+  }
+  const read = readDevSettingsText(parts.repository.path);
+  return { ...parts, settings: read.settings, settingsText: read.text };
 }
 
 /** A task context whose settings may be missing: a step that can retry reads it. */
@@ -901,7 +921,7 @@ function blockedDependency(params: unknown): string | undefined {
 export async function runWorktree(
   ctx: StepContext,
 ): Promise<PluginStepResult> {
-  const context = await taskContext(ctx);
+  const context = await taskContext(ctx, true);
   if (!claimAllows(ctx, context.task)) return cancelledStep();
   const stoppedAt = runStoppedAt(ctx.params);
   if (stoppedAt !== undefined && context.task.run === null) {
@@ -966,13 +986,20 @@ export async function runWorktree(
     };
   }
   const { attempt, attempts, replay } = attemptFor(ctx, context.task);
+  // A replay of an attempt keeps what its first visit recorded.
+  const recordedText = replay ? attempt.settingsText : undefined;
+  const settingsText = recordedText ?? context.settingsText ?? "";
+  const settings =
+    recordedText === undefined
+      ? context.settings
+      : devSettingsFromText(context.repository.path, recordedText);
   const prepared = await withPrepare(
     ctx,
-    context.settings,
-    worktreePath(context.repository.path, context.settings, context.workName),
+    settings,
+    worktreePath(context.repository.path, settings, context.workName),
     prepareWorktree(
       context.repository,
-      context.settings,
+      settings,
       context.workName,
       beforeAttemptOf(ctx.params) !== "none",
     ),
@@ -981,9 +1008,10 @@ export async function runWorktree(
   const nextAttempt: TaskAttempt = {
     ...attempt,
     run: ctx.runId,
+    settingsText,
     worktree: worktreePath(
       context.repository.path,
-      context.settings,
+      settings,
       context.workName,
     ),
     branch: workBranch(context.workName),
