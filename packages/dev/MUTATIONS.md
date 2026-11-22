@@ -1618,6 +1618,9 @@ the row fields.
 | T-0718-M15 | packages/dev/src/steps.ts | the work step took the snapshot of the main checkout for an attempt that works in it | `dev/work with workIn branch > the main checkout is not read before and after the worker (T-0718)` |
 | T-0718-M16 | packages/dev/src/steps.ts | the work step compared the main checkout after the worker for an attempt that works in it | `dev/work with workIn branch > the main checkout is not read before and after the worker (T-0718)` |
 | T-0718-M17 | packages/dev/src/steps.ts | `dev/reverify` did not pass the attempt's recorded start branch to the branch preparation | `dev/reverify with workIn branch > merges the moved main into the task's branch in the clone and keeps the start (T-0718)` |
+| T-0719-M1 | packages/dev/src/integrate.ts | `followMain` did not switch the clone back to the starting branch before the fast-forward | `integrate in branch mode > the clone goes back to the starting branch and follows main` (and each kill-and-rerun test) |
+| T-0719-M2 | packages/dev/src/mainclone.ts | `switchBackToStart` switched a clone with uncommitted changes | `integrate in branch mode > a clone with uncommitted changes stays on the task branch and the note says so` |
+| T-0719-M3 | packages/dev/src/settings.ts | the default cleanup hook ran `git branch -D` on a branch the clone has checked out | `integrate in branch mode > a clone with uncommitted changes stays on the task branch and the note says so` |
 
 ## T-0739 — a commit on the main clone during an attempt
 

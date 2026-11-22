@@ -49,6 +49,8 @@ operad --help
 
 你还需要 `git` 和一个带 remote 的仓库。不用先装 agent：`PATH` 里没有 `claude`、`pi` 或 `radian` 时，operad 第一次运行会装一份自己的 pi，这需要联网一次。
 
+agent 需要一个模型。还没登录模型时，`operad doctor` 和 `operad pending` 会指出来，并给出下一条要敲的命令：`operad bot:login default` 填 API key；ChatGPT 套餐用 pi 自己的 `pi auth login openai-codex` 登录。
+
 ## 快速上手
 
 ```sh

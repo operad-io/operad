@@ -52,6 +52,8 @@ and opens the default bot's new chat. `operad --help` lists every command.
 
 You also need `git` and a repository with a remote. You do not need to install an agent first: with none of `claude`, `pi` or `radian` on your `PATH`, operad installs its own pi on first use, which needs the network once.
 
+The agent needs a model. When it is not signed in to one, `operad doctor` and `operad pending` say so and name the command to type next: `operad bot:login default` takes an API key, and a ChatGPT plan logs in with pi's own `pi auth login openai-codex`.
+
 A new home starts as the personal assistant: it turns on `chat`, `bot` and `memory`, and each of `radian`, `claude` and `pi` whose command is on your `PATH`. `shell`, `dev` and `pool` are off until you turn on `dev`, which turns on the other two. When no agent is found it turns on `pi` and installs operad's own copy, so a first run needs no agent installed beforehand.
 
 ## Quickstart
