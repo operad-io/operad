@@ -246,9 +246,15 @@ export class AppServerClient {
   readonly ended: Promise<AppServerEnd>;
   /** Resolves once the turn has been asked for. */
   readonly started: Promise<void>;
+  /**
+   * Resolves with the turn id once `turn/start` is answered. It never settles
+   * when the turn never starts, so a caller can keep its messages until then.
+   */
+  readonly turnKnown: Promise<string>;
 
   private readonly options: AppServerClientOptions;
   private resolveStarted: () => void = () => undefined;
+  private resolveTurn: (turn: string) => void = () => undefined;
   private reply: ((text: string) => void) | undefined;
   private nextId = 1;
   private phase: Phase = "initialize";
@@ -258,8 +264,6 @@ export class AppServerClient {
   /** What each request in flight waits for, by id. A `steer` and a `cancel` are fire-and-forget. */
   private readonly pending = new Map<number, Stage>();
   private readonly items = new Map<string, Readonly<Record<string, unknown>>>();
-  /** Messages the host sent before the turn id was known, in order. */
-  private readonly steering: string[] = [];
   private cancelling = false;
   private promptSent = false;
   private usage: AppServerUsage | null = null;
@@ -272,6 +276,9 @@ export class AppServerClient {
     });
     this.started = new Promise<void>((resolve) => {
       this.resolveStarted = resolve;
+    });
+    this.turnKnown = new Promise<string>((resolve) => {
+      this.resolveTurn = resolve;
     });
     this.first = this.request(
       "initialize",
@@ -336,17 +343,12 @@ export class AppServerClient {
   }
 
   /**
-   * Takes a message for the running turn. A message that arrives before the
-   * turn id is known waits for it, so a host message is never dropped in that
-   * window. False when the run is over or is being cancelled, so there is no
-   * turn to steer.
+   * Sends a message to the running turn. False until the turn id is known, so
+   * a caller keeps the message instead of treating it as taken: a turn whose
+   * `turn/start` fails never exists, and nothing could deliver it.
    */
   steer(text: string): boolean {
-    if (this.phase === "done" || this.cancelling) return false;
-    if (this.turn === null || this.session === null) {
-      this.steering.push(text);
-      return true;
-    }
+    if (this.phase === "done" || this.cancelling || this.turn === null || this.session === null) return false;
     this.sendSteer(text);
     return true;
   }
@@ -572,14 +574,10 @@ export class AppServerClient {
           return;
         }
         this.turn = turnId;
-        // A cancel or a message that arrived while the turn id was on its way
-        // now has a turn to act on.
-        if (this.cancelling) {
-          this.steering.length = 0;
-          this.sendInterrupt();
-          return;
-        }
-        for (const text of this.steering.splice(0)) this.sendSteer(text);
+        // A caller waits for this before it hands over messages, and a cancel
+        // kept while the turn id was on its way now has a turn to act on.
+        this.resolveTurn(turnId);
+        if (this.cancelling) this.sendInterrupt();
         return;
       }
     }

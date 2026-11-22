@@ -239,7 +239,9 @@ function startOf(pid: number): number | null {
 /**
  * True when the record's holder is gone: its pid is dead, or the pid now
  * belongs to a process that started at another time. Without the start time a
- * reused pid would look like a live holder until the waiter's deadline.
+ * reused pid would look like a live holder until the waiter's deadline, but
+ * taking the lock over anyway could enter beside a live holder; waiting is the
+ * only safe choice when the platform cannot name the process.
  */
 function holderGone(record: LockRecord): boolean {
   if (!isAlive(record.pid)) return true;

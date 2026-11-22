@@ -98,7 +98,9 @@ test("a write on a log succeeds while a read of the same log is still open", asy
       { kind: "b", payload: {}, cause: "test" },
     ]);
 
-    // The open read must not turn this write into SQLITE_BUSY_SNAPSHOT.
+    // The open read must not make this write fail at once: after another
+    // connection commits that is SQLITE_BUSY_SNAPSHOT, and while it holds the
+    // write lock it is plain SQLITE_BUSY (the endRun failure in T-0627).
     await log.append(run.runId, 2, [
       { kind: "c", payload: {}, cause: "test" },
     ]);

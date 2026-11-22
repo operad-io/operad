@@ -194,9 +194,9 @@ same_process() {
 parent_alive() { same_process "$parent" "$parent_start"; }
 # A starter that is gone can have its pid reused within the same second that
 # `lstart` reports, so `same_process` alone can say it is still alive. A live
-# starter is also this script's parent; once it dies the script is reparented,
-# and its current ppid no longer names the starter. That check does not depend
-# on `lstart`'s one-second resolution.
+# starter is also this script's parent; only the death of a process's parent
+# reparents it, so a current ppid that no longer names the starter means the
+# starter is gone, whatever `lstart` says.
 starter_alive() {
   local ppid
   ppid=$(ps -o ppid= -p "$parent" 2>/dev/null | tr -d ' ')

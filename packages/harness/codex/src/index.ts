@@ -548,16 +548,22 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
             if (opened !== null) writeLine(JSON.stringify({ type: "session", sessionId: opened }));
           });
 
-          // A message from the host steers the turn. The client keeps one that
-          // arrives before the turn id is known and sends it when the id does.
+          // A message from the host steers the turn. Nothing is handed over
+          // before the turn id is known: the inbox keeps it until then, so a
+          // failed `turn/start` leaves the message for the next round instead
+          // of dropping it.
           const inbox = inboxOf(params);
           let stopInbox: (() => void) | undefined;
+          let inboxClosed = false;
           if (inbox !== undefined) {
-            stopInbox = inbox.listen((message) => {
-              if (server.finished) return false;
-              return server.steer(message);
-            });
             inbox.begin?.(wallTimeSecs * 1000);
+            void server.turnKnown.then(() => {
+              if (inboxClosed || server.finished) return;
+              stopInbox = inbox.listen((message) => {
+                if (server.finished) return false;
+                return server.steer(message);
+              });
+            });
           }
 
           const state: { end: AppServerEnd | undefined } = { end: undefined };
@@ -596,6 +602,7 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
               return writing;
             },
           });
+          inboxClosed = true;
           stopInbox?.();
           ctx.signal.removeEventListener("abort", onAbort);
           if (graceTimer !== undefined) clock.clearTimeout(graceTimer);

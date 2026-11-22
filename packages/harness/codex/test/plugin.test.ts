@@ -138,6 +138,48 @@ function methods(env: TestEnv): string[] {
   return sent(env).flatMap((message) => (typeof message.method === "string" ? [message.method] : []));
 }
 
+/**
+ * The inbox both hosts use: it keeps a message until a listener takes it, so
+ * a message that is refused stays for the next round.
+ */
+function queuedInbox(): {
+  readonly inbox: {
+    listen(handler: (text: string) => boolean | void): () => void;
+    begin(): void;
+  };
+  send(text: string): void;
+  readonly kept: readonly string[];
+  readonly taken: readonly string[];
+} {
+  let listener: ((text: string) => boolean | void) | undefined;
+  const kept: string[] = [];
+  const taken: string[] = [];
+  const take = (text: string): void => {
+    if (listener !== undefined && listener(text) === true) taken.push(text);
+    else kept.push(text);
+  };
+  return {
+    inbox: {
+      listen(handler) {
+        listener = handler;
+        for (const text of kept.splice(0)) take(text);
+        return () => {
+          if (listener === handler) listener = undefined;
+        };
+      },
+      begin() {
+        // The tests send after the run has begun.
+      },
+    },
+    send(text) {
+      if (listener === undefined) kept.push(text);
+      else take(text);
+    },
+    kept,
+    taken,
+  };
+}
+
 function paramsOf(env: TestEnv, method: string): Record<string, unknown>[] {
   return sent(env)
     .filter((message) => message.method === method)
@@ -833,26 +875,36 @@ test("the codex plugin declares that it takes messages mid-run", () => {
 describe("codex/agent: a message from the host", () => {
   test("a message sent mid-run steers the turn", async () => {
     const env = await setup("steer", { vars: { FAKE_CODEX_HOLD_TURN_START: "1" } });
-    let listener: (text: string) => boolean | void = () => undefined;
-    const inbox = {
-      listen(handler: (text: string) => boolean | void) {
-        listener = handler;
-        return () => {
-          listener = () => undefined;
-        };
-      },
-      begin() {
-        // The test sends after the turn started.
-      },
-    };
-    const running = runAgent(env, { prompt: "x", cwd: env.root, inbox });
+    const inbox = queuedInbox();
+    const running = runAgent(env, { prompt: "x", cwd: env.root, inbox: inbox.inbox });
     await waitForFile(env.marker);
-    expect(listener("please stop")).toBe(true);
+    // The turn id has not arrived: the inbox keeps the message.
+    inbox.send("please stop");
+    expect(inbox.kept).toEqual(["please stop"]);
     writeFileSync(env.release, "");
     const result = await running;
     expect(result.result).toBe("done");
     expect(dataOf(result).finalMessage).toBe("heard: please stop");
     expect(methods(env)).toContain("turn/steer");
+  });
+
+  test("a message kept for a turn that never starts stays with the inbox", async () => {
+    const env = await setup("done", {
+      vars: {
+        FAKE_CODEX_HOLD_TURN_START: "1",
+        FAKE_CODEX_TURN_START_ERROR: "the turn could not start",
+      },
+    });
+    const inbox = queuedInbox();
+    const running = runAgent(env, { prompt: "x", cwd: env.root, inbox: inbox.inbox });
+    await waitForFile(env.marker);
+    inbox.send("keep me for the next round");
+    writeFileSync(env.release, "");
+    const result = await running;
+    expect(result.result).toBe("failed");
+    expect(inbox.taken).toEqual([]);
+    expect(inbox.kept).toEqual(["keep me for the next round"]);
+    expect(methods(env)).not.toContain("turn/steer");
   });
 });
 

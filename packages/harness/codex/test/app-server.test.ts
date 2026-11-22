@@ -121,3 +121,24 @@ test("a secret question is parsed, and is never put to the person", () => {
   };
   expect(personQuestions(request)).toEqual([{ id: "loader", question: "How should it load?" }]);
 });
+
+test("a message before the turn id is left with the caller", () => {
+  const server = client();
+  const sent: Record<string, unknown>[] = [];
+  const reply = (text: string): void => {
+    sent.push(JSON.parse(text) as Record<string, unknown>);
+  };
+  // initialize, then thread/start. The turn has been asked for but has no id.
+  server.handleLine(JSON.stringify({ jsonrpc: "2.0", id: 1, result: {} }), reply);
+  server.handleLine(
+    JSON.stringify({ jsonrpc: "2.0", id: 2, result: { thread: { id: "t1" } } }),
+    reply,
+  );
+  expect(server.steer("too early")).toBe(false);
+  // The turn never starts, so the message was never taken and no steer is sent.
+  server.handleLine(
+    JSON.stringify({ jsonrpc: "2.0", id: 3, error: { code: -32603, message: "no turn" } }),
+    reply,
+  );
+  expect(sent.some((line) => line.method === "turn/steer")).toBe(false);
+});

@@ -1,12 +1,14 @@
 import { Database } from "bun:sqlite";
 import { afterAll, expect, test } from "bun:test";
-import { mkdtempSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readdirSync, readlinkSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { BUSY_TIMEOUT_MS } from "../../src/platform/index.ts";
 import { SqlitePluginStore } from "../../src/plugin/sqlite-store.ts";
 
 const LSOF = Bun.which("lsof");
+const PROC_FDS = "/proc/self/fd";
+const CAN_LIST_FILES = LSOF !== null || existsSync(PROC_FDS);
 const HOLD_CHILD = join(import.meta.dir, "..", "fixtures", "sqlite-hold.ts");
 const PUT_CHILD = join(import.meta.dir, "..", "fixtures", "plugin-store-put.ts");
 const directories: string[] = [];
@@ -56,6 +58,17 @@ function lines(stream: ReadableStream<Uint8Array>): () => Promise<unknown> {
 
 /** The files this process has open, when the system can list them. */
 function openFiles(): string[] {
+  if (existsSync(PROC_FDS)) {
+    const paths: string[] = [];
+    for (const fd of readdirSync(PROC_FDS)) {
+      try {
+        paths.push(readlinkSync(join(PROC_FDS, fd)));
+      } catch {
+        // The descriptor closed while the directory was being listed.
+      }
+    }
+    return paths;
+  }
   if (LSOF === null) return [];
   const result = Bun.spawnSync({
     cmd: [LSOF, "-p", String(process.pid), "-Fn"],
@@ -69,7 +82,7 @@ function openFiles(): string[] {
     .map((line) => line.slice(1));
 }
 
-test.skipIf(LSOF === null)("closing a store closes its connection at once, not at a later collection", () => {
+test.skipIf(!CAN_LIST_FILES)("closing a store closes its connection at once, not at a later collection", () => {
   const file = tempFile();
   const store = new SqlitePluginStore({ root: join(file, ".."), file });
   expect(openFiles().some((path) => path.includes("/plugins.sqlite"))).toBe(true);

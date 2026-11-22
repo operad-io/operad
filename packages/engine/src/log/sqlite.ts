@@ -938,9 +938,12 @@ class SqliteLogBackend implements LogBackend {
         "WHERE run_id = ? AND seq > ? ORDER BY seq",
     );
     // Read every row before the first yield. A statement left between two
-    // facts holds a read transaction, and the next write on this connection
-    // then fails with SQLITE_BUSY_SNAPSHOT once another process commits. An
-    // async read is suspended between facts, so nothing may stay open there.
+    // facts holds a read transaction on this connection, and the next write
+    // then fails without waiting while another connection works:
+    // SQLITE_BUSY_SNAPSHOT once it has committed, or plain SQLITE_BUSY when it
+    // holds the write lock. The crash tests' restarted child saw the first;
+    // T-0627 saw the second in `endRun`. An async read is suspended between
+    // facts, so nothing may stay open there.
     let rows: FactRow[];
     try {
       rows = statement.all(runId, after);
