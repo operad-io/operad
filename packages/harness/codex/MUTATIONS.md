@@ -173,3 +173,10 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 |---|---|---|---|
 | T-0648-M1 | packages/harness/codex/src/app-server.ts | `cancel` required the turn id already, so a cancel between `turn/start` and its answer ended the process without `turn/interrupt` | `codex/agent: cancel > a cancel sends turn/interrupt and the step is interrupted when the server answers` |
 | T-0648-M2 | packages/harness/codex/src/app-server.ts | `steer` refused a message that arrived before the turn id instead of keeping it | `codex/agent: a message from the host > a message sent mid-run steers the turn` |
+
+## T-0669 — a kept message is not dropped when its turn never starts
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0669-M1 | packages/harness/codex/src/index.ts | the inbox listener was registered before the turn id and `steer` kept a message in the client, as the old code did, so a failed `turn/start` dropped it | `codex/agent: a message from the host > a message kept for a turn that never starts stays with the inbox` |
+| T-0669-M2 | packages/harness/codex/src/app-server.ts | `steer` reported a message taken while the turn id was unknown | `a message before the turn id is left with the caller` |
