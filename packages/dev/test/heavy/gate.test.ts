@@ -1652,6 +1652,25 @@ describe("dev/review and the main checkout", () => {
     );
   });
 
+  test("a moved main clone is a major finding about the commit, not a file (T-0739)", async () => {
+    const state = await fixture({ reviewerArgs: ["none"] });
+    await verify(state);
+    const entry = "main (moved abc1234..def5678)";
+    await changedMainCheckout(state, [entry]);
+
+    const result = await review(state);
+    expect(result.result).toBe("fail");
+    expect(result.data?.findings).toEqual([
+      {
+        file: entry,
+        line: 0,
+        severity: "major",
+        summary: "the work committed in the main checkout",
+        trigger: "the work must commit on its own branch in its own worktree instead",
+      },
+    ]);
+  });
+
   test("an attempt that works in the main clone is not held to a main-checkout line (T-0718)", async () => {
     const state = await fixture({ reviewerArgs: ["none"] });
     await verify(state);

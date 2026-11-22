@@ -439,6 +439,15 @@ describe("waitingPrompt", () => {
       waitingPrompt({ reason: "work did nothing" }, task({ number: 1 }), "major"),
     ).toBe("The worker changed nothing.");
     expect(
+      waitingPrompt(
+        { reason: "work did nothing", detail: "changed the main checkout: main (moved abc1234..def5678)" },
+        task({ number: 1 }),
+        "major",
+      ),
+    ).toBe(
+      "The worker changed nothing in its worktree, but it changed the main checkout: main (moved abc1234..def5678).",
+    );
+    expect(
       waitingPrompt({ reason: "ready to merge" }, task({ number: 1 }), "major"),
     ).toContain("ready to merge");
   });
@@ -566,6 +575,16 @@ describe("waitingReason", () => {
         false,
       ).reason,
     ).toBe("gate failed");
+  });
+
+  test("a visit that changed nothing carries the main-checkout note (T-0739)", () => {
+    const edge = { from: "work", result: "nothing" };
+    const note = "changed the main checkout: main (moved abc1234..def5678)";
+    expect(waitingReason(edge, task({ number: 1, workNote: note }), 0, false)).toEqual({
+      reason: "work did nothing",
+      detail: note,
+    });
+    expect(waitingReason(edge, task({ number: 1 }), 0, false).detail).toBeUndefined();
   });
 
   test("a second review failure in a row has its own reason", () => {

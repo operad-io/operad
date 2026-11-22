@@ -204,6 +204,21 @@ function fakeHarness(record: string) {
               "changed outside the worktree\n",
             );
           }
+          if (mode === "main-commit") {
+            // A commit on the main clone's branch, leaving its tree clean.
+            const main = join(input.cwd, "..", "..");
+            writeFileSync(join(main, "main-committed.txt"), "committed outside\n");
+            gitOrThrow(main, ["add", "main-committed.txt"]);
+            gitOrThrow(main, [
+              "-c",
+              "user.name=worker",
+              "-c",
+              "user.email=worker@example.com",
+              "commit",
+              "-qm",
+              "outside the worktree",
+            ]);
+          }
           if (mode === "main-change-again") {
             appendFileSync(
               join(input.cwd, "..", "..", "before.txt"),
@@ -931,6 +946,22 @@ describe("dev/work", () => {
     expect(readFileSync(join(main, "main-only.txt"), "utf8")).toBe(
       "changed outside the worktree\n",
     );
+  });
+
+  test("a commit on the main clone's branch with a clean tree is reported (T-0739)", async () => {
+    const state = await fixture("main-commit");
+    const main = state.remote.repository;
+    const before = gitOrThrow(main, ["rev-parse", "HEAD"]).trim();
+
+    const result = await runWork(state);
+    expect(result.result).toBe("nothing");
+    const after = gitOrThrow(main, ["rev-parse", "HEAD"]).trim();
+    expect(after).not.toBe(before);
+    const line = `changed the main checkout: ${gitOrThrow(main, ["symbolic-ref", "--short", "HEAD"]).trim()} (moved ${before.slice(0, 7)}..${after.slice(0, 7)})`;
+    const task = await taskDataOf(state);
+    expect(task.brief).toContain(line);
+    expect(task.attempt?.finalMessage).toBe(line);
+    expect(String(result.data?.message)).toContain(line);
   });
 
   test("a further edit to a file the main checkout already had changed is reported", async () => {

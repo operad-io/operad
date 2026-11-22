@@ -334,6 +334,8 @@ too. A review of that attempt gets a major finding from `dev` itself, on each
 named file, in its report and in the review prompt; the task goes to rework,
 where the worker makes those changes in its own worktree instead.
 
+A commit the worker makes in the main checkout counts too, even when the tree is clean afterwards: the line then reads `changed the main checkout: <branch> (moved <old>..<new>)`, the review gets a major finding that the work committed there, and a task that waits with `work did nothing` says the worker changed nothing in its worktree but changed the main checkout. A worker's write access is not limited to its worktree by its access profile, so this check is what holds every harness to it.
+
 ## Moving a repository's folder
 
 A registered repository keeps its name, plans and tasks when its folder moves.

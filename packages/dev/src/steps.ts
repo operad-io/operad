@@ -367,6 +367,51 @@ function checkoutContent(checkout: string, path: string): string | undefined {
   }
 }
 
+// Where a checkout's HEAD stood: the commit and the branch it was on.
+interface CheckoutPosition {
+  readonly head: string;
+  readonly branch: string | undefined;
+}
+
+function checkoutPosition(checkout: string): CheckoutPosition | undefined {
+  const head = headOf(checkout);
+  if (head === undefined) return undefined;
+  const branch = git(checkout, ["symbolic-ref", "--quiet", "--short", "HEAD"]);
+  return { head, branch: branch.ok && branch.out.length > 0 ? branch.out : undefined };
+}
+
+// What the main checkout holds before the worker runs: its status entries and
+// where its HEAD is, so a commit made there with a clean tree afterwards is
+// seen too.
+interface CheckoutBefore {
+  readonly entries: readonly CheckoutEntry[];
+  readonly position: CheckoutPosition | undefined;
+}
+
+function checkoutBefore(checkout: string): CheckoutBefore {
+  return { entries: checkoutSnapshot(checkout), position: checkoutPosition(checkout) };
+}
+
+const NO_CHECKOUT_BEFORE: CheckoutBefore = { entries: [], position: undefined };
+
+// A moved or switched HEAD, in words that end with `(moved a..b)` or
+// `(switched a..b)`; the review reads that ending as a commit, not a file.
+function movedHead(
+  before: CheckoutPosition | undefined,
+  after: CheckoutPosition | undefined,
+): string | undefined {
+  if (before === undefined || after === undefined) return undefined;
+  const name = after.branch ?? "HEAD";
+  const short = (sha: string): string => sha.slice(0, 7);
+  if (before.head !== after.head) {
+    return `${name} (moved ${short(before.head)}..${short(after.head)})`;
+  }
+  if (before.branch !== after.branch) {
+    return `${name} (switched ${before.branch ?? "HEAD"}..${name})`;
+  }
+  return undefined;
+}
+
 /** The status entries of a checkout, with what each readable file holds. */
 function checkoutSnapshot(checkout: string): readonly CheckoutEntry[] {
   return checkoutEntries(checkout).map((entry) => {
@@ -390,10 +435,11 @@ function insideWorktree(checkout: string, worktree: string, path: string): boole
 function newCheckoutChanges(
   checkout: string,
   worktree: string,
-  before: readonly CheckoutEntry[],
+  before: CheckoutBefore,
 ): readonly string[] {
-  const seen = new Map(before.map((entry) => [checkoutEntryKey(entry), entry]));
-  const changed: string[] = [];
+  const seen = new Map(before.entries.map((entry) => [checkoutEntryKey(entry), entry]));
+  const moved = movedHead(before.position, checkoutPosition(checkout));
+  const changed: string[] = moved === undefined ? [] : [moved];
   for (const entry of checkoutEntries(checkout)) {
     const was = seen.get(checkoutEntryKey(entry));
     // The same status letters and path: only a further edit to the file itself
@@ -2014,7 +2060,7 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
   if (askAnswer !== undefined) poolCall.askAnswer = askAnswer;
   // Working in the main clone changes it by design, so there is nothing to
   // report about it (ADR 0039 D1).
-  const mainCheckoutBefore = inPlace ? [] : checkoutSnapshot(context.repository.path);
+  const mainCheckoutBefore = inPlace ? NO_CHECKOUT_BEFORE : checkoutBefore(context.repository.path);
   let mainChanges: readonly string[] = [];
   try {
     outcome = await withWorkerReports(

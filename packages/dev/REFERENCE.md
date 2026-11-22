@@ -293,6 +293,19 @@ per named file and a `## The main checkout` section that tells the reviewer to
 report it; the task goes to rework, where the work makes those changes in its
 own worktree instead.
 
+The step also records where the main checkout's HEAD stands. A commit made
+there during the attempt, with a clean tree afterwards, is named the same way:
+`changed the main checkout: <branch> (moved <old>..<new>)`, and the review's
+major finding says the work committed in the main checkout. A task that waits
+with `work did nothing` says in its prompt that the worker changed nothing in
+its worktree but changed the main checkout, when it did.
+
+What a task's agent may write is not limited to its worktree by the access
+profile: the worktree lies inside the main clone's folder, so no path rule can
+allow one and deny the other, and radian cannot stop a call before it starts
+(ADR 0028 D2). The check above is how every harness is held to it, after the
+fact: it is the same for all of them, and `dev` does not undo the change.
+
 ### What a step cleans up
 
 Every process a step starts (the worker's harness, the reviewer's harness, a

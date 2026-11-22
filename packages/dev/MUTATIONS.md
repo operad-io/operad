@@ -1618,3 +1618,11 @@ the row fields.
 | T-0718-M15 | packages/dev/src/steps.ts | the work step took the snapshot of the main checkout for an attempt that works in it | `dev/work with workIn branch > the main checkout is not read before and after the worker (T-0718)` |
 | T-0718-M16 | packages/dev/src/steps.ts | the work step compared the main checkout after the worker for an attempt that works in it | `dev/work with workIn branch > the main checkout is not read before and after the worker (T-0718)` |
 | T-0718-M17 | packages/dev/src/steps.ts | `dev/reverify` did not pass the attempt's recorded start branch to the branch preparation | `dev/reverify with workIn branch > merges the moved main into the task's branch in the clone and keeps the start (T-0718)` |
+
+## T-0739 — a commit on the main clone during an attempt
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0739-M1 | packages/dev/src/steps.ts | a moved HEAD of the main clone was not compared, only its status | `dev/work > a commit on the main clone's branch with a clean tree is reported (T-0739)` |
+| T-0739-M2 | packages/dev/src/gate.ts | a moved-HEAD entry was reported as a changed file | `dev/review and the main checkout > a moved main clone is a major finding about the commit, not a file (T-0739)` |
+| T-0739-M3 | packages/dev/src/announce.ts | the "work did nothing" reason dropped the main-checkout note | `a visit that changed nothing carries the main-checkout note (T-0739)` |

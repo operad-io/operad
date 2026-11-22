@@ -716,6 +716,9 @@ function atOrAbove(severity: string, level: FixLevel): boolean {
 /** The line `dev/work` writes into the worker's answer for a main-checkout change. */
 const MAIN_CHECKOUT_CHANGE = "changed the main checkout:";
 
+/** An entry of that line that names the main checkout's HEAD moving, not a file. */
+const MOVED_HEAD = / \((?:moved|switched) [^)]*\)$/;
+
 /**
  * The paths an attempt's work changed outside its worktree, read from the line
  * the work step wrote into the worker's answer (T-0646).
@@ -760,13 +763,23 @@ function mainCheckoutFindings(
   );
   return paths
     .filter((path) => !blocked.has(normalizePath(path)))
-    .map((path) => ({
-      file: path,
-      line: 0,
-      severity: "major",
-      summary: "the work changed this file in the main checkout",
-      trigger: "the work must make this change in its own worktree instead",
-    }));
+    .map((path) =>
+      MOVED_HEAD.test(path)
+        ? {
+            file: path,
+            line: 0,
+            severity: "major",
+            summary: "the work committed in the main checkout",
+            trigger: "the work must commit on its own branch in its own worktree instead",
+          }
+        : {
+            file: path,
+            line: 0,
+            severity: "major",
+            summary: "the work changed this file in the main checkout",
+            trigger: "the work must make this change in its own worktree instead",
+          },
+    );
 }
 
 /** The counted findings of a failed review, as the task's history and brief show them. */
