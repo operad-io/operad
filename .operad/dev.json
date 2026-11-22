@@ -17,7 +17,7 @@
   },
   "pools": {
     "default": [
-      "pi"
+      "claude"
     ]
   },
   "reviewer": {
