@@ -214,6 +214,33 @@ export function findHomePi(home: string, floor: string = PI_FLOOR): PiInstall | 
   return installAt(dir, packageCommand(dir, manifest), dir, floor);
 }
 
+/** The arguments of pi's own ChatGPT login, the `openai-codex` provider. */
+const CHATGPT_LOGIN_ARGS = "auth login openai-codex";
+
+/** A command as a shell takes it: quoted only when it has a character a shell splits on. */
+function shellWord(word: string): string {
+  return /^[A-Za-z0-9_.:@%+=,\/-]+$/.test(word) ? word : `'${word.replaceAll("'", "'\\''")}'`;
+}
+
+/**
+ * The command a person runs to log in to their ChatGPT plan with pi itself:
+ * `pi auth login openai-codex` when `pi` is on PATH (or the `command` setting
+ * names a command), else the full command of the pi operad installed in the
+ * home. operad never starts that login (ADR 0023 D11); it only reads pi's
+ * auth file afterwards.
+ */
+export function chatgptLoginCommand(command: string = DEFAULT_PI_COMMAND, options: FindPiOptions = {}): string {
+  if (locate(command, options) === undefined && command === DEFAULT_PI_COMMAND && options.home !== undefined) {
+    try {
+      const own = findHomePi(options.home);
+      if (own !== undefined) return `${shellWord(own.command)} ${CHATGPT_LOGIN_ARGS}`;
+    } catch {
+      // A home pi that cannot be used is not one to name.
+    }
+  }
+  return `${shellWord(command)} ${CHATGPT_LOGIN_ARGS}`;
+}
+
 /** The library's own module type, for the call sites. */
 export type PiLibrary = typeof import("@earendil-works/pi-coding-agent");
 

@@ -294,4 +294,14 @@ the row fields.
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| T-0678-M5 | packages/harness/pi/src/login-protocol.ts | `codexAuthUrl` accepted any https address, so another host could reach the login question | `a login address > another host or path is not the ChatGPT login, whatever its scheme` |
+| T-0678-M5 | packages/harness/pi/src/login-protocol.ts | `codexAuthUrl` accepted any https address, so another host could reach the login question | `a login address > another host or path is not the ChatGPT login, whatever its scheme` (removed with T-0703: the ChatGPT login address check no longer exists) |
+
+## T-0703 — the ChatGPT login is pi's own command
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0703-M1 | packages/harness/pi/src/login.ts | `openai-codex` offered as a route again | `pi/login > the first question offers API-key routes only and tells where a ChatGPT plan logs in` |
+| T-0703-M2 | packages/harness/pi/src/login.ts | no provider's API-key route offered | `pi/login > the first question offers API-key routes only and tells where a ChatGPT plan logs in` |
+| T-0703-M3 | packages/harness/pi/src/pi-install.ts | the command printed `pi` even when only operad's own pi exists | `the ChatGPT login command > is the full command of operad's own pi when pi is not on PATH` |
+| T-0703-M4 | packages/harness/pi/src/login.ts | the command line left out of the first question | `pi/login > the first question offers API-key routes only and tells where a ChatGPT plan logs in` |
+| T-0703-M5 | packages/harness/pi/src/index.ts | `signedIn` remembered its first answer | `a login pi made elsewhere > is seen by the next signedIn check, with no restart` |

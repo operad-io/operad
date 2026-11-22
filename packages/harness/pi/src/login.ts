@@ -1,5 +1,5 @@
 /**
- * The hub side of a pi login (ADR 0023 D11). It starts the child of
+ * The hub side of a pi API-key login (ADR 0023 D11). It starts the child of
  * `login-worker.ts`, keeps its line protocol, and turns each prompt and notice
  * into a question or a pending item through `ctx.ask` (ADR 0008). The pi
  * library is never imported here.
@@ -10,6 +10,7 @@ import { createInterface, type Interface } from "node:readline";
 import { homedir } from "node:os";
 import { isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { chatgptLoginCommand } from "./pi-install.ts";
 import {
   isRecord,
   messageOf,
@@ -19,8 +20,6 @@ import {
   type StepContext,
 } from "@operad-io/engine";
 import {
-  codexAuthUrl,
-  loginUrl,
   type LoginCommand,
   type LoginLine,
   type LoginNotice,
@@ -72,8 +71,6 @@ class LoginChild {
   #wake: (() => void) | undefined;
   #status: "open" | "done" | "failed" | "exited" = "open";
   #message: string | undefined;
-  #authUrl: string | undefined;
-  #device: Extract<LoginNotice, { type: "device_code" }> | undefined;
 
   constructor(child: ChildProcessWithoutNullStreams, now: () => number, deadline: number) {
     this.#child = child;
@@ -115,14 +112,6 @@ class LoginChild {
     return this.#deadline;
   }
 
-  get authUrl(): string | undefined {
-    return this.#authUrl;
-  }
-
-  get device(): Extract<LoginNotice, { type: "device_code" }> | undefined {
-    return this.#device;
-  }
-
   #take(line: string): void {
     let parsed: LoginLine;
     try {
@@ -130,15 +119,7 @@ class LoginChild {
     } catch {
       return;
     }
-    if (parsed.type === "notice") {
-      if (parsed.event.type === "auth_url") {
-        // Only the ChatGPT login address reaches a question; another address
-        // fails the login before it is shown (ADR 0008 D8).
-        this.#authUrl = codexAuthUrl(parsed.event.url);
-      } else if (parsed.event.type === "device_code") {
-        this.#device = parsed.event;
-      }
-    } else if (parsed.type === "done") {
+    if (parsed.type === "done") {
       this.#status = "done";
     } else if (parsed.type === "failed") {
       this.#status = "failed";
@@ -197,32 +178,25 @@ class LoginChild {
   }
 }
 
-/** A route one provider offers in the login. */
+/** A route one provider offers in the login: always its API key. */
 interface LoginRoute {
   readonly provider: string;
-  readonly auth: "oauth" | "api_key";
+  readonly auth: "api_key";
 }
 
 /** The label pi gives a route, which a client shows instead of the id. */
-function routeLabel(provider: LoginProvider, auth: "oauth" | "api_key"): string {
-  if (auth === "oauth" && provider.oauth !== undefined) {
-    return provider.oauth.label ?? provider.oauth.name;
-  }
+function routeLabel(provider: LoginProvider): string {
   return provider.apiKey?.name ?? provider.name;
 }
 
 /**
- * The routes operad's interface offers: ChatGPT's subscription for
- * `openai-codex`, and the API-key login of every other provider. Another
- * provider's OAuth login is never offered (ADR 0023 D11).
+ * The routes operad's interface offers: the API-key login of every provider.
+ * No subscription (OAuth) login is offered, ChatGPT's included: a person runs
+ * pi's own `pi auth login openai-codex` for it (ADR 0023 D11).
  */
 function routesOf(providers: readonly LoginProvider[]): readonly LoginRoute[] {
   const routes: LoginRoute[] = [];
   for (const provider of providers) {
-    if (provider.id === "openai-codex" && provider.oauth !== undefined) {
-      routes.push({ provider: provider.id, auth: "oauth" });
-      continue;
-    }
     if (provider.apiKey !== undefined) routes.push({ provider: provider.id, auth: "api_key" });
   }
   return routes;
@@ -249,6 +223,7 @@ async function chooseProvider(
   providers: readonly LoginProvider[],
   deadline: number,
   now: () => number,
+  hint: string,
 ): Promise<LoginRoute | undefined> {
   const routes = routesOf(providers);
   if (routes.length === 0) throw new LoginFailure("no provider of pi can log in");
@@ -258,15 +233,10 @@ async function chooseProvider(
   for (const route of routes) {
     const provider = byId.get(route.provider);
     if (provider === undefined) continue;
-    choiceInfo[route.provider] = {
-      label: routeLabel(provider, route.auth),
-      ...(route.provider === "openai-codex" && route.auth === "oauth"
-        ? { role: "primary" as const }
-        : {}),
-    };
+    choiceInfo[route.provider] = { label: routeLabel(provider) };
   }
   const answer = await ctx.ask({
-    prompt: "Choose a provider to log in with.",
+    prompt: `Choose a provider to log in with. ${hint}`,
     choices,
     choiceInfo,
     graceSecs: remainingSecs(deadline, now),
@@ -282,12 +252,6 @@ function answerText(answer: AskAnswer): string | undefined {
   const found = answer.answers?.[0];
   if (found === undefined || found.skipped === true) return undefined;
   return typeof found.text === "string" && found.text.trim().length > 0 ? found.text : undefined;
-}
-
-/** True when the person picked the question's only choice (`Cancel`). */
-function answerPicked(answer: AskAnswer, choice: string): boolean {
-  if (answer.choice === choice) return true;
-  return answer.answers?.some((found) => found.choices?.includes(choice)) ?? false;
 }
 
 /** The answer for one prompt, or undefined when the person stopped the login. */
@@ -320,27 +284,6 @@ async function answerPrompt(
     if (answer.rejected === true || answer.choice === undefined) return undefined;
     return answer.choice;
   }
-  if (prompt.type === "manual_code") {
-    const answer = await ctx.ask({
-      prompt: prompt.message,
-      questions: [
-        {
-          id: "redirect",
-          text: prompt.message,
-          ...(child.authUrl === undefined ? {} : { url: child.authUrl }),
-          freeText: true,
-          secret: true,
-        },
-      ],
-      graceSecs,
-      onTimeout: "reject_once",
-      recheck: () => child.recheck(),
-    });
-    if (answer.choice === "allow_once") return "";
-    if (answer.rejected === true) return undefined;
-    const text = answerText(answer);
-    return text;
-  }
   if (prompt.type === "secret" || prompt.type === "text") {
     const answer = await ctx.ask({
       prompt: prompt.message,
@@ -348,7 +291,6 @@ async function answerPrompt(
         {
           id: "value",
           text: prompt.message,
-          ...(child.authUrl === undefined ? {} : { url: child.authUrl }),
           freeText: true,
           ...(prompt.type === "secret" ? { secret: true as const } : {}),
         },
@@ -362,39 +304,6 @@ async function answerPrompt(
     return answerText(answer);
   }
   return undefined;
-}
-
-/** Asks for the device code while the child polls; undefined when not needed. */
-async function waitForDevice(
-  ctx: StepContext,
-  child: LoginChild,
-  device: Extract<LoginNotice, { type: "device_code" }>,
-  deadline: number,
-  now: () => number,
-): Promise<boolean> {
-  const url = loginUrl(device.verificationUri);
-  if (url === undefined) throw new LoginFailure("the login returned an address that is not a login address");
-  const expires = device.expiresInSeconds === undefined ? undefined : Math.max(1, device.expiresInSeconds);
-  const grace = Math.max(1, Math.min(remainingSecs(deadline, now), expires ?? Number.POSITIVE_INFINITY));
-  const answer = await ctx.ask({
-    prompt: "Finish logging in.",
-    questions: [
-      {
-        id: "device",
-        text: device.userCode,
-        url,
-        code: device.userCode,
-        choices: [{ label: "Cancel" }],
-      },
-    ],
-    graceSecs: grace,
-    onTimeout: "reject_once",
-    recheck: () => child.recheck(),
-  });
-  if (answer.choice === "allow_once") return true;
-  if (answer.rejected === true) return false;
-  if (answerPicked(answer, "Cancel")) return false;
-  return true;
 }
 
 /** The model the person chose after the login; undefined when they stopped. */
@@ -459,23 +368,15 @@ export async function runLoginStep(
     if (first.type !== "providers") {
       return failed("the login program did not report its providers");
     }
-    const route = await chooseProvider(ctx, first.providers, child.deadline, now);
+    const hint = `For your ChatGPT plan, run \`${chatgptLoginCommand(input.command, { home: ctx.home, cwd: ctx.cwd })}\`; operad picks it up once it is done.`;
+    const route = await chooseProvider(ctx, first.providers, child.deadline, now, hint);
     if (route === undefined) return failed("the login was cancelled");
     child.send({ type: "login", provider: route.provider, auth: route.auth });
     for (;;) {
       const line = await child.next();
       if (line.type === "done") break;
       if (line.type === "failed") return failed(line.message);
-      if (line.type === "notice") {
-        if (line.event.type === "auth_url" && child.authUrl === undefined) {
-          return failed("the login returned an address that is not the login address");
-        }
-        if (line.event.type === "device_code") {
-          const finished = await waitForDevice(ctx, child, line.event, child.deadline, now);
-          if (!finished) return failed("the login was cancelled");
-        }
-        continue;
-      }
+      if (line.type === "notice") continue;
       if (line.type === "prompt") {
         const answer = await answerPrompt(ctx, child, line, child.deadline, now);
         if (answer === undefined) return failed("the login was cancelled");

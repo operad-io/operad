@@ -7,6 +7,14 @@ the same version.
 
 ## [Unreleased]
 
+### Changed
+
+- The ChatGPT plan login is now pi's own command, `pi auth login openai-codex`:
+  operad no longer runs that login itself. The bot login offers API keys only
+  and tells where to run the command (the full path of operad's own pi when `pi`
+  is not on `PATH`); operad picks the login up once it is done, with no restart
+  of `serve`.
+
 ### Added
 
 - Setup guides: a plugin can ship a guide (`guide`, a `SKILL.md`) and a `check`
