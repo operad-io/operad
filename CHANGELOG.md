@@ -57,8 +57,8 @@ client needs pairing again.
   chats with a full-text index, and `operad memory read` reads a document, a line
   range, and the Backlinks of a note. The app shows the wiki's folders and notes.
 - Access levels for chats: **Plan only**, **Ask each time**, **Accept edits**
-  and **Full access**, set with `/access <level>` or `operad chat:access`, taking
-  effect in a reply already being written. A bot's `accessLevel` setting sets
+  and **Full access**, set with `/access <level>` or `operad chat:access`, applying
+  to a reply already being written. A bot's `accessLevel` setting sets
   the starting level. A repository chat that is raised to Accept edits or Full
   access moves into its own worktree. A command known to only read no longer
   asks, and **Always for this flow and target** lets a background flow keep
@@ -138,7 +138,7 @@ client needs pairing again.
   slash message sent while a reply is running is no longer lost; the end of a
   chat's tail no longer drops lines; attachments that are symlinks are refused.
 - A reviewer no longer misses a file the task deleted.
-- A graph an older `dev` recorded no longer stops scheduling.
+- A task an older `dev` recorded no longer stops scheduling.
 - `serve` kept old code after a change; it now runs the new code.
 
 ### Removed
