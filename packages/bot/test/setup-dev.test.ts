@@ -120,6 +120,8 @@ describe("Setup Dev", () => {
     const path = join(r.root, "plain");
     mkdirSync(path);
     await expect(r.command("bot", "setup-dev", ["default", path], DEV_JSON)).rejects.toThrow("not the root of a git work tree");
+    mkdirSync(join(bare, "sub"));
+    await expect(r.command("bot", "setup-dev", ["default", join(bare, "sub")], DEV_JSON)).rejects.toThrow("not the root of a git work tree");
     execFileSync("git", ["-C", bare, "remote", "add", "origin", "https://example.com/repo.git"], { stdio: "ignore" });
     const real = bare;
     await expect(r.command("bot", "setup-dev", ["default", real], "[1]")).rejects.toThrow("must be a JSON object");
