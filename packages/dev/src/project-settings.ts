@@ -8,15 +8,22 @@
  */
 
 import { messageOf } from "@operad-io/engine";
-import type { ProjectSettingsDeclaration } from "@operad-io/engine";
+import type { ObjectStore, ProjectSettingsDeclaration, SettingsRepository } from "@operad-io/engine";
 import { flowClash, listRepositoryFlows } from "./project-flows.ts";
 import { defaultDevSettings, readDevSettings, settingsProblem, settingsValueProblem, useNewStageNames } from "./settings.ts";
-import { listRepositories } from "./service.ts";
+import { cloneHolder, listRepositories } from "./service.ts";
 import type { JsonValue } from "@operad-io/engine";
+
+/** The store each listed repository came from: a settings save looks for the task holding its clone there. */
+const storeOf = new WeakMap<SettingsRepository, ObjectStore>();
 
 export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
   repositories: async ({ store }) =>
-    (await listRepositories(store)).map(({ name, path }) => ({ name, path })),
+    (await listRepositories(store)).map(({ name, path }) => {
+      const repository = { name, path };
+      storeOf.set(repository, store);
+      return repository;
+    }),
   files: [
     {
       name: "dev",
@@ -25,7 +32,15 @@ export const DEV_PROJECT_SETTINGS: ProjectSettingsDeclaration = {
       // (ADR 0020 D4), then the name clash with a TypeScript flow (D6). It runs
       // for a flow change only, so an invalid flow already in the file does not
       // block an unrelated setting.
-      check: ({ repository, value, name }) => {
+      check: async ({ repository, value, name }) => {
+        // dev reads dev.json once when an attempt starts (ADR 0039 D6): a save
+        // while a branch-mode task holds the clone would change what the next
+        // attempt reads from the branch it started on, so none is made.
+        const store = storeOf.get(repository);
+        const holder = store === undefined ? undefined : await cloneHolder(store, repository.name);
+        if (holder !== undefined) {
+          return `dev.json cannot be saved while ${holder} holds the main clone on its own branch: merge or cancel ${holder} first`;
+        }
         if (name !== "dev.flows" && !name.startsWith("dev.flows.")) return undefined;
         const problem =
           settingsValueProblem(repository.path, value) ??

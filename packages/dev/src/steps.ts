@@ -72,6 +72,7 @@ import {
 import { MAX_WORK_WAITS, STEP_TIMEOUT_SECS } from "./timeouts.ts";
 import {
   assertInsideRepository,
+  DEV_SETTINGS_FILE,
   devSettingsFromText,
   readDevSettings,
   readDevSettingsText,
@@ -156,6 +157,19 @@ export async function taskContext(
       settings: devSettingsFromText(parts.repository.path, recorded),
       settingsText: recorded,
     };
+  }
+  const start = startBranchOf(parts.task.attempt);
+  if (fresh && parts.task.attempt?.inPlace === true && start !== undefined) {
+    // The clone is on the task's branch, which may have edited the file; the
+    // settings are the ones the person controls, on the branch it started from.
+    const committed = git(parts.repository.path, ["show", `${start}:${DEV_SETTINGS_FILE}`], true);
+    if (committed.ok) {
+      return {
+        ...parts,
+        settings: devSettingsFromText(parts.repository.path, committed.out),
+        settingsText: committed.out,
+      };
+    }
   }
   const read = readDevSettingsText(parts.repository.path);
   return { ...parts, settings: read.settings, settingsText: read.text };
