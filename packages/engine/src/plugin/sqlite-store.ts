@@ -164,25 +164,32 @@ function migrateObjectFacts(database: Database): void {
      ORDER BY sequence`,
   );
   const update = database.prepare("UPDATE facts SET type = ?, data = ? WHERE sequence = ?");
-  for (const object of objects) {
-    writeImmediate(database, () => {
-      const rows = history.all(object.type, object.id) as HistoryRow[];
-      let previous: ObjectData | undefined;
-      for (const row of rows) {
-        const data = parseData(row.data);
-        if (row.type === OBJECT_CHANGE_FACT) {
-          const change = objectChangeOf(data);
-          if (change !== undefined) previous = applyObjectChange(previous ?? {}, change);
-        } else if (row.type === object.type) {
-          const change: ObjectChange =
-            previous === undefined
-              ? { changed: data, removed: [] }
-              : (diffObject(previous, data) ?? { changed: {}, removed: [] });
-          update.run(OBJECT_CHANGE_FACT, JSON.stringify(change), row.sequence);
-          previous = data;
+  try {
+    for (const object of objects) {
+      writeImmediate(database, () => {
+        const rows = history.all(object.type, object.id) as HistoryRow[];
+        let previous: ObjectData | undefined;
+        for (const row of rows) {
+          const data = parseData(row.data);
+          if (row.type === OBJECT_CHANGE_FACT) {
+            const change = objectChangeOf(data);
+            if (change !== undefined) previous = applyObjectChange(previous ?? {}, change);
+          } else if (row.type === object.type) {
+            const change: ObjectChange =
+              previous === undefined
+                ? { changed: data, removed: [] }
+                : (diffObject(previous, data) ?? { changed: {}, removed: [] });
+            update.run(OBJECT_CHANGE_FACT, JSON.stringify(change), row.sequence);
+            previous = data;
+          }
         }
-      }
-    });
+      });
+    }
+  } finally {
+    // Bun keeps a closed database's file handles until every statement made
+    // from it is finalized. These two would keep the store open past its close.
+    history.finalize();
+    update.finalize();
   }
 }
 
