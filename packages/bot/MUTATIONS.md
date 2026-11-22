@@ -396,3 +396,4 @@ changes for bots, in the order they were recorded. The root
 | T-0726-M6 | packages/bot/src/follow-up.ts | the agent could cancel a follow-up of another chat | `listing and canceling > the agent lists and cancels its chat's follow-ups, a person cancels any with the action` |
 | T-0726-M7 | packages/bot/src/schedule.ts | a due follow-up of a closed chat was still sent | `a due follow-up > a closed chat drops it without a message` |
 | T-0738-M1 | packages/bot/src/follow-up.ts | the per-bot lock was dropped, so concurrent writers overwrote each other | `setting a follow-up > follow-ups set at the same moment are all kept` |
+| T-0738-M2 | packages/bot/src/schedule.ts | a failure after a marker reply was not compared by sequence, so the reply still ended quietly | `scheduled prompts > a failure after a reply that is the marker notifies; the reply is not quiet` |
