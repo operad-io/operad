@@ -18,7 +18,7 @@ A bot exists for chats that are not about a repository. It fixes, in one place, 
 
 A bot's directory is `$OPERAD_HOME/bot/<name>`; the default bot is `$OPERAD_HOME/bot/default`, beside the other bots rather than above them. Its `memory/` directory is made when missing; the `memory` plugin gives it a git history and mounts the `memory` skill for every bot, and the shared wiki is outside a bot's directory so all bots use one. See [Memory and the wiki](memory.md). A bot may read and write its own directory and its memory, and every other bot's directory is refused for reading and writing. The default bot's old home at `$OPERAD_HOME/bot` is not emptied: only the `skills/` and `memory/` directories operad made there move into `$OPERAD_HOME/bot/default`. Every other file and directory a person or the bot put in the old home stays where it is, and the default bot may still read, write and run there; only another bot's directory is refused. Grants in `access-user.json` whose working directory is exactly the old home are rewritten once to `$OPERAD_HOME/bot/default`; grants for other directories are unchanged. A bot with a written `cwd` keeps it.
 
-The plugins are deliberately cautious. A chat on a repository is read-only until you agree to open a worktree. A bot cannot change its own skills, settings or MCP servers; it can only propose a change, and nothing on disk changes until a person approves.
+The plugins are deliberately cautious. A chat on a repository is read-only until you agree to open a worktree (unless the repository sets `workIn` to `branch`: then the chat works in the main clone at its access level). A bot cannot change its own skills, settings or MCP servers; it can only propose a change, and nothing on disk changes until a person approves.
 
 ## How it works
 
@@ -143,7 +143,8 @@ belongs to the agent, which continues its own session.
 
 A chat's filters are `open` (the default) and `closed`; the kernel adds `all`,
 so `operad list chat --filter all` still shows closed chats. A chat on a
-repository works in the main clone, read-only: a shell command runs there only
+repository whose `workIn` is `worktree` works in the main clone, read-only (with
+`workIn` `branch` it works there at its access level, below): a shell command runs there only
 when it is on a short list of commands that only read (`git status`, `ls`,
 `cat`, `grep`, `sed -n`, `bun test`, ...); every other command, and every write
 or edit, becomes the worktree question, which names the command or the path.
@@ -185,7 +186,12 @@ unless set; one of `plan`, `ask`, `edits`, `full`), except a chat a scheduled
 prompt opens, which starts at `full`. A chat nobody ran `/access` on follows
 the setting at its next reply, so changing the setting moves it; a level a
 person chose stays. The row shows the level when it
-is not the chat's starting level. A repository chat that still works in the main
+is not the chat's starting level. In a repository whose `workIn` is `branch` ("A
+branch in this folder") a repository chat works in the main clone, on the branch
+that is checked out, at its level: `edits` and `full` write there, no worktree is
+offered and no `work/chat-<id>` branch is made, and `plan` stays read-only. With
+`worktree` ("A separate worktree", the default) the rest of this paragraph
+applies. A repository chat that still works in the main
 clone and is raised to `edits` or `full` first opens `work/chat-<id>` and moves
 there; if the worktree cannot be opened the level stays as it was and the
 command says why. A chat already in its worktree applies the level there. `plan`

@@ -614,6 +614,8 @@ interface Live {
   readonly notes?: readonly NoteFile[] | undefined;
   /** The level a chat that chose none starts at now; a bot gives its setting. */
   readonly accessDefault?: AccessLevel | undefined;
+  /** False when the chat works in its main clone and no worktree is to be offered. */
+  readonly worktreeOffer?: boolean | undefined;
   /** A plugin step to call after the round ends, when the chat's refresh step names one. */
   readonly after?: string | undefined;
 }
@@ -683,6 +685,7 @@ async function liveSettings(
   const accessDefault = isAccessLevel(data.accessDefault) ? data.accessDefault : undefined;
   return {
     ...(accessDefault === undefined ? {} : { accessDefault }),
+    ...(data.worktreeOffer === false ? { worktreeOffer: false } : {}),
     cwd: data.cwd,
     access: data.access as Record<string, JsonValue>,
     skills: data.skills.filter((item): item is string => typeof item === "string"),
@@ -1390,7 +1393,8 @@ async function replyOnce(
   const readOnly = leveled.readOnly === true;
   // The worktree question belongs to a repository chat; a bot chat at `plan`
   // is read-only without one.
-  const worktreeChat = readOnly && (chat.parent === undefined || chat.parent.startsWith("repo:"));
+  const worktreeChat =
+    readOnly && live.worktreeOffer !== false && (chat.parent === undefined || chat.parent.startsWith("repo:"));
   const worktreeChosen = { run: false, stop: new AbortController() };
   // The live file holds the base profile; a level change rewrites only its level.
   let recheckBase: Readonly<Record<string, JsonValue>> = live.access;

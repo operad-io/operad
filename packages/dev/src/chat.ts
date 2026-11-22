@@ -223,6 +223,8 @@ export function repositoryChatContext(input: {
   readonly repository: string;
   readonly cwd: string;
   readonly readOnly: boolean;
+  /** The chat works in the main clone on the current branch, at its access level (workIn branch). */
+  readonly inPlace?: boolean;
   readonly branch?: string | undefined;
   readonly skills: readonly string[];
   readonly denyCommands: readonly string[];
@@ -230,7 +232,9 @@ export function repositoryChatContext(input: {
   const root = realPathOrUndefined(input.cwd) ?? resolve(input.cwd);
   const where = [
     `You are answering in an operad chat about the repository ${input.repository}, in ${input.cwd}.`,
-    input.readOnly
+    input.inPlace === true
+      ? "This chat works in the main clone, on the branch that is checked out, at its access level. Changes made here are changes to the repository itself; no worktree is opened."
+      : input.readOnly
       ? "This chat is read-only in the main clone. Commands that only read run at once; a call that changes a file asks the person first."
       : `This chat works in its own worktree on the branch ${input.branch ?? "unknown"}. Changes reach main through a task, not by merging here.`,
     ...(input.denyCommands.length === 0
@@ -460,7 +464,7 @@ const chatAction: ActionTypeDefinition = {
         ...(effort === undefined ? {} : { effort }),
         ...(effort === undefined || effortDefault === undefined ? {} : { effortDefault }),
         cwd: repository.path,
-        access: chatAccess(skills.roots, true),
+        access: chatAccess(skills.roots, settings.workIn !== "branch"),
         accessLevel: "plan",
         accessDefault: "plan",
         skills: skills.directories,
@@ -515,7 +519,8 @@ export async function runChatSettings(ctx: StepContext, params: unknown): Promis
   } catch (error) {
     return failed(messageOf(error));
   }
-  const access = chatAccess(skills.roots, !hasWorktree);
+  const inPlace = !hasWorktree && settings.workIn === "branch";
+  const access = chatAccess(skills.roots, !hasWorktree && !inPlace);
   const worktree = isRecord(stored.data.worktree) ? stored.data.worktree : {};
   const branch =
     hasWorktree
@@ -529,7 +534,8 @@ export async function runChatSettings(ctx: StepContext, params: unknown): Promis
   const context = repositoryChatContext({
     repository: name,
     cwd,
-    readOnly: !hasWorktree,
+    readOnly: !hasWorktree && !inPlace,
+    inPlace,
     ...(branch === undefined ? {} : { branch }),
     skills: skills.directories,
     denyCommands,
@@ -541,6 +547,8 @@ export async function runChatSettings(ctx: StepContext, params: unknown): Promis
       access,
       skills: [...skills.directories],
       context,
+      // Nothing to offer when the chat works in the main clone itself.
+      ...(inPlace ? { worktreeOffer: false } : {}),
     },
   };
 }
@@ -566,6 +574,11 @@ export async function runChatAccess(ctx: ActionContext, args: unknown): Promise<
   const chat = chatData(stored.data);
   const parent = typeof chat.parent === "string" ? chat.parent : "";
   if (!parent.startsWith("repo:")) return "a bot chat works in its own directory";
+  const repoObject = await ctx.store.get("repo", parent.slice("repo:".length));
+  if (repoObject !== undefined) {
+    const settings = await readDevSettings(repositoryData(repoObject.data).path);
+    if (settings.workIn === "branch") return "no worktree is needed: the chat works in the main clone";
+  }
   const result = await openChatWorktree(
     ctx,
     ctx.object.id,
