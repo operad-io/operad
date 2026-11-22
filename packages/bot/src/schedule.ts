@@ -35,7 +35,7 @@ import {
 } from "@operad-io/engine";
 import { runLine } from "@operad-io/engine/platform";
 import { BOT_TYPE, BotError } from "./bot.ts";
-import { followUps, removeFollowUp, type FollowUp } from "./follow-up.ts";
+import { followUps, removeFollowUp, withBotLock, type FollowUp } from "./follow-up.ts";
 import { SETUP_DEV_INSTRUCTION } from "./setup-dev.ts";
 import { SETUP_INSTRUCTION } from "./setup.ts";
 
@@ -414,6 +414,7 @@ async function replaceEntry(
   change: (entry: ScheduledPrompt) => ScheduledPrompt | undefined,
   cause: string,
 ): Promise<ScheduledPrompt | undefined> {
+  return withBotLock(store, bot, async () => {
   const object = await botObject(store, bot);
   const entries = scheduledPrompts(object.data);
   let changed: ScheduledPrompt | undefined;
@@ -434,10 +435,12 @@ async function replaceEntry(
     cause,
   );
   return changed;
+  });
 }
 
 /** Removes one entry from the bot object. */
 async function removeEntry(store: ObjectStore, bot: string, name: string): Promise<boolean> {
+  return withBotLock(store, bot, async () => {
   const object = await botObject(store, bot);
   const entries = scheduledPrompts(object.data);
   const next = entries.filter((entry) => entry.name !== name);
@@ -449,6 +452,7 @@ async function removeEntry(store: ObjectStore, bot: string, name: string): Promi
     "action:bot/schedule-remove",
   );
   return true;
+  });
 }
 
 /** The current entry with the fields the proposal changed, from `before` to `after`, applied. */
@@ -515,6 +519,7 @@ async function addEntry(
   bot: string,
   entry: ScheduledPrompt,
 ): Promise<ScheduledPrompt> {
+  return withBotLock(store, bot, async () => {
   const object = await botObject(store, bot);
   const entries = scheduledPrompts(object.data);
   if (entries.some((item) => item.name === entry.name)) {
@@ -527,6 +532,7 @@ async function addEntry(
     "action:bot/schedule-add",
   );
   return entry;
+  });
 }
 
 function entryArgs(required: boolean): ActionTypeDefinition["args"] {
@@ -978,14 +984,18 @@ export class BotScheduleSource {
         if (chat === undefined) return undefined;
         const reply = [...read.messages].reverse().find((message) => message.role === "assistant");
         const failure = [...read.entries].reverse().find((item) => item.kind === "failure");
-        const quiet = reply !== undefined && isQuietReply(reply.text);
+        // A failure after the reply means the run did not end quietly.
+        const failedAfter = reply !== undefined && failure !== undefined && failure.sequence > reply.sequence;
+        const quiet = reply !== undefined && !failedAfter && isQuietReply(reply.text);
         const result = quiet
           ? SCHEDULE_QUIET_RESULT
           : reply === undefined
             ? failure === undefined
               ? undefined
               : replySummary(failure.text ?? "The reply failed.")
-            : replySummary(reply.text);
+            : failedAfter
+              ? replySummary(failure.text ?? "The reply failed.")
+              : replySummary(reply.text);
         if (result === undefined) return undefined;
         const title = typeof chat.data.title === "string" ? chat.data.title : chatId;
         return { result, title, quiet };

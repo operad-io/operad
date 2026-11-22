@@ -94,6 +94,13 @@ describe("setting a follow-up", () => {
     expect(context).toContain("`follow-up`");
   });
 
+  test("follow-ups set at the same moment are all kept", async () => {
+    const r = await rig();
+    const chat = await r.open("default");
+    await Promise.all([1, 2, 3, 4].map((n) => setFollowUp(r.store, chat, `+${n}h`, `Step ${n}.`, NOW)));
+    expect((await pending(r)).length).toBe(4);
+  });
+
   test("at most 5 not yet due per chat, at most 30 days ahead, and no time already past; each refusal says which", async () => {
     const r = await rig();
     const chat = await r.open("default");

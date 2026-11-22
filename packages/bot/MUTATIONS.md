@@ -395,3 +395,4 @@ changes for bots, in the order they were recorded. The root
 | T-0726-M5 | packages/bot/src/index.ts | syncing the bot's settings dropped the stored follow-ups | `setting a follow-up > the command takes effect at once, with no proposal, and the page and row show it` |
 | T-0726-M6 | packages/bot/src/follow-up.ts | the agent could cancel a follow-up of another chat | `listing and canceling > the agent lists and cancels its chat's follow-ups, a person cancels any with the action` |
 | T-0726-M7 | packages/bot/src/schedule.ts | a due follow-up of a closed chat was still sent | `a due follow-up > a closed chat drops it without a message` |
+| T-0738-M1 | packages/bot/src/follow-up.ts | the per-bot lock was dropped, so concurrent writers overwrote each other | `setting a follow-up > follow-ups set at the same moment are all kept` |

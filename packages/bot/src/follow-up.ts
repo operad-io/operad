@@ -135,6 +135,28 @@ async function botObject(store: ObjectStore, bot: string): Promise<StoredObject>
   return object;
 }
 
+const locks = new WeakMap<ObjectStore, Map<string, Promise<unknown>>>();
+
+/**
+ * Runs one read-then-write of a bot object after the ones before it on the same
+ * bot, so two writers in this process do not overwrite each other.
+ */
+export function withBotLock<T>(store: ObjectStore, bot: string, work: () => Promise<T>): Promise<T> {
+  let chains = locks.get(store);
+  if (chains === undefined) {
+    chains = new Map();
+    locks.set(store, chains);
+  }
+  const run = (chains.get(bot) ?? Promise.resolve()).then(work, work);
+  const tail = run.catch(() => undefined);
+  chains.set(bot, tail);
+  const held = chains;
+  void tail.then(() => {
+    if (held.get(bot) === tail) held.delete(bot);
+  });
+  return run;
+}
+
 /** Writes the bot's follow-ups, leaving the rest of the object as it is. */
 export async function writeFollowUps(
   store: ObjectStore,
@@ -174,6 +196,7 @@ export async function setFollowUp(
     throw new BotError(`a follow-up is at most ${FOLLOW_UP_DAYS} days ahead; ${localStamp(at)} is further`);
   }
   const bot = await botOfChat(store, chatId, true);
+  return withBotLock(store, bot, async () => {
   const object = await botObject(store, bot);
   const entries = followUps(object.data);
   const pending = entries.filter((entry) => entry.chat === chatId && entry.at > now).length;
@@ -183,6 +206,7 @@ export async function setFollowUp(
   const entry: FollowUp = { id: newId(), chat: chatId, at, text, setAt: now };
   await writeFollowUps(store, object, [...entries, entry], "command:bot/follow-up");
   return `follow-up ${entry.id} set for ${localStamp(at)}`;
+  });
 }
 
 /** Removes one follow-up; false when there is none with that id. */
@@ -192,12 +216,14 @@ export async function removeFollowUp(
   id: string,
   cause = "action:bot/follow-up-cancel",
 ): Promise<boolean> {
+  return withBotLock(store, bot, async () => {
   const object = await botObject(store, bot);
   const entries = followUps(object.data);
   const rest = entries.filter((entry) => entry.id !== id);
   if (rest.length === entries.length) return false;
   await writeFollowUps(store, object, rest, cause);
   return true;
+  });
 }
 
 const FOLLOW_UP_USAGE = "usage: operad bot follow-up <chat> --at <time> --do <one sentence>";
