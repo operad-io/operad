@@ -336,3 +336,9 @@ changes for bots, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0683-M2 | packages/bot/src/tidy.ts | `finish` asked for the summary without the memory directory and bot, so an empty previous tidy commit was skipped and the run was read from before it | `Run and Skip > a result card reads the chat's own memory commit before an empty tidy commit` |
+
+## T-0678 — a bot without a model login
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0678-M6 | packages/bot/src/login.ts | the login step returned the model but never wrote it into the bot's settings | `a bot without a model login > the flow calls the agent's login step and writes the model into the bot's settings` |

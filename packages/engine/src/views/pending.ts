@@ -1,6 +1,7 @@
 /** The pending view: every run waiting for a person, with what can be done. */
 
 import { OLDER_CODE_ITEM_ID, OLDER_CODE_PROMPT, servesOlderCode } from "../loop/older-code.ts";
+import { runLookup } from "../loop/serve.ts";
 import { objectLink } from "../http/link.ts";
 import type { LogBackend, RunInfo } from "../log/types.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
@@ -156,7 +157,7 @@ export async function listPending(
     });
   }
 
-  for (const item of await registry.standing()) {
+  for (const item of await registry.standing(runLookup(log))) {
     items.push({
       runId: `${item.plugin}:${item.id}`,
       flow: item.plugin,

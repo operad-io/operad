@@ -5,7 +5,7 @@
  */
 
 
-import { bareId, type ViewAction, type ViewRow } from "@operad-io/engine";
+import { bareId, type AskQuestionAnswer, type ViewAction, type ViewRow } from "@operad-io/engine";
 import { argFields, narrowField, parseArg, type ArgField } from "./args.ts";
 import type { TuiSetting, TuiTypeInfo } from "./client.ts";
 import { chatCommands, commandEntries, commandText, filterCommands } from "./commands.ts";
@@ -726,6 +726,18 @@ export function startAnswer(state: TuiState, answer: TuiAnswer): TuiState {
   const closed: TuiState = { ...state, input: undefined };
   if (state.acting) return withNotice(closed, "the last change has not answered yet");
   const primary = answer.choices.findIndex((choice) => answer.choiceInfo?.[choice]?.role === "primary");
+  if (answer.questions !== undefined) {
+    return {
+      ...closed,
+      input: {
+        kind: "form",
+        answer,
+        question: 0,
+        cursor: primary < 0 ? 0 : primary,
+        text: "",
+      },
+    };
+  }
   return {
     ...closed,
     input: { kind: "answer", answer, cursor: primary < 0 ? 0 : primary },
@@ -739,6 +751,16 @@ function choiceLabel(answer: TuiAnswer, choice: string): string {
 
 /** Sends the chosen answer and closes the choice list. */
 function sendAnswer(state: TuiState, answer: TuiAnswer, choice: string, note?: string): TuiState {
+  return sendForm(state, answer, { choice }, note);
+}
+
+/** Sends one form answer (or one choice) and closes the question. */
+function sendForm(
+  state: TuiState,
+  answer: TuiAnswer,
+  given: { readonly choice?: string | undefined; readonly answer?: AskQuestionAnswer | undefined },
+  note?: string,
+): TuiState {
   const locked =
     state.input?.kind === "note"
       ? {
@@ -756,10 +778,49 @@ function sendAnswer(state: TuiState, answer: TuiAnswer, choice: string, note?: s
     answerRequest: {
       runId: answer.runId,
       waitId: answer.waitId,
-      choice,
+      ...(given.choice === undefined ? {} : { choice: given.choice }),
+      ...(given.answer === undefined ? {} : { answers: [given.answer] }),
       ...(note === undefined || note === "" ? {} : { note }),
     },
   };
+}
+
+/** The keys of a one-question form: its choices, or its free text. */
+function formKey(
+  state: TuiState,
+  input: Extract<TuiInput, { readonly kind: "form" }>,
+  event: {
+    readonly text?: string | undefined;
+    readonly ctrl?: boolean | undefined;
+    readonly meta?: boolean | undefined;
+  },
+  key: string,
+  enter: boolean,
+): TuiState {
+  const question = input.answer.questions?.[input.question];
+  if (question === undefined) return { ...state, input: undefined };
+  const choices = question.choices ?? [];
+  if (choices.length > 0) {
+    const down = key === "down" || key === "arrowdown" || key === "j";
+    const up = key === "up" || key === "arrowup" || key === "k";
+    if (down || up) {
+      const cursor = Math.min(Math.max(0, input.cursor + (down ? 1 : -1)), choices.length - 1);
+      return { ...state, input: { ...input, cursor } };
+    }
+    if (!enter) return state;
+    const choice = choices[input.cursor];
+    if (choice === undefined) return state;
+    return sendForm(state, input.answer, { answer: { id: question.id, choices: [choice.label] } });
+  }
+  if (enter) {
+    const text = input.text;
+    return sendForm(state, input.answer, {
+      answer: text.trim() === "" ? { id: question.id, skipped: true } : { id: question.id, text },
+    });
+  }
+  if (key === "backspace") return { ...state, input: { ...input, text: dropLast(input.text) } };
+  const text = event.ctrl === true || event.meta === true ? undefined : typed(event);
+  return text === undefined ? state : { ...state, input: { ...input, text: input.text + text } };
 }
 
 /** The keys of a pending question's choice list. */
@@ -1075,9 +1136,14 @@ function pasteText(text: string): string {
     .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, "");
 }
 
-/** A paste reaches the note at its cursor; it never sends. */
+/** A paste reaches the note or a form's text at its cursor; it never sends. */
 export function pasteInto(state: TuiState, text: string): TuiState {
   const input = state.input;
+  if (input?.kind === "form") {
+    const clean = pasteText(text);
+    if (clean === "") return state;
+    return { ...state, input: { ...input, text: input.text + clean } };
+  }
   if (input?.kind !== "note" || input.sending === true) return state;
   const clean = pasteText(text);
   if (clean === "") return state;
@@ -1129,6 +1195,7 @@ export function inputKey(
   }
   if (input.kind === "note" && input.sending === true) return state;
   if (input.kind === "answer") return answerKey(state, input, key, enter);
+  if (input.kind === "form") return formKey(state, input, event, key, enter);
   if (input.kind === "setting") return settingKey(state, input, event, key, enter);
   if (input.kind === "args") return argsKey(state, input, event, key, enter);
   if (input.kind === "palette") {

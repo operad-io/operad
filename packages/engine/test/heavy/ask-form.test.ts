@@ -606,3 +606,102 @@ describe("a form a step asks", () => {
     expect(error.questions).toEqual([{ id: "loader", text: "How should it load?" }]);
   });
 });
+
+describe("a question with an address, a code and a secret answer", () => {
+  const QUESTION = {
+    id: "redirect",
+    text: "Paste the address the browser ended on.",
+    url: "https://auth.openai.com/oauth/authorize?state=abc",
+    code: "ABCD-1234",
+    freeText: true,
+    secret: true as const,
+  };
+  const SECRET = "http://localhost:1455/auth/callback?code=secret-code&state=abc";
+
+  test("the item carries the address and the code, and the secret text reaches the step but not the log", async () => {
+    const env = await setup();
+    try {
+      const id = await env.create("ask-wait", "secret", {
+        questions: [QUESTION],
+        onTimeout: "reject_once",
+      });
+      const run = env.runner(id, new FakeTimer()).run();
+      const waitId = await env.opened(id);
+
+      const pending = await listPending(env.log, env.registry);
+      expect(pending).toHaveLength(1);
+      expect(pending[0]?.questions).toEqual([QUESTION]);
+      expect(pending[0]?.choices).toEqual([]);
+
+      await recordAnswer({
+        log: env.log,
+        runId: id,
+        waitId,
+        choice: undefined,
+        answers: [{ id: "redirect", text: SECRET }],
+        actor: ACTOR,
+      });
+      expect(await run).toBe("ended");
+
+      const list = await facts(env.log, id);
+      expect(stepResult(list, "q").data).toMatchObject({
+        answers: [{ id: "redirect", text: SECRET }],
+      });
+      // The fact says the question was answered; the secret itself is absent.
+      expect(payloadOf(list, "ask_answered")).toMatchObject({
+        answers: [{ id: "redirect", skipped: true }],
+      });
+      const answerFact = list.find((fact) => fact.kind === "ask_answered");
+      expect(JSON.stringify(answerFact)).not.toContain("secret-code");
+    } finally {
+      await env.close();
+    }
+  }, 30_000);
+
+  test("a secret question that would wait past its grace is refused before anyone is asked", async () => {
+    const env = await setup();
+    try {
+      const id = await env.create("ask-wait", "secret-wait", { questions: [QUESTION], graceSecs: 0 });
+      const run = env.runner(id, new FakeTimer()).run();
+      expect(await run).toBe("ended");
+      const list = await facts(env.log, id);
+      expect(list.map((fact) => fact.kind)).not.toContain("ask_opened");
+      expect(JSON.stringify(stepResult(list, "q").data)).toContain("a secret question cannot wait");
+    } finally {
+      await env.close();
+    }
+  }, 30_000);
+
+  test("an answer that drops the secret text is refused while the step runs", async () => {
+    const env = await setup();
+    try {
+      const id = await env.create("ask-wait", "secret-empty", {
+        questions: [QUESTION],
+        onTimeout: "reject_once",
+      });
+      const run = env.runner(id, new FakeTimer()).run();
+      const waitId = await env.opened(id);
+      await expect(
+        recordAnswer({
+          log: env.log,
+          runId: id,
+          waitId,
+          choice: undefined,
+          answers: [{ id: "redirect", skipped: true }],
+          actor: ACTOR,
+        }),
+      ).rejects.toThrow("a secret question takes an answer with its text");
+      await recordAnswer({
+        log: env.log,
+        runId: id,
+        waitId,
+        choice: undefined,
+        answers: [{ id: "redirect", text: SECRET }],
+        actor: ACTOR,
+      });
+      expect(await run).toBe("ended");
+    } finally {
+      await env.close();
+    }
+  }, 30_000);
+});

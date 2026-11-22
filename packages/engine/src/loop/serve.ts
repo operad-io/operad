@@ -90,7 +90,7 @@ function recordedAnswer(payload: JsonValue): PersonAnswerInput | undefined {
 }
 
 /** The kernel facts a plugin's tick may ask about. */
-function runLookup(log: LogBackend): RunLookup {
+export function runLookup(log: LogBackend): RunLookup {
   return {
     active: async (object) => {
       const runs = await log.runs({ active: true });
@@ -280,6 +280,7 @@ export async function serveOnce(
   const spawned: string[] = [];
 
   try {
+    options.registry.useRunLookup(runLookup(options.log));
     await options.registry.tick(runLookup(options.log));
     const requests = [...options.registry.startedRuns];
     for (const request of requests) {

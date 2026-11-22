@@ -86,7 +86,9 @@ export interface TuiActInput {
 export interface TuiAnswerInput {
   readonly runId: string;
   readonly waitId: string;
-  readonly choice: string;
+  readonly choice?: string | undefined;
+  /** The person's answers to a form's questions. */
+  readonly answers?: readonly unknown[] | undefined;
   readonly note?: string | undefined;
   readonly confirmed?: boolean | undefined;
   /** Cancels the request; it then rejects. */
@@ -379,7 +381,8 @@ export class TuiClient {
       body: {
         runId: input.runId,
         waitId: input.waitId,
-        choice: input.choice,
+        ...(input.choice === undefined ? {} : { choice: input.choice }),
+        ...(input.answers === undefined ? {} : { answers: input.answers }),
         ...(input.note === undefined ? {} : { note: input.note }),
         ...(input.confirmed === true ? { confirmed: true } : {}),
       },

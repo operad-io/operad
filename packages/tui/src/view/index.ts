@@ -898,6 +898,36 @@ function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefi
     chunks.push(chunk("j/k or arrows move · enter answers · esc cancels", palette.weak));
     return styled(chunks);
   }
+  if (input.kind === "form") {
+    const chunks: TextChunk[] = [
+      chunk(`${sanitize(input.answer.prompt)}\n`, palette.accent, TextAttributes.BOLD),
+    ];
+    const question = input.answer.questions?.[input.question];
+    if (question !== undefined) {
+      if (question.header !== undefined) chunks.push(chunk(`${sanitize(question.header)}\n`, palette.weak));
+      chunks.push(chunk(`${sanitize(question.text)}\n`, palette.text));
+      if (question.url !== undefined) chunks.push(chunk(`${sanitize(question.url)}\n`, palette.accent));
+      if (question.code !== undefined) {
+        chunks.push(chunk(`${sanitize(question.code)}\n`, palette.text, TextAttributes.BOLD));
+      }
+      const choices = question.choices ?? [];
+      if (choices.length > 0) {
+        choices.forEach((choice, at) => {
+          chunks.push(chunk(at === input.cursor ? "❯ " : "  ", palette.accent));
+          chunks.push(chunk(sanitize(choice.label), at === input.cursor ? palette.accent : palette.text));
+          if (choice.description !== undefined) chunks.push(chunk(`  ${sanitize(choice.description)}`, palette.weak));
+          chunks.push(chunk("\n"));
+        });
+        chunks.push(chunk("j/k or arrows move · enter answers · esc cancels", palette.weak));
+      } else {
+        // A secret answer is masked; the value is never drawn again.
+        const shown = question.secret === true ? "•".repeat(graphemes(input.text).length) : input.text;
+        chunks.push(chunk(`${shown}${bar}\n`, palette.text));
+        chunks.push(chunk("enter sends · esc cancels", palette.weak));
+      }
+    }
+    return styled(chunks);
+  }
   if (input.kind === "themes") {
     const chunks: TextChunk[] = [chunk("theme\n", palette.accent)];
     const names = state.themeNames;
@@ -1039,6 +1069,11 @@ function inputLines(state: TuiState): number {
     return entries.length === 0 ? 3 : 2 + paletteDisplayLines(entries).length;
   }
   if (input?.kind === "answer") return input.answer.choices.length + 2;
+  if (input?.kind === "form") {
+    const question = input.answer.questions?.[input.question];
+    const choices = question?.choices?.length ?? 0;
+    return 1 + (question?.header === undefined ? 0 : 1) + 1 + (question?.url === undefined ? 0 : 1) + (question?.code === undefined ? 0 : 1) + (choices > 0 ? choices + 1 : 2);
+  }
   if (input?.kind === "themes") return Math.max(1, state.themeNames.length) + 1;
   if (input?.kind === "pages") return Math.max(1, pageEntries(state).length) + 1;
   return 0;
