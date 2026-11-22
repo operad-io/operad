@@ -25,13 +25,13 @@ The older names `work` and `check` still load as `code` and `test`; a stage writ
 
 ### D3: `dev` completes the route
 
-When a stage fails, the run returns to the nearest `code` stage before it and redoes it; with no `code` stage before it, the run waits for a person. Retries, timeouts, cancellation and the wait for an unavailable model behave as they do for the built-in flow. `dev` adds the worktree preparation at the start and integrate at the end. The plan's `auto` setting decides whether a `human` stage ends in waiting for a person or in an automatic merge.
+When a stage fails, the run returns to the nearest `code` stage before it and redoes it; with no `code` stage before it, the run waits for a person. Retries, timeouts, cancellation and the wait for an unavailable model behave as they do for the built-in flow. `dev` adds the preparation of the task's working place at the start and integrate at the end. With `workIn` `worktree` (ADR 0039) the preparation makes a worktree on the task branch; with `branch` it switches the main clone to the task branch, after recording the branch it was on. In both modes `dev` commits the worker's changes on the task branch after the worker ends (with `commit` false the worker commits itself), and the checks and the review run on that commit in the gate worktree, never in the main clone's working tree. These rules for `branch` take effect as the work that builds `workIn` lands. The plan's `auto` setting decides whether a `human` stage ends in waiting for a person or in an automatic merge.
 
 ### D4: Two hard rules
 
 `dev` checks them when it loads a flow and refuses a flow that breaks one, saying why:
 
-- The last step is integrate; a change reaches main only through it.
+- The last step is integrate; a change reaches main only through it. In `branch` mode integrate first switches the main clone back to the branch it started on and then fast-forwards that branch to the merged commit, so a failed check leaves no commit on the starting branch.
 - A flow has at least one `test`, `review` or `human` stage.
 
 Everything else is the project's decision. A flow that wants no model review has no `review` stage.

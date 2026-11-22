@@ -1591,3 +1591,6 @@ the row fields.
 | T-0716-M5 | packages/dev/src/steps.ts | `taskContext` read the file again instead of the attempt's recorded text | `dev/worktree > a later step of the attempt reads the recorded dev.json, not the file (T-0716)` |
 | T-0716-M6 | packages/dev/src/steps.ts | the worktree step did not record the text on the attempt | `dev/worktree > dev.json is recorded when an attempt starts and a replay keeps it (T-0716)` |
 | T-0716-M7 | packages/dev/src/steps.ts | a replay of the worktree step read the file instead of keeping the attempt's record | `dev/worktree > dev.json is recorded when an attempt starts and a replay keeps it (T-0716)` |
+| T-0717-M1 | packages/dev/src/chat.ts | `runChatAccess` opened a worktree for `edits` in a `workIn` `branch` repository | `a repository chat with workIn branch > at edits and full it works in the main clone: no worktree question, no work/chat branch, writes allowed there` |
+| T-0717-M2 | packages/dev/src/chat.ts | `dev/chat_settings` gave a `branch` chat the read-only profile | `a repository chat with workIn branch > the first reply's context no longer says read-only` |
+| T-0717-M3 | packages/dev/src/chat.ts | the starting text of a `branch` chat still said read-only | `a repository chat with workIn branch > the first reply's context no longer says read-only` |

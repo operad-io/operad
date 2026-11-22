@@ -143,7 +143,8 @@ belongs to the agent, which continues its own session.
 
 A chat's filters are `open` (the default) and `closed`; the kernel adds `all`,
 so `operad list chat --filter all` still shows closed chats. A chat on a
-repository works in the main clone, read-only: a shell command runs there only
+repository whose `workIn` is `worktree` works in the main clone, read-only (with
+`workIn` `branch` it works there at its access level, below): a shell command runs there only
 when it is on a short list of commands that only read (`git status`, `ls`,
 `cat`, `grep`, `sed -n`, `bun test`, ...); every other command, and every write
 or edit, becomes the worktree question, which names the command or the path.
@@ -185,7 +186,12 @@ unless set; one of `plan`, `ask`, `edits`, `full`), except a chat a scheduled
 prompt opens, which starts at `full`. A chat nobody ran `/access` on follows
 the setting at its next reply, so changing the setting moves it; a level a
 person chose stays. The row shows the level when it
-is not the chat's starting level. A repository chat that still works in the main
+is not the chat's starting level. In a repository whose `workIn` is `branch` ("A
+branch in this folder") a repository chat works in the main clone, on the branch
+that is checked out, at its level: `edits` and `full` write there, no worktree is
+offered and no `work/chat-<id>` branch is made, and `plan` stays read-only. With
+`worktree` ("A separate worktree", the default) the rest of this paragraph
+applies. A repository chat that still works in the main
 clone and is raised to `edits` or `full` first opens `work/chat-<id>` and moves
 there; if the worktree cannot be opened the level stays as it was and the
 command says why. A chat already in its worktree applies the level there. `plan`
