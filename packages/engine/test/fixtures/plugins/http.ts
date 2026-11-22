@@ -194,6 +194,13 @@ export default definePlugin({
       },
     },
     {
+      name: "input",
+      args: "",
+      run(ctx) {
+        return { input: ctx.input ?? null };
+      },
+    },
+    {
       name: "refuse",
       args: "",
       run() {
