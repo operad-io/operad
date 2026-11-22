@@ -52,15 +52,13 @@ and opens the default bot's new chat. `operad --help` lists every command.
 
 You also need `git` and a repository with a remote. You do not need to install an agent first: with none of `claude`, `pi` or `radian` on your `PATH`, operad installs its own pi on first use, which needs the network once.
 
-A new home starts as the personal assistant: it turns on `chat`, `bot` and `memory`, and each of `radian`, `claude` and `pi` whose command is on your `PATH`. `shell`, `dev` and `pool` are off until you turn them on. When no agent is found it turns on `pi` and installs operad's own copy, so a first run needs no agent installed beforehand.
+A new home starts as the personal assistant: it turns on `chat`, `bot` and `memory`, and each of `radian`, `claude` and `pi` whose command is on your `PATH`. `shell`, `dev` and `pool` are off until you turn on `dev`, which turns on the other two. When no agent is found it turns on `pi` and installs operad's own copy, so a first run needs no agent installed beforehand.
 
 ## Quickstart
 
 ```sh
 operad init                 # create the home and check the plugins
-operad plugin enable shell  # what a repository's work needs, off in a new home
-operad plugin enable pool
-operad plugin enable dev
+operad plugin enable dev    # also turns on pool and shell, which dev needs and a new home leaves off
 operad dev repo add .       # register this repository
 operad dev plan add --slug hello --title "Add a greeting" < request.md
 operad dev task add --plan P-0001-hello --slug greet --title "Print the greeting" < task.md

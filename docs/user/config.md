@@ -184,9 +184,8 @@ still loads, and `serve` and `operad plugin check` print the line that says why.
 `claude` and `pi` when their commands are on `PATH` as it creates the home. A
 new home that enables `claude` also gets `@operad-io/harness-claude` and its
 Agent SDK in `~/.operad/plugins`. `shell`, `dev` and `pool` are shipped but off
-in a new home; a repository's work needs all three, so turn them on with
-`operad plugin enable shell`, `operad plugin enable pool` and
-`operad plugin enable dev`. `codex` and `telegram` are shipped but not enabled;
+in a new home; a repository's work needs all three, and
+`operad plugin enable dev` turns on `pool` and `shell` with it. `codex` and `telegram` are shipped but not enabled;
 enable one with `operad plugin enable <name>`.
 
 ### `store`

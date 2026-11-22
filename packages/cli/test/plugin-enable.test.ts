@@ -18,7 +18,9 @@ function capture(): Output {
       write: (text) => {
         out += text;
       },
-      error: () => {},
+      error: (text) => {
+        out += text;
+      },
     },
     text: () => out,
   };
@@ -55,6 +57,31 @@ describe("plugin enable", () => {
       expect(enabled.text()).toContain(`${name}: enabled`);
     }
     expect(Object.keys(pluginsOf(home))).toEqual(["shell", "pool", "dev"]);
+  });
+
+  test("enabling dev also enables pool and shell and names each", async () => {
+    const home = await makeHomeWithoutPlugins();
+    // dev's actions read chat objects, so a home that loads dev has chat.
+    const file = JSON.parse(readFileSync(join(home, "config.json"), "utf8")) as { plugins: object };
+    writeFileSync(
+      join(home, "config.json"),
+      JSON.stringify({ ...file, plugins: { chat: { module: "@operad-io/chat", enabled: true } } }),
+    );
+    const first = capture();
+    expect(await main(["plugin", "enable", "dev"], { home, io: first.io })).toBe(0);
+    expect(first.text().trim().split("\n")).toEqual(["pool: enabled", "shell: enabled", "dev: enabled"]);
+    expect(Object.values(pluginsOf(home)).every((entry) => entry.enabled)).toBe(true);
+    expect(Object.keys(pluginsOf(home)).sort()).toEqual(["chat", "dev", "pool", "shell"]);
+
+    const again = capture();
+    expect(await main(["plugin", "enable", "dev"], { home, io: again.io })).toBe(0);
+    expect(again.text().trim()).toBe("dev: enabled");
+
+    const off = capture();
+    expect(await main(["plugin", "disable", "pool"], { home, io: off.io })).toBe(0);
+    expect(off.text().trim()).toBe("pool: disabled");
+    expect(pluginsOf(home).pool?.enabled).toBe(false);
+    expect(pluginsOf(home).dev?.enabled).toBe(true);
   });
 
   test("memory is added from the shipped package and listed as enabled", async () => {

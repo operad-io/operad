@@ -391,3 +391,8 @@ T-0691 rework: the two rows above were written without running the mutation. The
 | T-0691-M6 | packages/cli/src/main.ts | `off` was `disabled \|\| optional` with all three guards removed together | `a command line mistake > a plugin that is on still reaches its commands` |
 
 Survived: replacing the `resolveCommand(...) === undefined` guard alone with `true`, or dropping `!enabledInConfig` alone, fails no test, because the `registry.names()` guard already covers a loaded plugin. Those two guards only matter when a plugin is enabled in the config but did not load.
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0692-M1 | packages/cli/src/main.ts | the loop over `PLUGIN_NEEDS[name]` was empty, so enabling dev turned on only dev | `plugin enable > enabling dev also enables pool and shell and names each` |
+| T-0692-M2 | packages/cli/src/main.ts | the "already on" skip was removed, so a plugin already on was named again | `plugin enable > enabling dev also enables pool and shell and names each` |

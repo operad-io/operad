@@ -2,6 +2,7 @@ import {
   INIT_HARNESS_PLUGINS,
   INSTALL_ON_ENABLE,
   OPTIONAL_PLUGINS,
+  PLUGIN_NEEDS,
   PI_CODING_AGENT_PACKAGE,
   PI_CODING_AGENT_VERSION,
   defaultPluginModule,
@@ -2596,9 +2597,17 @@ async function changePlugin(
     readonly run?: InstallRunner | undefined;
     readonly onProgress?: ((name: string, line: string) => void) | undefined;
   } = {},
-): Promise<void> {
+): Promise<readonly string[]> {
   await checkPluginChange(context, name, enable, refusals);
   beforeWrite?.();
+  const turnedOn: string[] = [];
+  if (enable) {
+    for (const needed of PLUGIN_NEEDS[name] ?? []) {
+      if (context.config.plugins.some((item) => item.name === needed && item.enabled)) continue;
+      await changePlugin(context, needed, true, refusals, undefined, options);
+      turnedOn.push(needed);
+    }
+  }
   const entry = context.config.plugins.find((item) => item.name === name);
   if (enable) {
     const target = entry === undefined
@@ -2612,6 +2621,7 @@ async function changePlugin(
     });
   }
   await setPluginEnabled(context.home, name, enable, pluginOffer(context.home));
+  return [...turnedOn, name];
 }
 
 /**
@@ -2745,11 +2755,11 @@ async function commandPluginAdmin(
     const name = argv[1];
     if (name === undefined) throw new UsageError(`plugin ${sub} needs a plugin name`);
     if (argv.length > 2) throw new UsageError(`plugin ${sub} takes one plugin name`);
-    await changePlugin(context, name, sub === "enable", COMMAND_REFUSALS, undefined, {
+    const changed = await changePlugin(context, name, sub === "enable", COMMAND_REFUSALS, undefined, {
       ...(installRun === undefined ? {} : { run: installRun }),
       onProgress: (plugin, line) => io.write(`${plugin}: ${line}\n`),
     });
-    io.write(`${name}: ${sub === "enable" ? "enabled" : "disabled"}\n`);
+    for (const plugin of changed) io.write(`${plugin}: ${sub === "enable" ? "enabled" : "disabled"}\n`);
     return 0;
   }
   if (sub === "check") {
