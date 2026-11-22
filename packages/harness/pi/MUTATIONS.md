@@ -294,7 +294,7 @@ the row fields.
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| T-0678-M5 | packages/harness/pi/src/login-protocol.ts | `codexAuthUrl` accepted any https address, so another host could reach the login question | `a login address > another host or path is not the ChatGPT login, whatever its scheme` (removed with T-0703: the ChatGPT login address check no longer exists) |
+| T-0678-M5 | packages/harness/pi/src/login-protocol.ts | `codexAuthUrl` accepted any https address, so another host could reach the login question | `a login address > another host or path is not the ChatGPT login, whatever its scheme` |
 
 ## T-0703 — the ChatGPT login is pi's own command
 
