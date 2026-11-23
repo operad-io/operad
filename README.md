@@ -50,7 +50,7 @@ operad
 With no command, `operad` creates the home when it has none, starts `serve`,
 and opens the default bot's new chat. `operad --help` lists every command.
 
-You also need `git` and a repository with a remote. You do not need to install an agent first: with none of `claude`, `pi` or `radian` on your `PATH`, operad installs its own pi on first use, which needs the network once.
+A folder needs no git and no remote to be added and chatted with; git is needed only when you create a task, and then the bot offers [Set up git here](docs/user/chats-and-bots.md#set-up-git-here). You do not need to install an agent first: with none of `claude`, `pi` or `radian` on your `PATH`, operad installs its own pi on first use, which needs the network once.
 
 The agent needs a model. When it is not signed in to one, `operad doctor` and `operad pending` say so and name the command to type next: `operad bot:login default` takes an API key, and a ChatGPT plan logs in with pi's own `pi auth login openai-codex`.
 
