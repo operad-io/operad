@@ -26,14 +26,14 @@
     },
     "packages/access-match": {
       "name": "@operad-io/access-match",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "dependencies": {
         "@operad-io/engine": "workspace:*",
       },
     },
     "packages/bot": {
       "name": "@operad-io/bot",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "dependencies": {
         "@operad-io/access-match": "workspace:*",
         "@operad-io/chat": "workspace:*",
@@ -44,7 +44,7 @@
     },
     "packages/chat": {
       "name": "@operad-io/chat",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "dependencies": {
         "@operad-io/access-match": "workspace:*",
         "@operad-io/engine": "workspace:*",
@@ -57,7 +57,7 @@
     },
     "packages/cli": {
       "name": "@operad-io/cli",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "bin": {
         "operad": "bin/operad.ts",
       },
@@ -81,7 +81,7 @@
     },
     "packages/dev": {
       "name": "@operad-io/dev",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "dependencies": {
         "@operad-io/access-match": "workspace:*",
         "@operad-io/chat": "workspace:*",
@@ -96,11 +96,11 @@
     },
     "packages/engine": {
       "name": "@operad-io/engine",
-      "version": "0.3.0",
+      "version": "0.3.1",
     },
     "packages/harness/claude": {
       "name": "@operad-io/harness-claude",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "dependencies": {
         "@anthropic-ai/claude-agent-sdk": "^0.3.319",
         "@operad-io/access-match": "workspace:*",
@@ -110,7 +110,7 @@
     },
     "packages/harness/codex": {
       "name": "@operad-io/harness-codex",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "dependencies": {
         "@operad-io/access-match": "workspace:*",
         "@operad-io/engine": "workspace:*",
@@ -119,7 +119,7 @@
     },
     "packages/harness/pi": {
       "name": "@operad-io/harness-pi",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "dependencies": {
         "@operad-io/access-match": "workspace:*",
         "@operad-io/engine": "workspace:*",
@@ -138,7 +138,7 @@
     },
     "packages/harness/process": {
       "name": "@operad-io/harness-process",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "dependencies": {
         "@operad-io/access-match": "workspace:*",
         "@operad-io/engine": "workspace:*",
@@ -147,7 +147,7 @@
     },
     "packages/harness/radian": {
       "name": "@operad-io/harness-radian",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "dependencies": {
         "@operad-io/access-match": "workspace:*",
         "@operad-io/engine": "workspace:*",
@@ -156,35 +156,35 @@
     },
     "packages/mcp": {
       "name": "@operad-io/mcp",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "dependencies": {
         "@operad-io/engine": "workspace:*",
       },
     },
     "packages/memory": {
       "name": "@operad-io/memory",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "dependencies": {
         "@operad-io/engine": "workspace:*",
       },
     },
     "packages/pool": {
       "name": "@operad-io/pool",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "dependencies": {
         "@operad-io/engine": "workspace:*",
       },
     },
     "packages/review-grading": {
       "name": "@operad-io/review-grading",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "dependencies": {
         "@operad-io/engine": "workspace:*",
       },
     },
     "packages/shell": {
       "name": "@operad-io/shell",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "dependencies": {
         "@operad-io/access-match": "workspace:*",
         "@operad-io/engine": "workspace:*",
@@ -199,7 +199,7 @@
     },
     "packages/telegram": {
       "name": "@operad-io/telegram",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "dependencies": {
         "@operad-io/chat": "workspace:*",
         "@operad-io/engine": "workspace:*",
@@ -215,7 +215,7 @@
     },
     "packages/tui": {
       "name": "@operad-io/tui",
-      "version": "0.3.0",
+      "version": "0.3.1",
       "dependencies": {
         "@opentui/core": "0.6.8",
         "@operad-io/engine": "workspace:*",
