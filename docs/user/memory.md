@@ -29,8 +29,10 @@ library, such as an Obsidian vault, and edit it there.
 |---|---|---|---|---|---|
 | `memory.wikiDir` | string | `wiki` in the operad home, so `~/.operad/wiki` for the usual home | a directory; `~` is your home directory and a relative path is under the operad home | At the next bot reply and at the next `serve` start | Refused by the settings call with the schema's reason |
 
-The directory is created when it is missing and made a git repository when it is
-not one. A directory that is already a git repository is used as it is: it is
+The directory is created when it is missing. When git is on the computer it is
+made a git repository if it is not one, with no question; without git it stays a
+plain folder, the wiki works the same and keeps no history, and it becomes a
+repository the next time a bot uses it after git is installed. A directory that is already a git repository is used as it is: it is
 never initialised again and its files are never restructured. So pointing the
 setting at an existing vault keeps that vault's history, branches and layout.
 
@@ -50,8 +52,10 @@ person's notes by accident.
 
 A bot's memory lives in `memory/` inside its working directory, so `default`'s
 is `~/.operad/bot/default/memory/`. It is not shared: another bot cannot read it.
-The directory is a git repository of its own, created when it is missing, so one
-bot's history stays apart from every other bot's. A working directory that is
+The directory is created when it is missing and, when git is on the computer,
+is a git repository of its own, so one bot's history stays apart from every
+other bot's. Without git it is a plain folder with no history until git appears,
+and then it becomes a repository with no question. A working directory that is
 already inside a repository keeps that repository: the plugin commits only the
 `memory/` part.
 
@@ -188,7 +192,8 @@ memory: bot default, chat C-12
 wiki: bot default, chat C-12
 ```
 
-A reply that wrote nothing makes no commit. The commits are ordinary commits in
+A reply that wrote nothing makes no commit, and neither does a reply on a
+computer without git. The commits are ordinary commits in
 ordinary repositories: review them with `git log`, or in an editor that shows
 them, and revert one like any other commit. Nothing is pushed anywhere.
 

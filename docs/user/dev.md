@@ -51,6 +51,25 @@ With `branch`:
 
 To move up from `branch` to `worktree`, wait until no task is running or holding the folder, then change `workIn`. To move back, wait until no task is running and no task's folder is left, then set `branch` again. `Setup Dev` asks which way you want to work and writes `workIn` for you; when unsure it chooses `branch`. The `pool` plugin stays on in both.
 
+## A folder without git
+
+A folder needs no git, and the computer needs no git program, to be added
+(`operad dev repo add`, the app, or [Setup Dev](setup-prompt.md)) or chatted
+with. Such a folder is added as it is: `.operad/dev.json` works in place and
+names no remote. The chat answers in the folder itself and may change its files;
+it opens no separate folder, because that needs git. The bot asks nothing about
+git at this point.
+
+Git is needed only to create a task. When you ask for one in a folder with no
+git, on a computer without git, or in a git folder with no commit yet, creating
+it is refused with a line that says what is missing, and the bot offers
+[Set up git here](chats-and-bots.md#set-up-git-here): it helps install git when
+needed, shows the `.gitignore` and the list of files first, and on your approval
+makes the first commit. The folder then has git on a branch with no remote, as
+in the `branch` steps above, and the task goes on. A folder inside another git
+repository is not added alone: the refusal names the repository's folder, to add
+instead. Your home folder and a disk root are refused for the first commit.
+
 ## Creating a plan or a task
 
 A client creates a plan with the `dev:plan` action on a repository and a task
