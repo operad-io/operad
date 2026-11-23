@@ -240,6 +240,9 @@ export function createDevPlugin() {
 /** The `SKILL.md` Setup Dev gives a bot (ADR 0010 D7). */
 export const DEV_SETUP_GUIDE = fileURLToPath(new URL("../skills/setup/SKILL.md", import.meta.url));
 
+/** The `SKILL.md` a bot follows for the first task in a folder without git (ADR 0039 D8), through `bot setup-git`. */
+export const DEV_GIT_GUIDE = fileURLToPath(new URL("../skills/git/SKILL.md", import.meta.url));
+
 export default createDevPlugin();
 
 export * from "./actions.ts";
@@ -257,6 +260,7 @@ export * from "./project-flows.ts";
 export * from "./schedule.ts";
 export * from "./service.ts";
 export * from "./register-requests.ts";
+export * from "./git-state.ts";
 export * from "./setup-git.ts";
 export * from "./places.ts";
 export * from "./project-settings.ts";

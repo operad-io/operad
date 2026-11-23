@@ -462,3 +462,14 @@ changes for bots, in the order they were recorded. The root
 | T-0730-M1 | packages/bot/src/setup-dev.ts | a subfolder of a repository was accepted | `Setup Dev > it refuses a subfolder of a repository naming the root, text that is not a JSON object and a registered repository` |
 | T-0730-M2 | packages/bot/src/setup-dev.ts | the proposal for a folder with no repository kept the text's `workIn` | `Setup Dev without git > a folder with no git is proposed, and the file written works in place with no remote` |
 | T-0730-M3 | packages/bot/src/setup-dev.ts | a folder git refused was taken for one with no repository | `Setup Dev without git > a repository git refuses is refused with git's message, not set up as a folder` |
+
+## T-0734 — Set up git here, the bot's side
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0734-M1 | packages/bot/src/setup-git.ts | approval left a request with no approved paths | `Set up git here, the bot's side > approve leaves the request with the approved paths and the identity; reject leaves nothing` |
+| T-0734-M2 | packages/bot/src/setup-git.ts | a subfolder of a repository was proposed instead of refused | `Set up git here, the bot's side > it refuses a subfolder naming the root, a folder that has its first commit, the home folder, and a machine without git` |
+| T-0734-M3 | packages/bot/src/setup-git.ts | the proposal never carried a name and email | `Set up git here, the bot's side > the identity: prefilled from the account when git has none, the person's own kept, a bad one refused` |
+| T-0734-M4 | packages/bot/src/setup-git.ts | a folder's own `.gitignore` was used as it is, without the default lines added | `Set up git here, the bot's side > a folder's own .gitignore is kept and built on; a text that drops a line or lets a secret in is refused` |
+| T-0734-M5 | packages/bot/src/schedule.ts | a bot chat's first line left out the `setup-git` instruction | `Set up git here, the bot's side > a bot chat starts with the line that says when the proposal is made and that git is not asked about before` |
+| T-0734-M6 | packages/bot/src/setup-git.ts | the title was always English | `Set up git here, the bot's side > the title is Chinese when the computer's language is` |

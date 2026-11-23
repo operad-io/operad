@@ -37,6 +37,7 @@
       "dependencies": {
         "@operad-io/access-match": "workspace:*",
         "@operad-io/chat": "workspace:*",
+        "@operad-io/dev": "workspace:*",
         "@operad-io/engine": "workspace:*",
         "@operad-io/memory": "workspace:*",
       },

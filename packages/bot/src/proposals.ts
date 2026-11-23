@@ -44,6 +44,7 @@ import {
   type McpServerSettings,
 } from "./bot.ts";
 import { applyDev, devChangeOf, devReview, runSetupDevCommand, type DevChange, type PipedInput } from "./setup-dev.ts";
+import { applyGit, gitChangeOf, gitPrompt, gitReview, runSetupGitCommand, SETUP_GIT_TITLE, type GitChange } from "./setup-git.ts";
 import { commandLine, compareTools, differenceLines, secretName, storedTools } from "./mcp.ts";
 import {
   applyScheduleChange,
@@ -88,7 +89,7 @@ export interface SettingsChange {
 export interface ProposalData {
   readonly [key: string]: unknown;
   readonly bot: string;
-  readonly kind: "skill" | "settings" | "mcp" | "schedule" | "dev";
+  readonly kind: "skill" | "settings" | "mcp" | "schedule" | "dev" | "git";
   readonly title: string;
   readonly state: ProposalState;
   readonly createdAt: number;
@@ -101,6 +102,7 @@ export interface ProposalData {
   readonly mcp?: McpChange | undefined;
   readonly schedule?: ScheduleChange | undefined;
   readonly dev?: DevChange | undefined;
+  readonly git?: GitChange | undefined;
 }
 
 /** A local MCP server a proposal registers, upgrades or lets through after a change of its tools. */
@@ -122,7 +124,8 @@ function dataOf(object: StoredObject): ProposalData {
       data.kind !== "settings" &&
       data.kind !== "mcp" &&
       data.kind !== "schedule" &&
-      data.kind !== "dev") ||
+      data.kind !== "dev" &&
+      data.kind !== "git") ||
     typeof data.title !== "string" ||
     (data.state !== "pending" && data.state !== "applied" && data.state !== "rejected") ||
     typeof data.createdAt !== "number"
@@ -546,6 +549,10 @@ export function proposalReview(object: StoredObject): string {
     const change = devChangeOf(data.dev);
     return change === undefined ? "No repository is recorded for this proposal." : devReview(data.bot, change);
   }
+  if (data.kind === "git") {
+    const change = gitChangeOf(data.git);
+    return change === undefined ? "No folder is recorded for this proposal." : gitReview(data.bot, change);
+  }
   if (data.kind === "schedule") {
     const change = scheduleChangeOf(data.schedule);
     return change === undefined
@@ -927,6 +934,10 @@ export async function applyProposal(
     const change = devChangeOf(data.dev);
     if (change === undefined) throw new BotError(`proposal ${id} has no repository to set up`);
     await applyDev(home, change);
+  } else if (data.kind === "git") {
+    const change = gitChangeOf(data.git);
+    if (change === undefined) throw new BotError(`proposal ${id} has no folder to set up git in`);
+    applyGit(home, change);
   } else if (data.kind === "schedule") {
     const change = scheduleChangeOf(data.schedule);
     if (change === undefined) throw new BotError(`proposal ${id} has no scheduled prompt to apply`);
@@ -1004,7 +1015,7 @@ export async function proposalItems(
     const data = dataOf(object);
     return {
       id: object.id,
-      prompt: data.kind === "dev" ? `${data.title} (proposed by bot ${data.bot}) is waiting for your review` : `${data.title} for bot ${data.bot} is waiting for your review`,
+      prompt: data.kind === "git" ? gitPrompt(data.bot, gitChangeOf(data.git)) : data.kind === "dev" ? `${data.title} (proposed by bot ${data.bot}) is waiting for your review` : `${data.title} for bot ${data.bot} is waiting for your review`,
       object: { type: PROPOSAL_TYPE, id: object.id },
     };
   });
@@ -1070,6 +1081,28 @@ export async function runSetupDev(ctx: CommandContext, argv: readonly string[], 
     await ctx.store.put(PROPOSAL_TYPE, id, data as unknown as Record<string, JsonValue>, "command:bot/setup-dev");
     return `proposed Setup Dev for ${change.repo}; review it in pending`;
   }, piped);
+}
+
+/** The `bot setup-git` command: the steps for the agent, or with the `.gitignore` and identity on stdin the "Set up git here" proposal (ADR 0039 D8). */
+export async function runSetupGit(ctx: CommandContext, argv: readonly string[], piped?: PipedInput): Promise<string> {
+  return runSetupGitCommand(
+    ctx,
+    argv,
+    async (bot, change) => {
+      const data: ProposalData = {
+        bot,
+        kind: "git",
+        title: SETUP_GIT_TITLE,
+        state: "pending",
+        createdAt: Date.now(),
+        git: change,
+      };
+      const id = `p-${randomUUID()}`;
+      await ctx.store.put(PROPOSAL_TYPE, id, data as unknown as Record<string, JsonValue>, "command:bot/setup-git");
+      return `proposed ${SETUP_GIT_TITLE} for ${change.repo}; review it in pending`;
+    },
+    piped,
+  );
 }
 
 /** The usage line shared by the parser's refusals. */

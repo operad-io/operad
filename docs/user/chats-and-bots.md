@@ -309,6 +309,34 @@ proposal is one of:
   changed;
 - a scheduled prompt (`bot schedule`): adding, changing or removing one entry,
   shown with its name, schedule in words and as cron, prompt, model and effort.
+- Set up git here (`bot setup-git`, for the bot's agent): see
+  [Set up git here](#set-up-git-here).
+
+### Set up git here
+
+A folder without git, or a computer without the git program, can be added and
+chatted with, and the chat may change its files. Git is needed only to create a
+task, and the bot asks nothing about git before that. When you ask for a task in
+such a folder, operad says what is missing and the bot offers **Set up git
+here** (在这里设置 git):
+
+- If git is not installed, the bot gives the command for your system
+  (`xcode-select --install` on a Mac, `winget install Git.Git` on Windows, the
+  package manager on Linux). Each command is a pending item you approve; operad
+  does not bundle git.
+- It then proposes the first commit as one pending item. Its review shows the
+  `.gitignore` (your own is kept, with lines added), the list of files the
+  commit would hold, any folders that are repositories of their own (not
+  committed), and the name and email the commit is made with, prefilled from the
+  computer account; the bot asks you to confirm them in the chat. When git
+  already has a name and email on the computer they are used and not asked for.
+  A folder of more than 5000 files carries a note to check the `.gitignore`
+  first. Your home folder and a disk root are refused, and so is a folder inside
+  another git repository (the answer names that repository's folder).
+- Approve starts git in the folder when needed, makes the first commit of
+  exactly the files listed (a file a chat wrote after the review is not in it)
+  and stores the name and email in the folder's own git settings. The folder then
+  works in a branch with no remote; nothing is pushed. Reject changes nothing.
 
 `bot:approve` applies a pending proposal and `bot:reject` rejects it. A proposal
 that is not pending still shows its state.
