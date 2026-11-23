@@ -138,6 +138,23 @@ describe("the memory skill and the commit step", () => {
   });
 });
 
+describe("the directories a stretch that is not remembered keeps read-only", () => {
+  test("the bot's settings name its memory directory and the wiki", async () => {
+    const r = await rig({ default: {} }, ["pi"], undefined, [createMemoryPlugin()]);
+    writePlugins(r.home, { memory: {}, bot: { settings: { bots: { default: {} } } } });
+    const chat = await r.open("default");
+    const stored = await r.store.get("chat", chat);
+    const settings = await r.registry.runStep("bot/settings", { chat }, {
+      runId: "run-1",
+      ...(stored === undefined ? {} : { object: { type: "chat", id: chat, data: stored.data } }),
+      params: null,
+    });
+    const paths = (settings.data as Record<string, unknown>)["memoryPaths"];
+    expect(Array.isArray(paths) ? paths[0] : undefined).toBe(join(r.home, "bot", "default", "memory"));
+    expect(Array.isArray(paths) ? paths[1] : undefined).toBe(join(r.home, "wiki"));
+  });
+});
+
 describe("the memory notes a bot chat carries", () => {
   test("its index and instructions go on the message, never into the chat's own text", async () => {
     const r = await rig({ default: {} }, ["pi"], undefined, [createMemoryPlugin()]);

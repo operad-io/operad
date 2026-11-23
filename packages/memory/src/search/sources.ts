@@ -118,6 +118,8 @@ function messageOfFact(fact: { readonly data: Record<string, unknown> }): Indexe
   const data = fact.data;
   if (typeof data["id"] !== "string" || typeof data["text"] !== "string") return undefined;
   if (data["role"] !== "user" && data["role"] !== "assistant") return undefined;
+  // A message of a stretch that is not remembered stays out of the index (ADR 0038).
+  if (data["private"] === true) return undefined;
   return { id: data["id"], role: data["role"], text: data["text"] };
 }
 

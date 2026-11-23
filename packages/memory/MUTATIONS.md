@@ -231,3 +231,5 @@ The four rows above reused the ids T-0775-M1 to M4, which the chat package alrea
 | T-0775-M18 | packages/memory/src/search/backend.ts | the chat named was not the only document searched | `the full-text index > a search inside one chat returns every place in it with the message, and reaches no other chat` |
 | T-0775-M19 | packages/memory/src/search/command.ts | the JSON arguments of a bot's tool could name a chat | `the memory search commands > --chat searches inside one chat from any directory; the JSON arguments of a bot's tool cannot` |
 | T-0775-M20 | packages/memory/src/search/sources.ts | the line of a later message was attributed to the wrong message | `the full-text index > a search inside one chat returns every place in it with the message, and reaches no other chat` |
+
+| T-0779-M6 | packages/memory/src/search/sources.ts | the index read the marked messages | `messages of a stretch that is not remembered stay out of what the full-text index reads` |

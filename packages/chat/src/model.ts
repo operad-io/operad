@@ -42,6 +42,24 @@ export const NEW_FACT = "chat.new";
  */
 export const BRIEF_FACT = "chat.brief";
 
+/**
+ * The fact type of `/private` turned on or off: `on`, and who did it. The chat's
+ * `private` field holds the state in force; messages recorded while it is on
+ * carry `private: true` (ADR 0026 D23).
+ */
+export const PRIVATE_FACT = "chat.private";
+
+/** The standing status a chat shows while a stretch is not remembered (approved words). */
+export const PRIVATE_STATUS = "Not remembered / 不记入记忆";
+
+/** The line `/private` answers with when it starts a stretch. */
+export const PRIVATE_ON_LINE =
+  "Not remembered / 不记入记忆: on. Messages from here stay in this chat and you still see them, but they do not enter the bot's memory: no note is written, they are left out of the memory flush before a compaction, out of Dreaming and out of search. This is not deletion and not a separate chat. Send /private again to end it.";
+
+/** The line `/private` answers with when it ends a stretch. */
+export const PRIVATE_OFF_LINE =
+  "Not remembered / 不记入记忆: off. The stretch stays in this chat but was not written to memory or to search. It is still in this session's context, and a compaction summary could carry it into later context, so the memory flush is skipped while the session holds it. Send /new to start a session that has none of it.";
+
 /** The fact type of messages an attempt took, when no reply message can name them. */
 export const ANSWER_FACT = "chat.answered";
 
@@ -304,6 +322,8 @@ export interface ChatData {
    * process like a chat, takes an `R-` id, and is not in the chat list.
    */
   readonly run?: true | undefined;
+  /** True while a stretch is not remembered (`/private`); see {@link PRIVATE_FACT}. */
+  readonly private?: true | undefined;
 }
 
 /** What a plugin gives to create a chat. */
@@ -537,6 +557,8 @@ export interface MessageData {
   readonly context?: ReplyContext | undefined;
   /** An assistant message: how long the step took to start, to its first line, and in all. */
   readonly timings?: AgentTimings | undefined;
+  /** True for a message of a stretch that is not remembered; memory, Dreaming and search leave it out. */
+  readonly private?: true | undefined;
   /** An assistant message: the memory notes it wrote and the ones it used. */
   readonly memory?: MemoryShown | undefined;
 }
@@ -946,6 +968,7 @@ export function chatData(data: Readonly<Record<string, unknown>>): ChatData {
     ...(data.tokensIncomplete === true ? { tokensIncomplete: true as const } : {}),
     ...(scheduled === undefined ? {} : { scheduled }),
     ...(data.run === true ? { run: true as const } : {}),
+    ...(data.private === true ? { private: true as const } : {}),
   };
 }
 
@@ -1224,6 +1247,7 @@ function messageOfFact(fact: PluginFact): Message | undefined {
     ...(tokens === undefined ? {} : { tokens }),
     ...(context === undefined ? {} : { context }),
     ...(timings === undefined ? {} : { timings }),
+    ...(data.private === true ? { private: true as const } : {}),
     ...(memory === undefined ? {} : { memory }),
     at: fact.at,
     sequence: fact.sequence,
@@ -1492,6 +1516,16 @@ export function newSessionAt(facts: readonly PluginFact[]): number {
   let at = -1;
   for (const fact of facts) if (fact.type === NEW_FACT && fact.sequence > at) at = fact.sequence;
   return at;
+}
+
+/**
+ * Whether the session in force holds a message of a stretch that is not
+ * remembered: a private message after the latest `/new`. The memory flush
+ * before a compaction summarises the whole session, so it is skipped then.
+ */
+export function sessionHoldsPrivate(messages: readonly Message[], facts: readonly PluginFact[]): boolean {
+  const since = newSessionAt(facts);
+  return messages.some((message) => message.private === true && message.sequence > since);
 }
 
 /** The goal of the latest `/new`, when it had one and no brief has been recorded for it yet. */

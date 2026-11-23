@@ -15,7 +15,7 @@
  * the tool calls (ADR 0033 D7).
  */
 
-import { CHAT_TYPE, allEntries, allMessages, chatData, deliveryHeader, memoryWroteLine } from "@operad-io/chat";
+import { CHAT_TYPE, PRIVATE_FACT, PRIVATE_OFF_LINE, PRIVATE_ON_LINE, allEntries, allMessages, chatData, chatFacts, deliveryHeader, memoryWroteLine } from "@operad-io/chat";
 import { messageOf, type SourceContext } from "@operad-io/engine";
 import { BotApiError, type BotApi } from "./api.ts";
 import { TelegramEvents, type TelegramEvent } from "./events.ts";
@@ -201,6 +201,19 @@ export class ReplySender {
     for (const entry of allEntries(this.ctx.store, chatId)) {
       if (entry.kind !== "failure" || entry.text === undefined) continue;
       outgoing.push({ id: `failure:${entry.sequence}`, at: entry.at, sequence: entry.sequence, text: entry.text });
+    }
+    // A stretch that is not remembered starts and ends with a line. One turned on
+    // or off from Telegram is answered there as a command is, so only another client's is sent.
+    for (const fact of chatFacts(this.ctx.store, chatId)) {
+      if (fact.type !== PRIVATE_FACT) continue;
+      const by = fact.data.by;
+      if (typeof by === "object" && by !== null && "via" in by && by.via === TELEGRAM_SOURCE) continue;
+      outgoing.push({
+        id: `private:${fact.sequence}`,
+        at: fact.at,
+        sequence: fact.sequence,
+        text: fact.data.on === true ? PRIVATE_ON_LINE : PRIVATE_OFF_LINE,
+      });
     }
     outgoing.sort((left, right) => left.sequence - right.sequence);
     for (const item of outgoing) {
