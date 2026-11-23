@@ -1722,3 +1722,4 @@ the row fields.
 | T-0732-M3 | packages/dev/src/steps.ts | `prepareWorktree` did not refuse a folder without git | `a task needs git > the worktree step refuses with the same sentence` |
 | T-0732-M4 | packages/dev/src/git-state.ts | the no-commit state said the no-repository sentence | `a task needs git > no commit: the refusal asks for the first commit` |
 | T-0732-M5 | packages/dev/src/git-state.ts | the subfolder sentence did not name the root or the add command | `a task needs git > a subfolder names the root and the command` |
+| T-0732-M6 | packages/dev/src/steps.ts | `prepareBranch` did not refuse a folder without git | `a task needs git > the branch-mode step refuses with the same sentence` |

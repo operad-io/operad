@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { createChatPlugin } from "@operad-io/chat";
 import { PluginRegistry } from "@operad-io/engine";
 import { addPlan, addRepository, addTask, createDevPlugin } from "../../src/index.ts";
-import { prepareWorktree } from "../../src/steps.ts";
+import { prepareBranch, prepareWorktree } from "../../src/steps.ts";
 import { DEFAULT_DEV_SETTINGS } from "../../src/settings.ts";
 import { repositoryData } from "../../src/model.ts";
 import { realGitFinderHost } from "@operad-io/engine/platform";
@@ -128,6 +128,16 @@ describe("a task needs git", () => {
     const repository = await r.store.get("repo", "plain");
     if (repository === undefined) throw new Error("no repository");
     const prepared = prepareWorktree(repositoryData(repository.data), DEFAULT_DEV_SETTINGS, "T-0001-x");
+    expect(JSON.stringify(prepared)).toContain(NOT_UNDER_GIT);
+  });
+
+  test("the branch-mode step refuses with the same sentence", async () => {
+    const r = await rig();
+    const repository = await r.store.get("repo", "plain");
+    if (repository === undefined) throw new Error("no repository");
+    const prepared = await prepareBranch(repositoryData(repository.data), DEFAULT_DEV_SETTINGS, "T-0001-x", {
+      mergeMain: true,
+    });
     expect(JSON.stringify(prepared)).toContain(NOT_UNDER_GIT);
   });
 
