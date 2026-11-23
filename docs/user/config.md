@@ -292,6 +292,7 @@ The default profile and the meaning of each access field are on
 | Key | Type | Default | Allowed values | When it takes effect | Wrong value |
 |---|---|---|---|---|---|
 | `chat.speaker` | string | `"Operad Bot"` | non-empty text | When a chat transcript is rendered | Refused by the schema |
+| `chat.awayMinutes` | integer | `240` | 0 or more | Next message | Refused by the schema |
 
 A bot chat uses its bot's `speaker` instead. See [Chats and bots](chats-and-bots.md).
 
