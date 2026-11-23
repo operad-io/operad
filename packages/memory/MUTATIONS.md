@@ -211,3 +211,23 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0778-M4 | packages/memory/src/commit.ts | the notes the wiki commit changed were left out of `wrote` | `a bot run is recorded in git > names the notes the run wrote with a one-line summary, and the one it removed, which has no summary` |
+
+## T-0775 — Search inside one chat
+
+Each row was applied to the source, the two search test files were run, and the source was restored.
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0775-M1 | packages/memory/src/search/backend.ts | a search inside a chat kept one hit per document | `the full-text index > a search inside one chat returns every place in it with the message, and reaches no other chat` |
+| T-0775-M2 | packages/memory/src/search/backend.ts | the chat named was not the only document searched | `the full-text index > a search inside one chat returns every place in it with the message, and reaches no other chat` |
+| T-0775-M3 | packages/memory/src/search/command.ts | the JSON arguments of a bot's tool could name a chat | `the memory search commands > --chat searches inside one chat from any directory; the JSON arguments of a bot's tool cannot` |
+| T-0775-M4 | packages/memory/src/search/sources.ts | the line of a later message was attributed to the wrong message | `the full-text index > a search inside one chat returns every place in it with the message, and reaches no other chat` |
+
+The four rows above reused the ids T-0775-M1 to M4, which the chat package already holds; they are renumbered below as T-0775-M17 to M20 (the lines above stay, rows are append-only).
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0775-M17 | packages/memory/src/search/backend.ts | a search inside a chat kept one hit per document | `the full-text index > a search inside one chat returns every place in it with the message, and reaches no other chat` |
+| T-0775-M18 | packages/memory/src/search/backend.ts | the chat named was not the only document searched | `the full-text index > a search inside one chat returns every place in it with the message, and reaches no other chat` |
+| T-0775-M19 | packages/memory/src/search/command.ts | the JSON arguments of a bot's tool could name a chat | `the memory search commands > --chat searches inside one chat from any directory; the JSON arguments of a bot's tool cannot` |
+| T-0775-M20 | packages/memory/src/search/sources.ts | the line of a later message was attributed to the wrong message | `the full-text index > a search inside one chat returns every place in it with the message, and reaches no other chat` |

@@ -41,7 +41,7 @@ An ADR states a decision that is in force, as if it had always been the decision
 | [0023](0023-pi-harness.md) | The `pi` Harness | A Bun child process, no discovery, the user's pi and login, access matching |
 | [0024](0024-claude-harness.md) | The `claude` Harness | The Agent SDK client, the user's binary and login, `canUseTool`, facts |
 | [0025](0025-access-profile.md) | The Access Profile | A guardrail enforced by each harness, asks as pending items, the user layer |
-| [0026](0026-chat.md) | The Chat | One object, message events and `chat:reply`, asking in the middle, agent, model and effort, closing |
+| [0026](0026-chat.md) | The Chat | One object, message events and `chat:reply`, asking in the middle, agent, model and effort, closing, segments of a long chat |
 | [0027](0027-chat-record.md) | Chat Attachments and the Record of a Reply | Uploads to the chat's directory, entries as facts, text through the section's tail |
 | [0028](0028-repository-and-bot-chats.md) | Repository Chats and Bot Chats | Two kinds by origin, read-only main clone, MCP tools, first message creates, channels |
 | [0029](0029-serve-and-clients.md) | `operad serve` and the Clients | The display interface over HTTP, one backend, an app that knows no plugin |
@@ -53,5 +53,5 @@ An ADR states a decision that is in force, as if it had always been the decision
 | [0035](0035-sqlite-only-storage.md) | Storage Is `sqlite` Only | One implementation, `store.backend` accepts only `sqlite` |
 | [0036](0036-test-rules.md) | How Tests Are Kept Fast and Few | Simulation first, `test/heavy/`, no incident replays, slowest listed |
 | [0037](0037-chat-commands.md) | Chat Commands | `command` on an action, `chat:send` runs it, one transcript entry, `/help` |
-| [0038](0038-full-text-search.md) | Full-Text Search | One FTS5 index per home, trigram with a substring fallback, scopes bound to a bot, `search` and `read` tools |
+| [0038](0038-full-text-search.md) | Full-Text Search | One FTS5 index per home, trigram with a substring fallback, scopes bound to a bot, `search` and `read` tools, search inside one chat |
 | [0039](0039-where-a-repository-works.md) | Where a Repository Works | `workIn` `branch` or `worktree`, concurrency 1 and `pool` required for `branch`, `dev.json` read once per attempt, a folder needs git only to create a task, "Set up git here" |

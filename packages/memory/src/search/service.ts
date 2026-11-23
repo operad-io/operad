@@ -30,6 +30,7 @@ import {
   documentPath,
   fileName,
   markdownFiles,
+  messageAtLine,
 } from "./sources.ts";
 import { wikiDirectory } from "../memory.ts";
 import {
@@ -342,7 +343,8 @@ export class MemorySearch {
   search(request: SearchRequest): SearchResult {
     const query = request.text.trim();
     if (query.length === 0) throw new SearchError("search needs a query");
-    const scopes = requestedScopes(request.scopes);
+    const inChat = request.chat === undefined ? undefined : `chat:${request.chat}`;
+    const scopes: readonly SearchScope[] = inChat === undefined ? requestedScopes(request.scopes) : ["chats"];
     const limit = requestedLimit(request.limit);
     const fields = normaliseFields(request.fields);
     const hits = this.backend.search({
@@ -351,19 +353,30 @@ export class MemorySearch {
       owner: resolve(request.cwd),
       ...(fields === undefined ? {} : { fields }),
       limit,
+      ...(inChat === undefined ? {} : { document: inChat, chunks: true }),
     });
+    const messages =
+      request.chat === undefined || request.store === undefined ? undefined : chatMessages(request.store, request.chat);
     const terms = queryTerms(query);
     const found = new Map<string, BackendHit>();
     for (const hit of hits) {
-      // A backend returns chunks; a reader wants the best chunk per document.
-      const before = found.get(hit.id);
-      if (before === undefined || hit.score > before.score) found.set(hit.id, hit);
+      // A backend returns chunks; a reader wants the best chunk per document,
+      // and a search inside one chat wants every place in it.
+      const key = inChat === undefined ? hit.id : `${hit.id}:${hit.lineStart}`;
+      const before = found.get(key);
+      if (before === undefined || hit.score > before.score) found.set(key, hit);
     }
     const results: SearchHit[] = [];
     const about = new Map<string, AboutDocument>();
     for (const hit of found.values()) {
       const document = this.backend.get(hit.id);
       if (document === undefined) continue;
+      // A chunk covers about twenty lines, so the message is the one holding the first matching line.
+      const matching = hit.text
+        .split(/\r?\n/u)
+        .findIndex((line) => terms.some((term) => line.toLocaleLowerCase().includes(term.toLocaleLowerCase())));
+      const message =
+        messages === undefined ? undefined : messageAtLine(messages, hit.lineStart + Math.max(0, matching));
       results.push({
         id: document.id,
         scope: document.scope,
@@ -374,6 +387,7 @@ export class MemorySearch {
         snippet: snippetOf(hit.text, terms),
         score: hit.score,
         fields: document.fields,
+        ...(message === undefined ? {} : { message }),
       });
       const key = `${document.scope}\u0000${document.owner}\u0000${document.directory}`;
       if (about.has(key)) continue;
@@ -381,7 +395,7 @@ export class MemorySearch {
       if (description === undefined) continue;
       about.set(key, { id: description.id, title: description.title, text: description.text.trim() });
     }
-    results.sort((left, right) => right.score - left.score || left.id.localeCompare(right.id));
+    results.sort((left, right) => right.score - left.score || left.id.localeCompare(right.id) || left.lineStart - right.lineStart);
     return { query, scopes, hits: results.slice(0, limit), about: [...about.values()] };
   }
 
