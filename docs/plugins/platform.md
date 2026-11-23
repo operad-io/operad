@@ -174,3 +174,14 @@ writeImmediate(db, () => db.query("INSERT INTO t VALUES (1)").run());
 | `writeImmediate(database, work)` | Runs `work` in an immediate transaction and waits for other writers as long as they make progress. The busy handler gives up after `BUSY_TIMEOUT_MS`, but a writer that commits again the moment it releases can keep another connection waiting longer on a slow disk with nothing stuck; so `SQLITE_BUSY` is final only when no other connection committed while this one waited |
 
 Do not open a SQLite file with any other settings, and do not sleep and retry: the busy handler is the wait.
+
+## The git program
+
+A plugin that runs git asks the platform for the program and spawns the path it returns, never the word `git`. A PATH that changed after the process started (a new install) is not seen by a spawn of the bare name, and on macOS `/usr/bin/git` is a stub that opens Apple's install dialog when the command line tools are missing.
+
+| Export | Type | What it does |
+|---|---|---|
+| `findGit(host?)` | function | The absolute path of a git that can be run, or `undefined`. It never runs git and never opens an installer. On macOS `/usr/bin/git` counts only when `/usr/bin/xcode-select -p` names a directory holding `usr/bin/git`. On Windows it also looks in the usual `Git\cmd` places. Nothing is cached, so a git installed later is found on the next call |
+| `GIT_NOT_INSTALLED` | `"git is not installed"` | The error text a caller returns when `findGit` finds nothing |
+| `realGitFinderHost()` | function | The machine the process runs on, as a `GitFinderHost` |
+| `GitFinderHost` | type | The platform, environment, PATH lookup, file check and program run the finder uses; a test passes its own |
