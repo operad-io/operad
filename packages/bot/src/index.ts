@@ -14,7 +14,7 @@ import pkg from "../package.json" with { type: "json" };
 import { mkdirSync } from "node:fs";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CHAT_TYPE, MESSAGE_EVENT, levelRefusal, agentConditionals, type AgentChoices, type ScheduledChat, chatData, createChat, sendMessage, startingEffort, startingModel, titleFromMessage } from "@operad-io/chat";
+import { CHAT_TYPE, MESSAGE_EVENT, mainChatOf, levelRefusal, agentConditionals, type AgentChoices, type ScheduledChat, chatData, createChat, sendMessage, startingEffort, startingModel, titleFromMessage } from "@operad-io/chat";
 import { definePlugin, isRecord, modelIds, type ActionArgSchema, type ActionArgsSchema, type ActionTypeDefinition, type HarnessCapabilities, type HarnessModelInfo, type HarnessModels, type JsonValue, type ObjectRow, type ObjectStore, type ObjectViews, type PluginStepResult, type SectionContent, type StepContext, type StoredObject } from "@operad-io/engine";
 import {
   BOT_SETTINGS,
@@ -777,7 +777,14 @@ export const botViews: ObjectViews = {
     },
   }),
   sections: () => [{ id: "bot", title: "Bot" }],
-  load: async (ctx, object): Promise<SectionContent> => ({ markdown: await botMarkdown(ctx.store, object) }),
+  // The bot's main chat rides on its page, so a client that opens the bot can go on to it.
+  load: async (ctx, object): Promise<SectionContent> => {
+    const main = object.data.removed === true ? undefined : await mainChatOf(ctx.store, `${BOT_TYPE}:${object.id}`);
+    return {
+      markdown: await botMarkdown(ctx.store, object),
+      data: { mainChat: main === undefined ? null : `${CHAT_TYPE}:${main}` },
+    };
+  },
 };
 
 /** Builds the bot plugin. */

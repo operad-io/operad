@@ -52,7 +52,7 @@ operad
 `npm install -g @operad-io/cli` also works while `bun` is on your `PATH`.
 
 With no command, `operad` creates the home when it has none, starts `serve`,
-and opens the default bot's new chat. `operad --help` lists every command.
+and opens the default bot's main chat: its chat bound to Telegram, else its latest open chat, else a new one. `operad --help` lists every command.
 
 A folder needs no git and no remote to be added and chatted with; git is needed only when you create a task, and then the bot offers [Set up git here](docs/user/chats-and-bots.md#set-up-git-here). You do not need to install an agent first: with none of `claude`, `pi` or `radian` on your `PATH`, operad installs its own pi on first use, which needs the network once.
 

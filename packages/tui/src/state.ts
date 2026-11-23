@@ -438,7 +438,15 @@ export interface TuiState {
    * can start on it; the page's answer starts it. `noteFirst` starts at the
    * first message, leaving the action's arguments at their defaults.
    */
-  readonly creating?: { readonly parent: string; readonly type: string; readonly noteFirst?: boolean | undefined } | undefined;
+  readonly creating?:
+    | {
+        readonly parent: string;
+        readonly type: string;
+        readonly noteFirst?: boolean | undefined;
+        /** Go to the parent's main chat, named by its page, when it has one; else create. */
+        readonly mainFirst?: boolean | undefined;
+      }
+    | undefined;
   /** Set when a section must be fetched. */
   readonly sectionRequest?: TuiSectionRequest | undefined;
   /** Grows each time a list cursor moves; the shell opens what it lands on. */
@@ -1603,17 +1611,31 @@ function applyObject(
     updated = requestSection(updated, active);
   }
   const creating = updated.creating;
-  if (creating !== undefined && previous.id === creating.parent) {
-    updated = { ...updated, creating: undefined };
-    const make = view.actions.find((action) => action.creates === creating.type);
-    if (make === undefined) {
-      return withNotice(updated, `${creating.parent} has no way to create a ${creating.type}`);
-    }
-    return creating.noteFirst === true
-      ? startNote(updated, make.name)
-      : startAction(updated, make.name);
+  // A parent entered by start-chat waits for its page's section, which names its main chat.
+  if (
+    creating !== undefined &&
+    previous.id === creating.parent &&
+    (creating.mainFirst !== true || sections.length === 0)
+  ) {
+    return startCreating(updated, creating, view.actions);
   }
   return updated;
+}
+
+/** Ends a pending create on its parent: the first message, or the action's own input. */
+function startCreating(
+  state: TuiState,
+  creating: NonNullable<TuiState["creating"]>,
+  actions: readonly ViewAction[],
+): TuiState {
+  const updated: TuiState = { ...state, creating: undefined };
+  const make = actions.find((action) => action.creates === creating.type);
+  if (make === undefined) {
+    return withNotice(updated, `${creating.parent} has no way to create a ${creating.type}`);
+  }
+  return creating.noteFirst === true
+    ? startNote(updated, make.name)
+    : startAction(updated, make.name);
 }
 
 /** `c` on a tab of one object type: the palette, listing where a new one can be made. */
@@ -1753,11 +1775,20 @@ function applySection(
       scroll: next.following ? bottom : Math.min(value.scroll, bottom),
     };
   });
-  return {
+  const settled: TuiState = {
     ...updated,
     sectionRequest:
       state.sectionRequest?.sectionId === sectionId ? undefined : state.sectionRequest,
   };
+  const creating = settled.creating;
+  if (creating?.mainFirst === true && creating.parent === objectId) {
+    const main = content.data?.mainChat;
+    if (typeof main === "string" && parseObjectId(main) !== undefined) {
+      return openNamed({ ...settled, creating: undefined }, main);
+    }
+    return startCreating(settled, creating, object.actions);
+  }
+  return settled;
 }
 
 function applySectionError(
@@ -1780,11 +1811,16 @@ function applySectionError(
     loading: false,
     error: sanitize(message),
   }));
-  return {
+  const settled: TuiState = {
     ...updated,
     sectionRequest:
       state.sectionRequest?.sectionId === sectionId ? undefined : state.sectionRequest,
   };
+  const creating = settled.creating;
+  // A page that cannot say its main chat starts a new one, as before.
+  return creating?.mainFirst === true && creating.parent === objectId
+    ? startCreating(settled, creating, object?.actions ?? [])
+    : settled;
 }
 
 /** Scrolls the open section; a page can ask for the section's next page. */
@@ -2962,7 +2998,7 @@ export function reduce(state: TuiState, event: TuiStateEvent): TuiState {
       const opened = openNamed({ ...state, followPending: false }, event.parent);
       return opened === state
         ? state
-        : { ...opened, creating: { parent: event.parent, type: "chat", noteFirst: true } };
+        : { ...opened, creating: { parent: event.parent, type: "chat", noteFirst: true, mainFirst: true } };
     }
     case "status":
       if (stale(state, event.generation)) return state;

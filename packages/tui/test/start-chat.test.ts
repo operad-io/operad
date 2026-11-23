@@ -72,7 +72,7 @@ describe("a client with no chosen parent starts the default bot's new chat", () 
     state = reduce(state, { type: "start-chat", parent: "bot:default" });
     expect(state.object?.id).toBe("bot:default");
     expect(state.objectRequest?.id).toBe("bot:default");
-    expect(state.creating).toEqual({ parent: "bot:default", type: "chat", noteFirst: true });
+    expect(state.creating).toEqual({ parent: "bot:default", type: "chat", noteFirst: true, mainFirst: true });
 
     state = reduce(state, { type: "object", object: bot() });
     expect(state.creating).toBeUndefined();
@@ -94,6 +94,63 @@ describe("a client with no chosen parent starts the default bot's new chat", () 
       id: "bot:default",
       note: "hello",
     });
+  });
+});
+
+describe("a bot page that names a main chat opens it instead of a new one", () => {
+  function started(): TuiState {
+    let state = initialState({ width: 120 });
+    state = reduce(state, {
+      type: "types",
+      types: [
+        { type: "bot", title: "Bot", plugin: "bot", settings: true },
+        { type: "chat", title: "Chat", plugin: "chat", parents: ["bot"] },
+      ],
+    });
+    state = reduce(state, { type: "start-chat", parent: "bot:default" });
+    return reduce(state, { type: "object", object: { ...bot(), sections: [{ id: "bot", title: "Bot" }] } });
+  }
+
+  test("the first message waits for the page's section", () => {
+    const state = started();
+    expect(state.object?.id).toBe("bot:default");
+    expect(state.input).toBeUndefined();
+    expect(state.creating?.mainFirst).toBe(true);
+  });
+
+  test("a main chat in the section opens that chat and starts no new one", () => {
+    const state = reduce(started(), {
+      type: "section",
+      objectId: "bot:default",
+      sectionId: "bot",
+      content: { markdown: "", data: { mainChat: "chat:C-7" } },
+    });
+    expect(state.object?.id).toBe("chat:C-7");
+    expect(state.objectRequest?.id).toBe("chat:C-7");
+    expect(state.creating).toBeUndefined();
+    expect(state.input).toBeUndefined();
+  });
+
+  test("no main chat in the section starts the new chat's first message", () => {
+    const state = reduce(started(), {
+      type: "section",
+      objectId: "bot:default",
+      sectionId: "bot",
+      content: { markdown: "", data: { mainChat: null } },
+    });
+    expect(state.object?.id).toBe("bot:default");
+    expect(state.creating).toBeUndefined();
+    expect(state.input).toMatchObject({ kind: "note", action: "bot:chat", id: "bot:default" });
+  });
+
+  test("a section that fails to read starts the new chat's first message", () => {
+    const state = reduce(started(), {
+      type: "section-error",
+      objectId: "bot:default",
+      sectionId: "bot",
+      message: "boom",
+    });
+    expect(state.input).toMatchObject({ kind: "note", action: "bot:chat" });
   });
 });
 

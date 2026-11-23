@@ -568,3 +568,10 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0714-M1 | packages/tui/src/state.ts | a plugin tab ignored the served list title and used the plugin name | `one tab per plugin > a plugin that serves a list title is named by it, not by its name` |
+
+## T-0769 — A bare `operad` returns to the bot's main chat
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0769-M4 | packages/tui/src/state.ts | the bot page's `mainChat` was ignored, so a new chat was always started | `a bot page that names a main chat opens it instead of a new one > a main chat in the section opens that chat and starts no new one` |
+| T-0769-M5 | packages/tui/src/state.ts | the first message was asked for as soon as the bot opened, before its page named a main chat | `a bot page that names a main chat opens it instead of a new one > the first message waits for the page's section` |
