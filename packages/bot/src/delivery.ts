@@ -9,10 +9,13 @@
 import { deliverResult, mainChatOf } from "@operad-io/chat";
 import type { FactWriter, ObjectStore } from "@operad-io/engine";
 import { BOT_TYPE } from "./bot.ts";
+import { ROUTINE_TYPE } from "./schedule.ts";
 
 /** What a routine run hands over. */
 export interface RoutineResult {
   readonly bot: string;
+  /** The routine's bare object id, when it has one. */
+  readonly routineId?: string | undefined;
   readonly title: string;
   readonly runId: string;
   readonly summary: string;
@@ -34,6 +37,7 @@ export async function deliverToMainChat(
   if (chat === undefined) return false;
   await deliverResult(ctx, chat, {
     routine: result.title,
+    ...(result.routineId === undefined || result.routineId.length === 0 ? {} : { routineId: `${ROUTINE_TYPE}:${result.routineId}` }),
     runId: result.runId,
     summary: result.summary,
     text: result.text,

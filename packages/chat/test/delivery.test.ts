@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { allMessages, deliverResult, messageMarkdown, type Delivery } from "../src/index.ts";
+import { allMessages, chatViews, deliverResult, messageMarkdown, type Delivery } from "../src/index.ts";
 import { cleanupRoots, reply, rig } from "./support.ts";
 
 afterAll(cleanupRoots);
@@ -77,5 +77,26 @@ describe("a delivered result", () => {
     await r.say(chat, "hi");
     await r.round(chat);
     expect(String(r.calls[0]?.params.prompt)).toContain("Morning news (failed), run R-0003: agent crashed");
+  });
+
+  test("the transcript's data names the routine and the run of a delivery, and the header stays", async () => {
+    const r = await rig(() => reply("ok", "s-1"));
+    const chat = await r.chat();
+    await deliver(r, chat, delivery("R-0001", { routineId: "bot-routine:RT-0001" }));
+    await deliver(r, chat, delivery("R-0002", { failed: true }));
+    const object = await r.store.get("chat", chat);
+    if (object === undefined) throw new Error("no chat");
+    const shown = await chatViews.load(
+      { store: r.store, settings: {}, plugin: "chat", home: "/tmp/none", sectionCapBytes: 256 * 1024 } as never,
+      object,
+      "transcript",
+      {},
+    );
+    const data = shown.data as unknown as { deliveries?: readonly Record<string, unknown>[] };
+    expect(data.deliveries).toHaveLength(2);
+    expect(data.deliveries?.[0]).toMatchObject({ routine: "Morning news", routineId: "bot-routine:RT-0001", runId: "R-0001" });
+    expect(data.deliveries?.[1]).toMatchObject({ runId: "R-0002", failed: true });
+    expect(data.deliveries?.[1]?.routineId).toBeUndefined();
+    expect(shown.markdown).toContain("**Routine · Morning news** ·");
   });
 });

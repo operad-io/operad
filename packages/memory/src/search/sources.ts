@@ -184,6 +184,21 @@ export function chatDocument(chat: string, title: string, messages: readonly Ind
   return lines.join("\n");
 }
 
+/**
+ * The message a line of a chat's document belongs to, or undefined for the
+ * heading. It walks the layout `chatDocument` writes: a heading of three
+ * lines, then per message a speaker line, its text and one blank line.
+ */
+export function messageAtLine(messages: readonly IndexedChatMessage[], line: number): string | undefined {
+  let at = 4;
+  for (const message of messages) {
+    const end = at + 1 + message.text.split(/\r?\n/u).length;
+    if (line >= at && line <= end) return message.id;
+    at = end + 1;
+  }
+  return undefined;
+}
+
 /** A chat's title, as its stored object states it. */
 export function chatTitle(id: string, data: Readonly<Record<string, unknown>>): string {
   const title = data["title"];

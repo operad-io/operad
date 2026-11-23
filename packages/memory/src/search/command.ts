@@ -68,6 +68,8 @@ interface SearchInput {
   readonly scopes?: readonly SearchScope[] | undefined;
   readonly fields?: Readonly<Record<string, string | readonly string[]>> | undefined;
   readonly limit?: number | undefined;
+  /** Only from the command line: the tools a bot gets cannot reach into another chat. */
+  readonly chat?: string | undefined;
 }
 
 function searchFromJson(parsed: Record<string, unknown>): SearchInput {
@@ -83,8 +85,14 @@ function searchFromArgv(argv: readonly string[]): SearchInput {
   const scopes: string[] = [];
   const fields: Record<string, string> = {};
   let limit: string | undefined;
+  let chat: string | undefined;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index] ?? "";
+    if (arg === "--chat" || arg.startsWith("--chat=")) {
+      chat = arg === "--chat" ? argv[++index] ?? "" : arg.slice("--chat=".length);
+      if (chat.length === 0) throw new SearchError("--chat takes a chat id");
+      continue;
+    }
     if (arg === "--scope" || arg.startsWith("--scope=")) {
       const value = arg === "--scope" ? argv[++index] ?? "" : arg.slice("--scope=".length);
       scopes.push(value);
@@ -110,6 +118,7 @@ function searchFromArgv(argv: readonly string[]): SearchInput {
     ...(scopes.length === 0 ? {} : { scopes: scopesOf(scopes) }),
     ...(Object.keys(fields).length === 0 ? {} : { fields }),
     ...(limit === undefined ? {} : { limit: limitOf(limit) }),
+    ...(chat === undefined ? {} : { chat }),
   };
 }
 
@@ -192,6 +201,7 @@ export async function runMemorySearch(ctx: CommandContext, argv: readonly string
       ...(input.scopes === undefined ? {} : { scopes: requestedScopes(input.scopes) }),
       ...(input.fields === undefined ? {} : { fields: input.fields }),
       ...(input.limit === undefined ? {} : { limit: input.limit }),
+      ...(input.chat === undefined ? {} : { chat: input.chat, store: ctx.store }),
     });
   } finally {
     search.close();

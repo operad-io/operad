@@ -323,7 +323,8 @@ describe("a chat too full to compact", () => {
     await r.round(chat);
     await r.say(chat, "two");
     expect((await r.round(chat)).result).toBe("done");
-    expect(r.calls).toHaveLength(2);
+    // A compaction starts a segment, and the naming call is not a reply.
+    expect(r.calls.filter((call) => !String(call.params.prompt).includes("Give a title"))).toHaveLength(2);
   });
 
   test("a window that is not known never stops the chat", async () => {
@@ -343,7 +344,8 @@ describe("a chat too full to compact", () => {
     await send(r, chat, "/new");
     await r.say(chat, "two");
     await r.round(chat);
-    expect(r.calls).toHaveLength(2);
-    expect(r.calls[1]?.params.resumeSession).toBeUndefined();
+    const replies = r.calls.filter((call) => !String(call.params.prompt).includes("Give a title"));
+    expect(replies).toHaveLength(2);
+    expect(replies[1]?.params.resumeSession).toBeUndefined();
   });
 });

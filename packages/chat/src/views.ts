@@ -1,6 +1,6 @@
 /** How a chat shows in a list and on its page: a row and a transcript. */
 
-import { attachmentDir, attachmentUrl, decodeCursor, DEFAULT_SECTION_CAP_BYTES, encodeCursor, formatElapsed, isRecord, parseObjectId } from "@operad-io/engine";
+import { attachmentDir, attachmentUrl, CursorError, decodeCursor, DEFAULT_SECTION_CAP_BYTES, encodeCursor, formatElapsed, isRecord, parseObjectId } from "@operad-io/engine";
 import type {
   JsonValue,
   ObjectRef,
@@ -20,6 +20,7 @@ import { maskSecrets, type FoldEntry } from "@operad-io/harness-process";
 import { secretValues } from "./reply.ts";
 import { readChatSkills, skillSummaries, type ObjectReader } from "./skills.ts";
 import { foldLogTail, agentLogPath } from "./tail.ts";
+import { segmentsOf, type Segment } from "./segments.ts";
 import { PRIVATE_STATUS, agentLine, answeredOfFact, attachmentsOf, CHAT_TYPE, deliveryHeader, deliveryOf, chatData, chatRef, COMMAND_FACT, commandOfFact, ENTRY_FACT, entryOfFact, factsOf, IMAGE_TYPES, lastReplyContext, latestRunOf, MESSAGE_CHANGE_FACT, MESSAGE_FACT, memoryShownOf, memoryUsedLine, memoryWroteLine, messageChangeOfFact, messageFactsInForce, modelAndCost, queuedData, queuedMessages, queuedOf, readChat, RUN_FACT, stopOfFact, timingsOf, unanswered, ANSWER_FACT, type Attachment, type ChatContext, type ChatRead, type Command, type Entry, type Message, type MemoryShown, type MessageChange, type ToolResult } from "./model.ts";
 import type { TailRead } from "./tail.ts";
 
@@ -607,6 +608,32 @@ function liveReply(
       process: processOfItems(live.items),
     },
   };
+}
+
+/** The deliveries recorded in the chunks shown, as the transcript's data names them. */
+function deliveriesData(chunks: readonly Chunk[]): JsonValue[] {
+  const found: JsonValue[] = [];
+  for (const chunk of chunks) {
+    for (const fact of chunk.facts) {
+      const message = fact.type === MESSAGE_FACT ? messageFrom(fact) : undefined;
+      const delivery = message?.delivery;
+      if (message === undefined || delivery === undefined) continue;
+      found.push({
+        id: message.id,
+        at: message.at,
+        routine: delivery.routine,
+        ...(delivery.routineId === undefined ? {} : { routineId: delivery.routineId }),
+        runId: delivery.runId,
+        ...(delivery.failed === true ? { failed: true } : {}),
+      });
+    }
+  }
+  return found;
+}
+
+function withDeliveries(base: Readonly<Record<string, JsonValue>>, chunks: readonly Chunk[]): Readonly<Record<string, JsonValue>> {
+  const deliveries = deliveriesData(chunks);
+  return deliveries.length === 0 ? base : { ...base, deliveries };
 }
 
 function jsonBytes(value: unknown): number {
@@ -1424,6 +1451,103 @@ async function liveOf(
   };
 }
 
+/** The line that marks where a segment starts: its title and its date (UTC); the date alone while it has no title. */
+export function segmentMarker(segment: Segment): string {
+  const date = new Date(segment.at).toISOString().slice(0, 10);
+  return `### ${segment.title.length > 0 ? `${segment.title} · ` : ""}${date}`;
+}
+
+function firstSequence(chunk: Chunk): number {
+  return chunk.facts.reduce((least, fact) => Math.min(least, fact.sequence), Number.MAX_SAFE_INTEGER);
+}
+
+/** The first chunk after each segment's beginning: where its marker goes. The first segment has none. */
+function segmentStarts(chunks: readonly Chunk[], segments: readonly Segment[]): ReadonlyMap<Chunk, Segment> {
+  const starts = new Map<Chunk, Segment>();
+  for (const segment of segments) {
+    if (segment.kind === "first") continue;
+    const chunk = chunks.find((candidate) => firstSequence(candidate) > segment.sequence);
+    if (chunk !== undefined && !starts.has(chunk)) starts.set(chunk, segment);
+  }
+  return starts;
+}
+
+/** What a chunk renders as, led by the marker of the segment that starts with it. */
+function chunkBlocks(
+  chunk: Chunk,
+  starts: ReadonlyMap<Chunk, Segment>,
+  speaker: string,
+  home: string | undefined,
+  harness: string,
+): readonly string[] {
+  const start = starts.get(chunk);
+  return [...(start === undefined ? [] : [segmentMarker(start)]), ...rendered(chunk, speaker, home, harness)];
+}
+
+/** One page of chunks from `start`, by the size rule `pagesOf` follows. */
+function pageFrom(ref: ObjectRef, chunks: readonly Chunk[], start: number): Page & { readonly end: number } {
+  const pageChunks: Chunk[] = [];
+  let messages = 0;
+  let index = start;
+  while (index < chunks.length) {
+    const chunk = chunks[index];
+    if (chunk === undefined) break;
+    if (pageChunks.length > 0 && messages + chunk.messages > TRANSCRIPT_PAGE) break;
+    pageChunks.push(chunk);
+    messages += chunk.messages;
+    index += 1;
+    if (messages >= TRANSCRIPT_PAGE) break;
+  }
+  const before = chunks[start - 1]?.last;
+  return {
+    chunks: pageChunks,
+    after: before,
+    cursor: before === undefined ? undefined : factsCursor(ref, before),
+    end: index,
+  };
+}
+
+const DAY = /^\d{4}-\d{2}-\d{2}$/u;
+
+/**
+ * Where a person's own words ask the transcript to start: `segment:<n>`,
+ * `date:<YYYY-MM-DD>` (UTC, the first thing on or after that day) or
+ * `message:<id>`. The index of the first chunk shown, or undefined for a cursor
+ * that is none of these.
+ */
+function startOf(
+  cursor: string,
+  chunks: readonly Chunk[],
+  segments: readonly Segment[],
+  starts: ReadonlyMap<Chunk, Segment>,
+): number | undefined {
+  const colon = cursor.indexOf(":");
+  if (colon < 0) return undefined;
+  const kind = cursor.slice(0, colon);
+  const value = cursor.slice(colon + 1);
+  if (kind === "segment") {
+    const segment = segments.find((candidate) => String(candidate.number) === value);
+    if (segment === undefined) throw new CursorError(`chat transcript: there is no segment ${value}`);
+    if (segment.kind === "first") return 0;
+    const at = chunks.findIndex((chunk) => starts.get(chunk) === segment);
+    if (at < 0) throw new CursorError(`chat transcript: segment ${value} has nothing to show`);
+    return at;
+  }
+  if (kind === "date") {
+    const day = DAY.test(value) ? Date.parse(`${value}T00:00:00Z`) : Number.NaN;
+    if (Number.isNaN(day)) throw new CursorError("chat transcript: a date is written YYYY-MM-DD");
+    const at = chunks.findIndex((chunk) => chunk.facts.some((fact) => fact.at >= day));
+    if (at < 0) throw new CursorError(`chat transcript: nothing on or after ${value}`);
+    return at;
+  }
+  if (kind === "message") {
+    const at = chunks.findIndex((chunk) => chunk.facts.some((fact) => fact.type === MESSAGE_FACT && fact.data.id === value));
+    if (at < 0) throw new CursorError(`chat transcript: there is no message ${value}`);
+    return at;
+  }
+  return undefined;
+}
+
 async function load(
   ctx: ViewContext,
   object: StoredObject,
@@ -1438,9 +1562,22 @@ async function load(
   const facts = messageFactsInForce(read.facts);
   const messages = read.messages;
   const queued = queuedData(queuedMessages(messages, facts));
+  const segments = segmentsOf(read.facts, chat.title.length > 0 ? chat.title : object.id);
   const queueData: Record<string, JsonValue> = {
     queued: queued as unknown as JsonValue,
     queuedCount: queued.length,
+    // A chat with one segment has nothing to jump between.
+    ...(segments.length < 2
+      ? {}
+      : {
+          segments: segments.map((segment) => ({
+            number: segment.number,
+            at: segment.at,
+            kind: segment.kind,
+            title: segment.title,
+            cursor: `segment:${segment.number}`,
+          })) as unknown as JsonValue,
+        }),
   };
   const live = await liveOf(ctx, object, facts, messages, speaker);
   const { cut, run: liveRun, items: liveItems, ...liveContent } = live;
@@ -1458,7 +1595,8 @@ async function load(
   if (since !== undefined) {
     // Only what was recorded after the mark, in the same Markdown as a full read.
     const chunks = chunksOf(finished.filter((fact) => fact.sequence > since));
-    const blocks = chunks.flatMap((chunk) => rendered(chunk, speaker, ctx.home, chat.harness));
+    const sinceStarts = segmentStarts(chunks, segments.filter((segment) => segment.sequence > since));
+    const blocks = chunks.flatMap((chunk) => chunkBlocks(chunk, sinceStarts, speaker, ctx.home, chat.harness));
     const markdown = blocks.join("\n\n---\n\n");
     // The replies whose answer is after the mark, and the one still running.
     const sinceChunks = finishedChunks.filter((chunk) => {
@@ -1478,7 +1616,7 @@ async function load(
     const data = replyData(
       replies.map((reply) => reply.block),
       Math.max(0, limit - Buffer.byteLength(markdown, "utf8") - Buffer.byteLength(liveContent.tail ?? "", "utf8")),
-      queueData,
+      withDeliveries(queueData, chunks),
     );
     return {
       markdown,
@@ -1490,9 +1628,17 @@ async function load(
     };
   }
   const pages = pagesOf(ref, finishedChunks);
-  const after = options.cursor === undefined ? undefined : cursorAfter(options.cursor);
-  const index = pages.findIndex((page) => page.after === after);
-  const selected = pages[index < 0 ? 0 : index] ?? pages[0];
+  const starts = segmentStarts(finishedChunks, segments);
+  const asked = options.cursor === undefined ? undefined : startOf(options.cursor, finishedChunks, segments, starts);
+  const after = options.cursor === undefined || asked !== undefined ? undefined : cursorAfter(options.cursor);
+  const aligned = pages.findIndex((page) => page.after === after);
+  // A page of the table of contents; or one that starts where a segment, a day or
+  // a message is, or right after such a page.
+  const through = after === undefined ? -1 : finishedChunks.findIndex((chunk) => chunk.last === after);
+  const from = asked ?? (aligned < 0 && through >= 0 ? through + 1 : undefined);
+  const free = from === undefined ? undefined : pageFrom(ref, finishedChunks, from);
+  const index = free === undefined ? aligned : -1;
+  const selected = free ?? pages[index < 0 ? 0 : index] ?? pages[0];
   const pageIndex = index < 0 ? 0 : index;
   const pageChunks = selected?.chunks ?? [];
   const firstOnPage = pageChunks[0]?.facts[0]?.sequence ?? Number.MAX_SAFE_INTEGER;
@@ -1502,10 +1648,11 @@ async function load(
     ctx.home,
     answerBefore(finishedChunks, firstOnPage),
   );
-  const pageReplies = pageIndex === pages.length - 1 && liveBlock !== undefined
+  const lastPage = free === undefined ? pageIndex === pages.length - 1 : free.end >= finishedChunks.length;
+  const pageReplies = lastPage && liveBlock !== undefined
     ? [...onPageBlocks, liveBlock]
     : onPageBlocks;
-  const blocks = (selected?.chunks ?? []).flatMap((chunk) => rendered(chunk, speaker, ctx.home, chat.harness));
+  const blocks = (selected?.chunks ?? []).flatMap((chunk) => chunkBlocks(chunk, starts, speaker, ctx.home, chat.harness));
   const body = blocks.length === 0 && options.cursor === undefined ? "No messages yet." : blocks.join("\n\n---\n\n");
   // Every page says which agent answers, as the row does.
   const agentMarkdown = chat.harness.length > 0
@@ -1513,11 +1660,18 @@ async function load(
     : body;
   // A stretch that is not remembered stands as a status at the top of every page.
   const markdown = chat.private === true ? `**${PRIVATE_STATUS}**\n\n${agentMarkdown}` : agentMarkdown;
-  const nextPage = index < 0 ? undefined : pages[index + 1];
+  const nextCursor =
+    free === undefined
+      ? index < 0
+        ? undefined
+        : pages[index + 1]?.cursor
+      : free.end < finishedChunks.length
+        ? factsCursor(ref, free.chunks.at(-1)?.last ?? 0)
+        : undefined;
   const data = replyData(
     pageReplies.map((reply) => reply.block),
     Math.max(0, limit - Buffer.byteLength(markdown, "utf8") - Buffer.byteLength(liveContent.tail ?? "", "utf8")),
-    queueData,
+    withDeliveries(queueData, pageChunks),
   );
 
   // The table of contents: the cursor each page starts at, the first one without.
@@ -1529,7 +1683,7 @@ async function load(
   return {
     markdown,
     mark: markOf(selected?.chunks.at(-1)?.last ?? 0),
-    ...(nextPage?.cursor === undefined ? {} : { next: nextPage.cursor }),
+    ...(nextCursor === undefined ? {} : { next: nextCursor }),
     ...(toc.length > 1 ? { pages: toc } : {}),
     ...liveContent,
     ...(context === undefined ? {} : { context }),

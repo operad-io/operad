@@ -1,5 +1,7 @@
 /** The shapes the full-text index and the search tool share. */
 
+import type { ObjectStore } from "@operad-io/engine";
+
 /** What a search may cover. */
 export const SEARCH_SCOPES = ["wiki", "memory", "chats"] as const;
 
@@ -149,6 +151,10 @@ export interface BackendQuery {
   readonly owner: string;
   readonly fields?: Readonly<Record<string, string | readonly string[]>> | undefined;
   readonly limit: number;
+  /** Reach only this document. A caller that names one has already decided who may. */
+  readonly document?: string | undefined;
+  /** Return every matching chunk of a document, not only the best one. */
+  readonly chunks?: boolean | undefined;
 }
 
 /**
@@ -184,6 +190,13 @@ export interface SearchRequest {
   readonly scopes?: readonly SearchScope[] | undefined;
   readonly fields?: Readonly<Record<string, string | readonly string[]>> | undefined;
   readonly limit?: number | undefined;
+  /**
+   * Search inside this one chat, whoever the caller is: every matching place in
+   * it comes back, not only the best one, each with the message it is in.
+   */
+  readonly chat?: string | undefined;
+  /** The record the chat's messages are read from, to say which message a hit is in. */
+  readonly store?: ObjectStore | undefined;
 }
 
 /** One search result. */
@@ -197,6 +210,8 @@ export interface SearchHit {
   readonly snippet: string;
   readonly score: number;
   readonly fields: DocumentFields;
+  /** In a search inside one chat: the id of the message the match is in. */
+  readonly message?: string | undefined;
 }
 
 /** A directory's description, returned next to the hits found inside it. */

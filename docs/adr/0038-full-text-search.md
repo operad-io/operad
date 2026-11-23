@@ -60,4 +60,10 @@ The memory package answers four queries from the table: the links a note writes,
 
 A `read` of a note ends with a `Backlinks` section when other notes link to it. The section lists each linking note by path, with the line of the link and a short excerpt around it. A linking note whose frontmatter says `untrusted: true` is listed with the same mark a search result carries. The links the note itself writes are already in its text, so they are not listed again. With no backlinks the section is left out. `--json` carries the same list as a `backlinks` array. No pending card reads the table.
 
-A chat message marked as part of a stretch that is not remembered (ADR 0026 D22) is not indexed, so a bot cannot read it back through search. The owner decided this on 2026-11-23.
+### D9: A search can stay inside one chat
+
+`memory search --chat <id> <words>` searches one chat only, from any directory: naming the chat is the reach, as opening it is, so the bot-ownership rule of D2 does not apply to it. It returns every matching place in the chat, not the best one per document, each with its line range, a snippet and the id of the message the first matching line is in (`message`), so a client can read the transcript from that message (ADR 0026 D22). It is a command-line argument only: the JSON arguments the bot's `search` tool passes cannot name a chat, so a bot reaches no chat but its own (D2, D6). It refreshes the index first, like every search.
+
+### D10: A stretch that is not remembered is not indexed
+
+A chat message marked as part of a stretch that is not remembered (ADR 0026 D23) is not indexed, so a bot cannot read it back through search. The owner decided this on 2026-11-23.

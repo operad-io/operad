@@ -120,7 +120,7 @@ describe("a routine's result reaches the bot's main chat", () => {
       expect(sent[0]).toMatchObject({
         role: "delivery",
         text: LONG,
-        delivery: { routine: "Morning news", runId: run },
+        delivery: { routine: "Morning news", routineId: expect.stringMatching(/^bot-routine:RT-\d+$/), runId: run },
       });
       // The run record is no chat and holds no delivery; nothing started a reply.
       expect(deliveries(r, run)).toHaveLength(0);

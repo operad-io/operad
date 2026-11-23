@@ -380,20 +380,21 @@ export class SqliteSearchBackend implements SearchBackend {
     const long = terms.filter((term) => characterLength(term) >= 3);
     const short = terms.filter((term) => characterLength(term) < 3);
     const found = new Map<string, BackendHit>();
+    const keyOf = (hit: BackendHit): string => (query.chunks === true ? `${hit.id}:${hit.lineStart}` : hit.id);
     // A tokenizer other than trigram is only used to measure it; the substring
     // fallback is what makes trigram's short-query gap harmless.
     const fallback = this.tokenizer === "trigram" && short.length > 0;
     if (long.length > 0) {
-      for (const hit of this.matchFts(query, long)) found.set(hit.id, hit);
+      for (const hit of this.matchFts(query, long)) found.set(keyOf(hit), hit);
     }
     if (fallback) {
       for (const hit of this.matchSubstring(query, short)) {
-        const before = found.get(hit.id);
-        if (before === undefined || hit.score > before.score) found.set(hit.id, hit);
+        const before = found.get(keyOf(hit));
+        if (before === undefined || hit.score > before.score) found.set(keyOf(hit), hit);
       }
     } else if (long.length === 0) {
       // A non-trigram backend still asks FTS for its short terms.
-      for (const hit of this.matchFts(query, short)) found.set(hit.id, hit);
+      for (const hit of this.matchFts(query, short)) found.set(keyOf(hit), hit);
     }
     return [...found.values()]
       .sort((left, right) => right.score - left.score || left.id.localeCompare(right.id))
@@ -408,10 +409,14 @@ export class SqliteSearchBackend implements SearchBackend {
   private filters(query: BackendQuery): { readonly sql: readonly string[]; readonly params: readonly string[] } {
     const sql: string[] = [];
     const params: string[] = [];
+    if (query.document !== undefined) {
+      sql.push("d.id = ?");
+      params.push(query.document);
+    }
     const places = query.scopes.map(() => "?").join(", ");
     sql.push(`d.scope IN (${places})`);
     params.push(...query.scopes);
-    if (query.scopes.some((scope) => scope !== "wiki")) {
+    if (query.document === undefined && query.scopes.some((scope) => scope !== "wiki")) {
       // The wiki is shared; a bot's memory and chats are only the ones whose
       // owner is the bot's working directory.
       sql.push("(d.scope = 'wiki' OR d.owner = ?)");

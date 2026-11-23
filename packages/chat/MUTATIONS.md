@@ -730,6 +730,35 @@ are append-only, so the old lines stay as history.
 | T-0778-M2 | packages/chat/src/reply.ts | the after step was not marked as run, so it ran again when the reply step ended | `a reply shows the memory it wrote and used > names the notes the run wrote, in the reply data and the markdown` |
 | T-0778-M3 | packages/chat/src/reply.ts | the after step ran in a round that left messages to answer | `the step a chat's refresh data names after a reply > runs once for a run that takes more than one round, not once per round` |
 
+## T-0788 — A delivered result names its routine and run
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0788-M1 | packages/chat/src/views.ts | the transcript's data left out the deliveries | `a delivered result > the transcript's data names the routine and the run of a delivery, and the header stays` |
+## T-0775 — Segments of a long chat
+
+Each row was applied to the source, `bun test test/segments.test.ts` was run, and the source was restored.
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0775-M1 | packages/chat/src/segments.ts | a compaction line never started a segment | `segments of a long chat > a /new and a compaction each start a segment; the transcript marks it with its date and a generated title` |
+| T-0775-M2 | packages/chat/src/segments.ts | a stretch with no message counted as a segment | `segments of a long chat > a stretch with no message is not a segment, and a chat with one segment shows none` |
+| T-0775-M3 | packages/chat/src/segments.ts | the goal of `/new` was not the segment's title | `segments of a long chat > the goal of /new is the title and no call is made for it` |
+| T-0775-M4 | packages/chat/src/segments.ts | a segment that already had a title was named again | `segments of a long chat > a title call that fails leaves the first words of the question, once` |
+| T-0775-M5 | packages/chat/src/reply.ts | a failed title call recorded no title, so it was tried again by every reply | `segments of a long chat > a title call that fails leaves the first words of the question, once` |
+| T-0775-M6 | packages/chat/src/views.ts | a read after a mark marked a segment that began before the mark | `segments of a long chat > a read that comes after a mark carries the marker of a segment that began since` |
+| T-0775-M7 | packages/chat/src/views.ts | `date:` started a day late | `reading the transcript from a segment, a date or a message > date:YYYY-MM-DD starts at the first thing on or after that day` |
+| T-0775-M8 | packages/chat/src/views.ts | a page that started inside the chat gave no `next` | `reading the transcript from a segment, a date or a message > a page that starts inside the chat continues with next and never loops back` |
+| T-0775-M9 | packages/chat/src/reply.ts | the chat's cost sum left out the segment title fact | `segments of a long chat > the title call is paid like a reply: the chat's cost counts it as soon as it is made` |
+| T-0775-M10 | packages/chat/src/reply.ts | the title call ignored the harness's background model | `segments of a long chat > the title call asks for the agent's background model when it declares one` |
+| T-0775-M11 | packages/chat/src/views.ts | `segment:<n>` started at segment n+1 | `reading the transcript from a segment, a date or a message > segment:N starts at that segment` |
+| T-0775-M12 | packages/chat/src/views.ts | `message:<id>` started at a message other than the one named | `reading the transcript from a segment, a date or a message > message:ID starts at the message a search hit named` |
+| T-0775-M13 | packages/chat/src/views.ts | a `message:<id>` that does not exist was not refused | `reading the transcript from a segment, a date or a message > message:ID starts at the message a search hit named` |
+| T-0775-M14 | packages/chat/src/views.ts | a `segment:<n>` that does not exist was not refused | `reading the transcript from a segment, a date or a message > segment:N starts at that segment` |
+| T-0775-M15 | packages/chat/src/views.ts | a `date:` after the last item was not refused | `reading the transcript from a segment, a date or a message > date:YYYY-MM-DD starts at the first thing on or after that day` |
+| T-0775-M16 | packages/chat/src/reply.ts | the chat's cost was not brought up to date after the title call | `segments of a long chat > the title call is paid like a reply: the chat's cost counts it as soon as it is made` |
+| T-0775-M21 | packages/chat/src/views.ts | the divider showed `Segment <n> · <title>` with no date instead of the title and the date | `segments of a long chat > a /new and a compaction each start a segment; the transcript marks it with its date and a generated title` |
+
 | T-0779-M1 | packages/chat/src/reply.ts | the reply's profile did not deny writes to the bot's memory during a stretch | `/private > the reply's profile leaves the bot's memory readable and not writable, only while it is on` |
 | T-0779-M2 | packages/chat/src/reply.ts | the memory flush was still given after a stretch ended, while the session held it | `the memory flush before a compaction > is given to a session with no stretch, skipped while it is on, and skipped after it until /new` |
 | T-0779-M3 | packages/chat/src/index.ts | a message sent during a stretch was not marked | `/private > messages and their answers are marked; those before and after the stretch are not` |

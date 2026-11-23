@@ -504,5 +504,11 @@ changes for bots, in the order they were recorded. The root
 | T-0786-M4 | packages/bot/src/schedule.ts | a run's start did not forget the runs it dropped from the history | `scheduled prompts > a run that leaves the history when a run starts or ends loses its record; a newer one keeps it` |
 | T-0786-M5 | packages/bot/src/schedule.ts | a run's end did not forget the runs it dropped from the history | `scheduled prompts > a run that leaves the history when a run starts or ends loses its record; a newer one keeps it` |
 
+## T-0788 — A delivered result names its routine and run
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0788-M2 | packages/bot/src/delivery.ts | the delivery did not carry the routine's object id | `a routine's result reaches the bot's main chat > a result with content is one message in the main chat, headed with the routine, and starts no reply` |
+
 | T-0779-M4 | packages/bot/src/tidy.ts | Dreaming read the marked messages | `Dreaming and a stretch that is not remembered > the chats the check reads leave out marked messages, and a chat that holds only those is not read` |
 | T-0779-M5 | packages/bot/src/index.ts | the bot's settings did not name its memory directories | `the directories a stretch that is not remembered keeps read-only > the bot's settings name its memory directory and the wiki` |

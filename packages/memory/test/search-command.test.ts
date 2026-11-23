@@ -16,6 +16,7 @@ interface Rig {
   readonly home: string;
   readonly bot: string;
   readonly registry: PluginRegistry;
+  readonly store: MemoryPluginStore;
 }
 
 function rig(): Rig {
@@ -35,7 +36,7 @@ function rig(): Rig {
     settings: { memory: {} },
     onLog: () => undefined,
   });
-  return { home, bot, registry };
+  return { home, bot, registry, store };
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -53,6 +54,23 @@ describe("the memory search commands", () => {
     const value = record(run?.value);
     expect(value["hits"]).toHaveLength(1);
     expect(value["scopes"]).toEqual(["memory"]);
+  });
+
+  test("--chat searches inside one chat from any directory; the JSON arguments of a bot's tool cannot", async () => {
+    const r = rig();
+    await r.store.put("chat", "C-1", { parent: "bot:default", cwd: r.bot, title: "One" }, "test");
+    r.store.append({
+      type: "chat.message",
+      object: { type: "chat", id: "C-1" },
+      cause: "test",
+      data: { id: "m1", role: "user", text: "the saffron question", from: { via: "cli", id: "p" }, attachments: [], source: { kind: "cli", ref: null } },
+    });
+    const found = record((await r.registry.runCommand(["memory", "search", "--chat", "C-1", "saffron"], { cwd: tmpdir() }))?.value);
+    expect(found["hits"]).toMatchObject([{ id: "chat:C-1", message: "m1" }]);
+    const viaTool = record(
+      (await r.registry.runCommand(["memory", "search"], { cwd: tmpdir(), input: JSON.stringify({ query: "saffron", chat: "C-1" }) }))?.value,
+    );
+    expect(viaTool["hits"]).toEqual([]);
   });
 
   test("search takes words on the command line too", async () => {
