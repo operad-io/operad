@@ -229,6 +229,8 @@ export interface ReplyMessage {
   readonly text: string;
   /** When it was recorded, in milliseconds since the epoch. */
   readonly at: number;
+  /** `true` when the text was shortened to fit the size cap; read the page with `full=true` for it whole. */
+  readonly cut?: true | undefined;
 }
 
 /** The recorded start of a tool call's output and how many lines it has. */
@@ -247,12 +249,16 @@ export interface ReplyThinkingItem {
   readonly kind: "thinking";
   readonly text: string;
   readonly at?: number | undefined;
+  /** `true` when the text was shortened to fit the size cap. */
+  readonly cut?: true | undefined;
 }
 
 export interface ReplyTextItem {
   readonly kind: "text";
   readonly text: string;
   readonly at?: number | undefined;
+  /** `true` when the text was shortened to fit the size cap. */
+  readonly cut?: true | undefined;
 }
 
 export interface ReplyToolItem {
@@ -268,6 +274,8 @@ export interface ReplyToolItem {
   /** Absent while the call is still running. */
   readonly result?: ToolResult | undefined;
   readonly output: ReplyOutput;
+  /** `true` when the input was shortened to fit the size cap. */
+  readonly cut?: true | undefined;
 }
 
 export type ReplyItem = ReplyThinkingItem | ReplyTextItem | ReplyToolItem;
@@ -618,17 +626,22 @@ function replyData(
     })),
   }));
   if (jsonBytes(data(blanked)) <= maxBytes) return data(blanked);
-  // Thinking, text, input and answer text are shortened next, in steps, so a
-  // long absence still leaves every reply's structure.
-  for (const cap of [512, 128, 32, 0]) {
-    const cut = blanked.map((reply) => cutReply(reply, cap));
-    if (jsonBytes(data(cut)) <= maxBytes) return data(cut);
+  // Thinking, text, input and answer text are shortened next, the oldest reply
+  // first and whole reply by whole reply: a reply is cut only when every older
+  // one is already at the smallest cap, so the newest stays whole the longest.
+  const cuts: ReplyBlock[] = [...blanked];
+  for (let at = 0; at < blanked.length; at += 1) {
+    const original = blanked[at];
+    if (original === undefined) continue;
+    for (const cap of [512, 128, 32, 0]) {
+      cuts[at] = cutReply(original, cap);
+      if (jsonBytes(data(cuts)) <= maxBytes) return data(cuts);
+    }
   }
   // Even empty text leaves too much structure: the oldest replies go.
-  for (let drop = 1; drop <= blanked.length; drop += 1) {
-    const kept = blanked.slice(drop);
-    const cut = kept.map((reply) => cutReply(reply, 0));
-    if (jsonBytes(data(cut)) <= maxBytes) return data(cut);
+  for (let drop = 1; drop <= cuts.length; drop += 1) {
+    const kept = cuts.slice(drop);
+    if (jsonBytes(data(kept)) <= maxBytes) return data(kept);
   }
   const empty = data([]);
   if (jsonBytes(empty) <= maxBytes) return empty;
@@ -647,20 +660,20 @@ function shorten(text: string, capBytes: number): string {
   return end === 0 ? "" : `${text.slice(0, end)}…`;
 }
 
-/** One reply with its free text cut to a budget and its tool output left empty. */
+/** One reply with its free text cut to a budget; every text that got shorter says `cut`. */
 function cutReply(reply: ReplyBlock, capBytes: number): ReplyBlock {
-  const message = (block: ReplyMessage): ReplyMessage => ({
-    ...block,
-    text: shorten(block.text, capBytes),
-  });
+  const text = (original: string): { readonly text: string; readonly cut?: true } => {
+    const shortened = shorten(original, capBytes);
+    return shortened === original ? { text: shortened } : { text: shortened, cut: true };
+  };
+  const message = (block: ReplyMessage): ReplyMessage => ({ ...block, ...text(block.text) });
   const item = (entry: ReplyItem): ReplyItem => {
     if (entry.kind === "tool") {
-      return {
-        ...entry,
-        input: entry.input === null ? null : shorten(entry.input, capBytes),
-      };
+      if (entry.input === null) return entry;
+      const shortened = shorten(entry.input, capBytes);
+      return shortened === entry.input ? entry : { ...entry, input: shortened, cut: true };
     }
-    return { ...entry, text: shorten(entry.text, capBytes) };
+    return { ...entry, ...text(entry.text) };
   };
   return {
     ...reply,
