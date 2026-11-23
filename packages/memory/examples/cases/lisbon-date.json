@@ -1,0 +1,9 @@
+{
+  "id": "lisbon-date",
+  "kind": "correction",
+  "context": [
+    { "role": "user", "text": "I am planning a spring trip." }
+  ],
+  "question": "When does the Lisbon trip start?",
+  "answer": { "facts": ["14 March"], "avoid": ["March 4th"] }
+}

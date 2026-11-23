@@ -1,0 +1,12 @@
+{
+  "id": "old-hotel",
+  "kind": "miss",
+  "context": [
+    { "role": "user", "text": "The hotel in Porto is Hotel Aurora." },
+    { "role": "assistant", "text": "Noted." },
+    { "role": "user", "text": "Also book a taxi." },
+    { "role": "assistant", "text": "Done." }
+  ],
+  "question": "Which hotel did I say in Porto?",
+  "answer": { "facts": ["Hotel Aurora"] }
+}

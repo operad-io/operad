@@ -188,3 +188,17 @@ the row fields.
 |---|---|---|---|
 | T-0735-M1 | packages/memory/src/memory.ts | `ensureRepository` skipped the no-program check, so it fell through to `git init` and threw "git is not installed" | `a machine without git > the wiki and the memory are plain folders with no error; git appearing makes the first commit` |
 | T-0735-M2 | packages/memory/src/commit.ts | `commitChanges` ignored `tracked` and ran git status on a plain folder, throwing | `a machine without git > the wiki and the memory are plain folders with no error; git appearing makes the first commit` |
+
+## T-0776 — the memory regression set
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0776-M1 | packages/memory/src/cases/score.ts | `normalised` kept spaces, so a fact written with other spacing or punctuation no longer matched | `scoring by exact facts > case, spaces and punctuation do not matter` |
+| T-0776-M2 | packages/memory/src/cases/score.ts | `scoreAnswer` ignored the `avoid` phrases | `scoring by exact facts > repeating the wrong answer fails even when every fact is there` |
+| T-0776-M3 | packages/memory/src/cases/score.ts | the messages a window drops were not put in the index, so search could not find them | `running the set > a window that drops a message leaves it to the search of the record` |
+| T-0776-M4 | packages/memory/src/cases/score.ts | the memory index was not cut at `MEMORY_INDEX_MAX` | `running the set > the memory index is cut at its limit` |
+| T-0776-M5 | packages/memory/src/cases/score.ts | a run appended to the history although `record` was false | `running the set > the history in the home grows by one line per run and holds no case text` |
+| T-0776-M6 | packages/memory/src/cases/propose.ts | `proposeCases` did not skip a correction that already had a proposal | `proposing cases from the chat record > extraction only proposes: no case file until approval, and it is not repeated` |
+| T-0776-M7 | packages/memory/src/cases/propose.ts | the correction pattern matched `no` without a boundary, so "Nothing else" was a correction | `proposing cases from the chat record > a correction is found with its question and context; thanks is not one` |
+| T-0776-M8 | packages/memory/src/cases/score.ts | `programAnswerer` ignored the program's exit code | `running the set > a program that fails stops the run` |
+| T-0776-M9 | packages/memory/src/cases/propose.ts | approving an already approved proposal wrote the case again instead of refusing | `proposing cases from the chat record > approving with facts writes a case the runner can load; the item leaves pending` |
