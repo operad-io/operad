@@ -89,12 +89,12 @@ describe("segments of a long chat", () => {
         [3, "compact", "Garden irrigation"],
       ]);
       const page = await view(r, chat);
-      expect(page.markdown).toContain("### Segment 2 · 2026-11-21 10:00 · Pasta night plans");
-      expect(page.markdown).toContain("### Segment 3 · 2026-11-22 10:00 · Garden irrigation");
-      expect(page.markdown).not.toContain("### Segment 1");
-      expect(page.markdown.indexOf("alpha question")).toBeLessThan(page.markdown.indexOf("### Segment 2"));
-      expect(page.markdown.indexOf("### Segment 2")).toBeLessThan(page.markdown.indexOf("bravo question"));
-      expect(page.markdown.indexOf("### Segment 3")).toBeLessThan(page.markdown.indexOf("charlie question"));
+      expect(page.markdown).toContain("### Pasta night plans · 2026-11-21");
+      expect(page.markdown).toContain("### Garden irrigation · 2026-11-22");
+      expect(page.markdown.match(/^### /gmu)).toHaveLength(2);
+      expect(page.markdown.indexOf("alpha question")).toBeLessThan(page.markdown.indexOf("### Pasta night plans"));
+      expect(page.markdown.indexOf("### Pasta night plans")).toBeLessThan(page.markdown.indexOf("bravo question"));
+      expect(page.markdown.indexOf("### Garden irrigation")).toBeLessThan(page.markdown.indexOf("charlie question"));
       expect(page.data?.segments).toEqual([
         { number: 1, at: day(20), kind: "first", title: "Test", cursor: "segment:1" },
         { number: 2, at: day(21), kind: "new", title: "Pasta night plans", cursor: "segment:2" },
@@ -165,7 +165,7 @@ describe("segments of a long chat", () => {
     await r.round(chat);
     expect(segmentsOf(readChat(r.store, chat).facts, "Test")[1]?.title).toBe("add the export command");
     expect(r.calls.filter(titling)).toHaveLength(0);
-    expect((await view(r, chat)).markdown).toContain("· add the export command");
+    expect((await view(r, chat)).markdown).toContain("### add the export command · ");
   });
 
   test("a stretch with no message is not a segment, and a chat with one segment shows none", async () => {
@@ -174,7 +174,7 @@ describe("segments of a long chat", () => {
     await r.say(chat, "one");
     await r.round(chat);
     expect((await view(r, chat)).data?.segments).toBeUndefined();
-    expect((await view(r, chat)).markdown).not.toContain("Segment");
+    expect((await view(r, chat)).markdown).not.toContain("###");
     await slashNew(r, chat);
     await slashNew(r, chat);
     compacted(r, chat);
@@ -195,8 +195,8 @@ describe("segments of a long chat", () => {
       });
       const delta = await view(r, chat, mark === undefined ? {} : { after: mark });
       expect(delta.delta).toBe(true);
-      expect(delta.markdown).toContain("### Segment 3 · 2026-11-22 10:00");
-      expect(delta.markdown).not.toContain("### Segment 2");
+      expect(delta.markdown).toContain("### Title 2 · 2026-11-22");
+      expect(delta.markdown).not.toContain("### Title 1");
       expect(delta.markdown).not.toContain("bravo question");
     } finally {
       setTestClock(undefined);
@@ -222,7 +222,7 @@ describe("reading the transcript from a segment, a date or a message", () => {
   test("segment:N starts at that segment", async () => {
     const { r, chat } = await long();
     const page = await view(r, chat, { cursor: "segment:3" });
-    expect(page.markdown).toContain("### Segment 3");
+    expect(page.markdown).toContain("### Title 2 · 2026-11-22");
     expect(page.markdown).toContain("charlie question");
     expect(page.markdown).not.toContain("bravo question");
     const first = await view(r, chat, { cursor: "segment:1" });

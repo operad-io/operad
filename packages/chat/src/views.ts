@@ -1415,9 +1415,10 @@ async function liveOf(
   };
 }
 
-/** The line that marks where a segment starts, with its date and title. */
+/** The line that marks where a segment starts: its title and its date (UTC); the date alone while it has no title. */
 export function segmentMarker(segment: Segment): string {
-  return `### Segment ${segment.number} · ${minute(segment.at)}${segment.title.length > 0 ? ` · ${segment.title}` : ""}`;
+  const date = new Date(segment.at).toISOString().slice(0, 10);
+  return `### ${segment.title.length > 0 ? `${segment.title} · ` : ""}${date}`;
 }
 
 function firstSequence(chunk: Chunk): number {

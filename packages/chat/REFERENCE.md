@@ -329,7 +329,7 @@ reply. The chat's object view carries the same `context`. Every read also
 carries `data.queued` and `data.queuedCount`, the messages a run has not taken.
 
 Segments (ADR 0026 D20): each stretch that `/new` or a compaction starts is a
-segment. The Markdown puts `### Segment <n> · <date time, UTC> · <title>` before
+segment. The Markdown puts `### <title> · <date, UTC>` before
 the first item of every segment but the first, and `data.segments` lists them
 (`number`, `at`, `kind`, `title`, `cursor`) once there are two or more. The
 cursor of a read may also be `segment:<n>`, `date:<YYYY-MM-DD>` or
