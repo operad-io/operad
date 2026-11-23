@@ -145,6 +145,28 @@ export function compactRequested(facts: readonly PluginFact[]): boolean {
   return false;
 }
 
+/** The one line a reply fails with when the context is still over the share right after a compaction. */
+export const CHAT_TOO_FULL_LINE = "This chat is too full to continue: even compacted, its context fills the window. Send /new to start a fresh one.";
+
+/**
+ * Whether the latest compaction of this session left the context at or over
+ * the share of the window (`COMPACT_AT`), so another would only repeat it. A
+ * `/new` ends it; so does a later compaction that fits.
+ */
+export function chatTooFull(facts: readonly PluginFact[]): boolean {
+  for (let index = facts.length - 1; index >= 0; index -= 1) {
+    const fact = facts[index];
+    if (fact?.type === NEW_FACT) return false;
+    if (fact?.type === COMPACT_FACT && fact.data.kind === "compacted") return fact.data.full === true;
+  }
+  return false;
+}
+
+/** Whether a compaction that left `after` tokens in a window of `window` is still over the share. */
+export function stillFull(after: number | undefined, window: number | undefined): boolean {
+  return after !== undefined && window !== undefined && window > 0 && after >= COMPACT_AT * window;
+}
+
 /** The list filters of chats: closed ones are hidden unless asked for. */
 export const CHAT_FILTERS = [
   { name: "open", default: true, states: ["open"] },
