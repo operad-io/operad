@@ -369,6 +369,13 @@ export class SqlitePluginStore implements PluginStore {
     return row === null ? undefined : this.objectOf(row);
   }
 
+  remove(type: string, id: string): void {
+    writeImmediate(this.db, () => {
+      this.db.query("DELETE FROM objects WHERE type = ? AND id = ?").run(type, id);
+    });
+    this.listed.get(type)?.delete(id);
+  }
+
   list(type: string, options: ListOptions = {}): ListPage {
     this.assertWhere(type, options);
     const fingerprint = whereFingerprint(options.where ?? {});
