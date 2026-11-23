@@ -268,6 +268,11 @@ function recentText(result: string): string {
     : `${result.slice(0, SCHEDULE_RECENT_MAX - 1)}…`;
 }
 
+/** True while the last firing's chat has started and its result is not yet recorded. */
+function isReplying(last: ScheduledLast | undefined): boolean {
+  return last?.chatId !== undefined && last.result === undefined;
+}
+
 /**
  * What a firing tells the agent beyond the person's own prompt: the earlier
  * results of the same entry so it does not repeat them, the quiet-ending line,
@@ -736,6 +741,12 @@ export const scheduleActions: readonly ActionTypeDefinition[] = [
       object.data.removed === true ? `bot ${object.id} is no longer in the settings` : undefined,
     async run(ctx, args) {
       const name = checkPromptName((args as { readonly name: string }).name);
+      const current = scheduledPrompts(ctx.object.data).find((entry) => entry.name === name);
+      if (current !== undefined && isReplying(current.last)) {
+        throw new BotError(
+          `scheduled prompt "${name}" of bot ${ctx.object.id} is still replying to its previous firing (chat ${current.last?.chatId ?? ""}); run it now after that reply ends`,
+        );
+      }
       const changed = await replaceEntry(
         ctx.store,
         ctx.object.id,
@@ -967,6 +978,13 @@ export class BotScheduleSource {
       "source:bot/run-now",
     );
     if (cleared === undefined) return;
+    // A firing started since the request was made still owns `last`: drop the request.
+    if (isReplying(cleared.last)) {
+      await this.chatWatches.log(
+        `scheduled prompt "${entry.name}" of bot ${bot}: run now dropped, the previous firing is still replying`,
+      );
+      return;
+    }
     const last = entry.last !== undefined && entry.last.schedule === entry.schedule ? entry.last : undefined;
     const latest = latestCronMinute(parseCron(entry.schedule), now, CATCH_UP_DAYS);
     const planned = last?.plannedAt ?? latest ?? minuteStart(now);
