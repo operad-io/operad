@@ -1676,3 +1676,13 @@ the row fields.
 | T-0752-M1 | packages/dev/src/gate.ts | the review passed an empty diff even when the work never reported done (condition `workDone === false` removed) | `an empty diff after work that did not finish goes back to work, not to a pass (T-0752)` |
 | T-0752-M2 | packages/dev/src/actions.ts | `dev:reverify` accepted a task whose work did not finish | `reverify after work that did not finish refuses and says to rework (T-0752)` |
 | T-0752-M3 | packages/dev/src/steps.ts | the work step recorded `workDone` true for every result | `dev/work > a failed work and a new worktree visit in the same run count a new attempt` |
+
+## T-0729 — gitStateOf
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0729-M1 | packages/dev/src/git-state.ts | compared the top level with the folder without resolving links | `gitStateOf > a folder reached through a symlink to the root is the root` |
+| T-0729-M2 | packages/dev/src/git-state.ts | answered `ready` without looking for a commit | `gitStateOf > no commit: an unborn branch is named as git names it` |
+| T-0729-M3 | packages/dev/src/git-state.ts | identity counted as set with only a name | `gitStateOf > identity needs both the name and the email` |
+| T-0729-M4 | packages/dev/src/git-state.ts | an empty `user.email` counted as a value | `gitStateOf > a repository's own configuration wins and an empty value is unset` |
+| T-0729-M5 | packages/dev/src/git-state.ts | the branch was read without `--short`, giving `refs/heads/<name>` | `gitStateOf > ready, with the current branch` |
