@@ -3557,6 +3557,9 @@ export async function main(
             // Clean up the old plugin store when a serve context ends. An idle
             // handle does not block writers; the busy timeout here came from
             // other processes committing while a log write waited.
+            // Work of this context that still reads the stores is waited for
+            // (bounded) before they close; later work is dropped.
+            await context.views.drain();
             await context.views.close();
             closePluginStore(context.registry.store);
             await context.log.close();
