@@ -947,8 +947,6 @@ export class BotTidySource {
     const now = this.ctx.clock();
     const chat = chatData(stored.data);
     const memoryDir = join(chat.cwd, "memory");
-    // A run that ended without its commit must not leave the instructions read-only.
-    unlockInstructions(memoryDir);
     ensureMemoryLayout(memoryDir);
     const repository = ensureRepository(memoryDir);
     const commit = tidyCommitForChat(repository, memoryDir, chatId);
