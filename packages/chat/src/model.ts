@@ -191,6 +191,8 @@ export type MessageRole = "user" | "assistant" | "delivery" | "recap";
 export interface DeliveryData {
   /** The routine that produced it, as the header names it. */
   readonly routine: string;
+  /** The routine's object id (`bot-routine:<id>`), when the plugin knows it. */
+  readonly routineId?: string | undefined;
   /** The record of the run, which the agent reads on demand. */
   readonly runId: string;
   /** The short summary that rides on the next message; the message's text is the whole result. */
@@ -207,9 +209,9 @@ export function deliveryHeader(delivery: DeliveryData): string {
 /** The delivery a fact's data holds, or undefined when it holds none. */
 export function deliveryOf(value: unknown): DeliveryData | undefined {
   if (!isRecord(value)) return undefined;
-  const { routine, runId, summary, failed } = value;
+  const { routine, routineId, runId, summary, failed } = value;
   if (typeof routine !== "string" || typeof runId !== "string" || typeof summary !== "string") return undefined;
-  return { routine, runId, summary, ...(failed === true ? { failed: true as const } : {}) };
+  return { routine, ...(typeof routineId === "string" && routineId.length > 0 ? { routineId } : {}), runId, summary, ...(failed === true ? { failed: true as const } : {}) };
 }
 
 /** The scheduled prompt that opened a chat: its bot and the entry's name. */

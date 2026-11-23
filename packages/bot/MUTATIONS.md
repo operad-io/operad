@@ -503,3 +503,9 @@ changes for bots, in the order they were recorded. The root
 | T-0786-M2 | packages/bot/src/schedule.ts | `droppedRuns` also named runs inside the 30 days | `routine history > a run that withRun drops has no record either; a newer one is untouched` |
 | T-0786-M4 | packages/bot/src/schedule.ts | a run's start did not forget the runs it dropped from the history | `scheduled prompts > a run that leaves the history when a run starts or ends loses its record; a newer one keeps it` |
 | T-0786-M5 | packages/bot/src/schedule.ts | a run's end did not forget the runs it dropped from the history | `scheduled prompts > a run that leaves the history when a run starts or ends loses its record; a newer one keeps it` |
+
+## T-0788 — A delivered result names its routine and run
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0788-M2 | packages/bot/src/delivery.ts | the delivery did not carry the routine's object id | `a routine's result reaches the bot's main chat > a result with content is one message in the main chat, headed with the routine, and starts no reply` |

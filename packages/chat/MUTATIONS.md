@@ -729,3 +729,9 @@ are append-only, so the old lines stay as history.
 | T-0778-M1 | packages/chat/src/notes.ts | a tool call that failed counted as a read of the note it named | `a reply shows the memory it wrote and used > names the notes that rode on the message and those read through the memory tools` |
 | T-0778-M2 | packages/chat/src/reply.ts | the after step was not marked as run, so it ran again when the reply step ended | `a reply shows the memory it wrote and used > names the notes the run wrote, in the reply data and the markdown` |
 | T-0778-M3 | packages/chat/src/reply.ts | the after step ran in a round that left messages to answer | `the step a chat's refresh data names after a reply > runs once for a run that takes more than one round, not once per round` |
+
+## T-0788 — A delivered result names its routine and run
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0788-M1 | packages/chat/src/views.ts | the transcript's data left out the deliveries | `a delivered result > the transcript's data names the routine and the run of a delivery, and the header stays` |
