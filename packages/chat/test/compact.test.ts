@@ -271,3 +271,79 @@ test("the compact line is stored as a command fact so no client changes", async 
   await r.round(chat);
   expect(r.store.facts(chatRef(chat)).facts.some((fact) => fact.type === COMMAND_FACT)).toBe(true);
 });
+
+describe("a chat too full to compact", () => {
+  const FULL = { reason: "threshold", before: 190_000, after: 160_000, flushed: false } as const;
+  const full = (compaction: Record<string, unknown> = FULL, used = 160_000) => ({
+    result: "done" as const,
+    data: {
+      finalMessage: "answer",
+      sessionId: "s-1",
+      compacted: true,
+      compaction,
+      context: { used, window: 200_000 },
+    },
+  });
+
+  test("when the compaction leaves the context over the share, the next reply fails with one plain line and the agent is not called", async () => {
+    const r = await rig(() => full(), undefined, undefined, "pi");
+    const chat = await r.chat();
+    await r.say(chat, "one");
+    await r.round(chat);
+    expect(r.calls).toHaveLength(1);
+
+    await r.say(chat, "two");
+    const round = await r.round(chat);
+    expect(round.result).toBe("failed");
+    expect(r.calls).toHaveLength(1);
+    const failures = readChat(r.store, chat).entries.filter((entry) => entry.kind === "failure");
+    expect(failures).toHaveLength(1);
+    expect(failures[0]?.text).toContain("too full to continue");
+    expect(failures[0]?.text).toContain("/new");
+  });
+
+  test("two compactions never run in a row: with no reply that added context between, the agent is not asked again", async () => {
+    const r = await rig(() => full(), undefined, undefined, "pi");
+    const chat = await r.chat();
+    await r.say(chat, "one");
+    await r.round(chat);
+    for (const text of ["two", "three"]) {
+      await r.say(chat, text);
+      await r.round(chat);
+    }
+    const compacting = r.calls.filter((call) => compactionOf(call) !== undefined);
+    expect(compacting).toHaveLength(1);
+    expect(r.calls).toHaveLength(1);
+  });
+
+  test("a compaction that fits does not stop the chat", async () => {
+    const r = await rig(() => full({ ...FULL, after: 20_000 }, 20_000), undefined, undefined, "pi");
+    const chat = await r.chat();
+    await r.say(chat, "one");
+    await r.round(chat);
+    await r.say(chat, "two");
+    expect((await r.round(chat)).result).toBe("done");
+    expect(r.calls).toHaveLength(2);
+  });
+
+  test("a window that is not known never stops the chat", async () => {
+    const r = await rig(() => ({ result: "done", data: { finalMessage: "a", sessionId: "s-1", compacted: true, compaction: FULL } }), undefined, undefined, "pi");
+    const chat = await r.chat();
+    await r.say(chat, "one");
+    await r.round(chat);
+    await r.say(chat, "two");
+    expect((await r.round(chat)).result).toBe("done");
+  });
+
+  test("/new ends it: the next message goes to a fresh session", async () => {
+    const r = await rig(() => full(), undefined, undefined, "pi");
+    const chat = await r.chat();
+    await r.say(chat, "one");
+    await r.round(chat);
+    await send(r, chat, "/new");
+    await r.say(chat, "two");
+    await r.round(chat);
+    expect(r.calls).toHaveLength(2);
+    expect(r.calls[1]?.params.resumeSession).toBeUndefined();
+  });
+});
