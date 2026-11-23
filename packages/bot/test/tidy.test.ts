@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CHAT_TYPE, allMessages, chatRef, RUN_FACT } from "@operad-io/chat";
 import { createViews, type ClientApi, type JsonValue, type ObjectStore, type RunControl } from "@operad-io/engine";
@@ -113,12 +113,13 @@ async function failChat(r: Awaited<ReturnType<typeof rig>>, chat: string): Promi
 
 function noteWork(): TidyWork {
   return {
-    notes: [{ path: "topics/tea.md", content: "likes tea\n" }],
+    notes: [{ path: "topics/tea.md", content: "likes tea\n", date: "2026-07-03" }],
     chats: [],
     links: { wiki: EMPTY_LINK_REPORT, memory: EMPTY_LINK_REPORT },
     indexOver: false,
     indexBytes: 0,
     baseline: undefined,
+    today: "2026-11-23",
   };
 }
 
@@ -265,6 +266,38 @@ describe("the nightly memory check", () => {
       s.views.close();
     }
   });
+
+describe("dates in the tidy prompt", () => {
+  test("the prompt names today, each note's date, and the rules for dating facts", () => {
+    const prompt = tidyPrompt("default", noteWork());
+    expect(prompt).toContain("Today is 2026-11-23.");
+    expect(prompt).toContain("### topics/tea.md (changed 2026-07-03)");
+    expect(prompt).toContain("using the note's date");
+    expect(prompt).toContain("Went to Singapore in July 2026");
+    expect(prompt).toContain("until YYYY-MM-DD");
+    expect(prompt).toContain("marked as replaced with the date");
+    expect(prompt).toContain("never delete it");
+    expect(prompt).toContain("Do not change instructions.md");
+  });
+
+  test("the work takes today from the injected clock and a note's date from its file", async () => {
+    const s = await setup();
+    try {
+      note(s.memory, "trip.md", "Going to Singapore next week\n");
+      const stamp = new Date("2026-07-03T12:00:00");
+      utimesSync(join(s.memory, "topics", "trip.md"), stamp, stamp);
+      const work = await tidyWork(s.r.store, "default", join(s.r.home, "bot", "default"), {
+        home: s.r.home,
+        now: new Date("2026-11-23T03:30:00").getTime(),
+      });
+      expect(work.today).toBe("2026-11-23");
+      expect(work.notes.find((n) => n.path === "topics/trip.md")?.date).toBe("2026-07-03");
+      expect(tidyPrompt("default", work)).toContain("### topics/trip.md (changed 2026-07-03)");
+    } finally {
+      s.views.close();
+    }
+  });
+});
 
 describe("the link lists in the tidy prompt", () => {
   test("a list with something to look at is in the prompt, and empty lists add nothing", () => {
