@@ -20,7 +20,7 @@ Running commands and checks, scheduling (concurrency, dependencies, priority, au
 
 ### D2: Storage is a replaceable backend
 
-The kernel defines a log interface and one conformance test, and ships exactly one backend, `sqlite`. The interface and the conformance test stay, so another backend can be added by following them. A plugin or a user cannot reach the storage format. A plugin's objects (for example the `dev` plugin's task and brief) are stored as facts and are read and written through the plugin's commands.
+The kernel defines a log interface and one conformance test, and ships exactly one backend, `sqlite`. The interface and the conformance test stay, so another backend can be added by following them. A plugin or a user cannot reach the storage format. A plugin's objects (for example the `dev` plugin's task and brief) are stored as facts and are read and written through the plugin's commands. The object side of the storage interface (`ObjectStore`) is `put`, `get`, `list` and `remove`. `remove(type, id)` deletes the object row and its index entries and does nothing when the object is missing; the facts the object wrote stay in the history, which only grows. A plugin uses it for a record that has no use after its time (a routine's run older than its history keeps, ADR 0030 D10).
 
 ### D3: Few user nouns
 

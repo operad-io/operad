@@ -499,6 +499,12 @@ export interface ObjectStore {
 
   get(type: string, id: string): MaybePromise<StoredObject | undefined>;
 
+  /**
+   * Removes the object and its index entries. The facts it wrote stay in the
+   * history. Removing an object that is not there does nothing.
+   */
+  remove(type: string, id: string): MaybePromise<void>;
+
   /** One page of objects of `type`, ordered by id and filtered by `where`. */
   list(type: string, options?: ListOptions): MaybePromise<ListPage>;
 }

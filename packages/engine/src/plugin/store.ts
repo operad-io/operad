@@ -104,6 +104,10 @@ export class MemoryPluginStore implements PluginStore {
     return this.objects.get(type)?.get(id);
   }
 
+  remove(type: string, id: string): void {
+    this.objects.get(type)?.delete(id);
+  }
+
   list(type: string, options: ListOptions = {}): ListPage {
     this.assertWhere(type, options);
     const fingerprint = whereFingerprint(options.where ?? {});

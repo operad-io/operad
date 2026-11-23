@@ -335,6 +335,17 @@ export function withRun(runs: readonly RoutineRun[] | undefined, run: RoutineRun
   return [...(runs ?? []).filter((item) => item.id !== run.id && item.at >= oldest), run];
 }
 
+/** The ids of the runs `withRun` drops: older than the history keeps, and not the run being recorded. */
+export function droppedRuns(runs: readonly RoutineRun[] | undefined, run: RoutineRun, now: number): readonly string[] {
+  const oldest = now - ROUTINE_HISTORY_DAYS * DAY_MS;
+  return (runs ?? []).filter((item) => item.id !== run.id && item.at < oldest).map((item) => item.id);
+}
+
+/** Removes the records of runs that left a routine's history; a missing record is left alone. */
+export async function forgetRuns(store: ObjectStore, ids: readonly string[]): Promise<void> {
+  for (const id of ids) await store.remove(CHAT_TYPE, id);
+}
+
 /** Drops, from every routine, the runs older than the history keeps; the last results on the routine stay. Returns how many routines changed. */
 export async function pruneRoutineRuns(store: ObjectStore, now: number): Promise<number> {
   const oldest = now - ROUTINE_HISTORY_DAYS * DAY_MS;
@@ -344,6 +355,7 @@ export async function pruneRoutineRuns(store: ObjectStore, now: number): Promise
     if (entry === undefined || entry.runs === undefined) continue;
     const kept = entry.runs.filter((run) => run.at >= oldest || run.status === "running");
     if (kept.length === entry.runs.length) continue;
+    const dropped = entry.runs.filter((run) => !kept.includes(run)).map((run) => run.id);
     const { runs: _dropped, ...rest } = object.data;
     await store.put(
       ROUTINE_TYPE,
@@ -351,6 +363,7 @@ export async function pruneRoutineRuns(store: ObjectStore, now: number): Promise
       kept.length === 0 ? rest : { ...rest, runs: kept as unknown as JsonValue },
       "cleanup:bot/routine-history",
     );
+    await forgetRuns(store, dropped);
     changed += 1;
   }
   return changed;
@@ -1127,6 +1140,8 @@ export class BotScheduleSource {
       await this.chatWatches.log(`routine "${entry.name}" of bot ${bot} started no run`);
       return;
     }
+    const startedRun: RoutineRun = { id: runId, at: now, status: "running", ...(manual ? { manual: true } : {}) };
+    const dropped: string[] = [];
     const changed = await replaceEntry(
       this.ctx.store,
       bot,
@@ -1136,11 +1151,12 @@ export class BotScheduleSource {
           ? {
               ...current,
               last: { ...current.last, runId },
-              runs: withRun(current.runs, { id: runId, at: now, status: "running", ...(manual ? { manual: true } : {}) }, now),
+              runs: (dropped.push(...droppedRuns(current.runs, startedRun, now)), withRun(current.runs, startedRun, now)),
             }
           : undefined,
       "step:bot/scheduled",
     );
+    await forgetRuns(this.ctx.store, dropped);
     if (changed === undefined) return;
     await this.watch(bot, entry.name, manual ? now : minute, runId);
     if (skipped.length > 0) {
@@ -1192,28 +1208,28 @@ export class BotScheduleSource {
       async ({ result, quiet, failed, text }) => {
         const now = this.ctx.clock();
         const status: RoutineRunStatus = quiet ? "quiet" : failed ? "failed" : "done";
+        const dropped: string[] = [];
         await replaceEntry(
           this.ctx.store,
           bot,
           name,
-          (entry) =>
-            entry.last?.runId === runId
-              ? {
-                  ...entry,
-                  last: { ...entry.last, result, notified: quiet, ...(failed ? { failed: true } : {}) },
-                  recent: [
-                    ...(entry.recent ?? []).filter((item) => item.plannedAt !== plannedAt),
-                    { plannedAt, result },
-                  ].slice(-SCHEDULE_RECENT_COUNT),
-                  runs: withRun(
-                    entry.runs,
-                    { id: runId, at: entry.runs?.find((item) => item.id === runId)?.at ?? now, status, result, ...(entry.last.manual === true ? { manual: true } : {}) },
-                    now,
-                  ),
-                }
-              : undefined,
+          (entry) => {
+            if (entry.last?.runId !== runId) return undefined;
+            const finished: RoutineRun = { id: runId, at: entry.runs?.find((item) => item.id === runId)?.at ?? now, status, result, ...(entry.last.manual === true ? { manual: true } : {}) };
+            dropped.push(...droppedRuns(entry.runs, finished, now));
+            return {
+              ...entry,
+              last: { ...entry.last, result, notified: quiet, ...(failed ? { failed: true } : {}) },
+              recent: [
+                ...(entry.recent ?? []).filter((item) => item.plannedAt !== plannedAt),
+                { plannedAt, result },
+              ].slice(-SCHEDULE_RECENT_COUNT),
+              runs: withRun(entry.runs, finished, now),
+            };
+          },
           "step:bot/scheduled",
         );
+        await forgetRuns(this.ctx.store, dropped);
         // A quiet ending records its result and delivers nothing; a failure is always delivered.
         if (quiet) return;
         try {

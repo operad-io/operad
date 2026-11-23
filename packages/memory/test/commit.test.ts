@@ -92,6 +92,27 @@ describe("a bot run is recorded in git", () => {
     expect(memoryGit(memory, ["status", "--porcelain"]).out).toBe("");
   });
 
+  test("names the notes the run wrote with a one-line summary, and the one it removed, which has no summary", async () => {
+    const r = await rig();
+    await botChat(r, "C-1");
+    const memory = join(r.cwd, "memory");
+    mkdirSync(join(memory, "topics"), { recursive: true });
+    writeFileSync(join(memory, "topics", "old.md"), "# Old\n");
+    await r.run("C-1", "run-0");
+    writeFileSync(join(memory, "topics", "tea.md"), "---\ndescription: How the person takes tea\n---\n# Tea\nBlack, no sugar.\n");
+    writeFileSync(join(memory, "topics", "milk.md"), "\n# Milk\nNone.\n");
+    rmSync(join(memory, "topics", "old.md"));
+    mkdirSync(join(r.home, "wiki"), { recursive: true });
+    writeFileSync(join(r.home, "wiki", "note.md"), "a note\n");
+    const outcome = await r.run("C-1", "run-1");
+    expect(outcome.data["wrote"]).toEqual([
+      { file: "memory/topics/milk.md", summary: "Milk" },
+      { file: "memory/topics/old.md", summary: "" },
+      { file: "memory/topics/tea.md", summary: "How the person takes tea" },
+      { file: "wiki/note.md", summary: "a note" },
+    ]);
+  });
+
   test("a second run that wrote nothing makes no commit", async () => {
     const r = await rig();
     await botChat(r, "C-1");
