@@ -123,7 +123,7 @@ export function switchBackToStart(
       note: `the main clone is on ${current.ok ? `"${current.out}"` : "no branch"}, not on the task's branch "${taskBranch}" or "${start}"; it was left as it is`,
     };
   }
-  const status = git(repository, ["status", "--porcelain", "--untracked-files=no"]);
+  const status = git(repository, ["status", "--porcelain", "--untracked-files=normal"]);
   if (!status.ok) {
     return { ok: false, note: `cannot read its status: ${status.err}; the main clone stays on "${taskBranch}"` };
   }
