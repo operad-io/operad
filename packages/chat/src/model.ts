@@ -54,11 +54,11 @@ export const PRIVATE_STATUS = "Not remembered / 不记入记忆";
 
 /** The line `/private` answers with when it starts a stretch. */
 export const PRIVATE_ON_LINE =
-  "Not remembered / 不记入记忆: on. Messages from here stay in this chat and you still see them, but they do not enter the bot's memory: no note is written, they are left out of the memory flush before a compaction, out of Dreaming and out of search. This is not deletion and not a separate chat. Send /private again to end it.";
+  "Not remembered / 不记入记忆: on. Messages from here stay in this chat but are not saved to memory or search. Send /private again to end it.";
 
 /** The line `/private` answers with when it ends a stretch. */
 export const PRIVATE_OFF_LINE =
-  "Not remembered / 不记入记忆: off. The stretch stays in this chat but was not written to memory or to search. It is still in this session's context, and a compaction summary could carry it into later context, so the memory flush is skipped while the session holds it. Send /new to start a session that has none of it.";
+  "Not remembered / 不记入记忆: off. What you sent meanwhile was not saved, but this chat may still recall it. Send /new to start clean.";
 
 /** The fact type of messages an attempt took, when no reply message can name them. */
 export const ANSWER_FACT = "chat.answered";

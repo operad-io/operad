@@ -334,9 +334,12 @@ describe("sending a reply", () => {
     await sender(w, api).sweepChat(chat);
     await sender(w, api).sweepChat(chat);
     expect(api.sent).toHaveLength(2);
-    expect(api.sent[0]?.text).toContain("Not remembered");
-    expect(api.sent[0]?.text).toContain(": on.");
-    expect(api.sent[1]?.text).toContain(": off.");
+    expect(api.sent[0]?.text).toBe(
+      "Not remembered / 不记入记忆: on. Messages from here stay in this chat but are not saved to memory or search. Send /private again to end it.",
+    );
+    expect(api.sent[1]?.text).toBe(
+      "Not remembered / 不记入记忆: off. What you sent meanwhile was not saved, but this chat may still recall it. Send /new to start clean.",
+    );
     await w.close();
   });
 
