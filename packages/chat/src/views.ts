@@ -102,6 +102,7 @@ export function messageMarkdown(message: Message, speaker: string = DEFAULT_SPEA
   if (message.delivery !== undefined) {
     return [`**${deliveryHeader(message.delivery)}** · ${minute(message.at)}`, message.text].filter((part) => part.length > 0).join("\n\n");
   }
+  if (message.role === "recap") return [`**Recap** · ${minute(message.at)}`, message.text].join("\n\n");
   const who = message.role === "assistant" ? speaker : "you";
   const via = message.role === "user" && message.source.kind.length > 0 ? ` via ${message.source.kind}` : "";
   const head = `**${who}**${via} · ${minute(message.at)}`;
@@ -143,7 +144,7 @@ function messageFrom(fact: {
 }): Message | undefined {
   const data = fact.data;
   if (typeof data.id !== "string" || typeof data.text !== "string") return undefined;
-  if (data.role !== "user" && data.role !== "assistant" && data.role !== "delivery") return undefined;
+  if (data.role !== "user" && data.role !== "assistant" && data.role !== "delivery" && data.role !== "recap") return undefined;
   const delivery = data.role === "delivery" ? deliveryOf(data.delivery) : undefined;
   if (data.role === "delivery" && delivery === undefined) return undefined;
   const from = isRecord(data.from) ? data.from : {};

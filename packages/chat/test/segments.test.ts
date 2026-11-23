@@ -2,12 +2,13 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import type { SectionContent, ViewContext } from "@operad-io/engine";
 import { allMessages, CHAT_TYPE, chatData, chatRef, chatViews, COMMAND_FACT, NEW_FACT, readChat, segmentsOf, SEGMENT_TITLE_FACT } from "../src/index.ts";
-import { cleanupRoots, reply, rig, setTestClock } from "./support.ts";
+import { clock as testClock, cleanupRoots, reply, rig } from "./support.ts";
 
 afterAll(cleanupRoots);
 
 type Rig = Awaited<ReturnType<typeof rig>>;
 
+const realNow = testClock.now;
 const day = (n: number): number => Date.UTC(2026, 10, n, 10, 0, 0);
 
 async function view(r: Rig, chat: string, options: { readonly cursor?: string; readonly after?: string } = {}): Promise<SectionContent> {
@@ -76,7 +77,7 @@ function scripted(titles: (n: number) => string | undefined): Parameters<typeof 
 describe("segments of a long chat", () => {
   test("a /new and a compaction each start a segment; the transcript marks it with its date and a generated title", async () => {
     let clock = day(20);
-    setTestClock(() => clock);
+    testClock.now = () => clock;
     try {
       const r = await rig(scripted((n) => (n === 1 ? "Pasta night plans" : "Garden irrigation")));
       const { chat } = await threeSegments(r, (at) => {
@@ -110,7 +111,7 @@ describe("segments of a long chat", () => {
       await r.round(chat);
       expect(r.calls.filter(titling)).toHaveLength(2);
     } finally {
-      setTestClock(undefined);
+      testClock.now = realNow;
     }
   });
 
@@ -187,7 +188,7 @@ describe("segments of a long chat", () => {
 
   test("a read that comes after a mark carries the marker of a segment that began since", async () => {
     let clock = day(20);
-    setTestClock(() => clock);
+    testClock.now = () => clock;
     try {
       const r = await rig(scripted((n) => `Title ${n}`));
       const { chat, mark } = await threeSegments(r, (at) => {
@@ -199,7 +200,7 @@ describe("segments of a long chat", () => {
       expect(delta.markdown).not.toContain("### Title 1");
       expect(delta.markdown).not.toContain("bravo question");
     } finally {
-      setTestClock(undefined);
+      testClock.now = realNow;
     }
   });
 });
@@ -207,7 +208,7 @@ describe("segments of a long chat", () => {
 describe("reading the transcript from a segment, a date or a message", () => {
   async function long(): Promise<{ r: Rig; chat: string; bravo: string }> {
     let clock = day(20);
-    setTestClock(() => clock);
+    testClock.now = () => clock;
     try {
       const r = await rig(scripted((n) => `Title ${n}`));
       const made = await threeSegments(r, (at) => {
@@ -215,7 +216,7 @@ describe("reading the transcript from a segment, a date or a message", () => {
       });
       return { r, ...made };
     } finally {
-      setTestClock(undefined);
+      testClock.now = realNow;
     }
   }
 

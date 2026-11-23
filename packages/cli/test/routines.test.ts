@@ -127,3 +127,33 @@ describe("operad routines", () => {
     expect(JSON.parse(listed.text())).toEqual([]);
   });
 });
+
+const shellPluginPath = fileURLToPath(
+  new URL("../../shell/src/index.ts", import.meta.url),
+);
+
+describe("operad routines add --command", () => {
+  test("refuses with shell off, names the command that turns it on, then adds with shell on", async () => {
+    const off = (await makeHome({ plugins: [cronPluginPath] })).home;
+    const refused = capture();
+    expect(
+      await main(["routines", "add", "--command", "echo hi", "--schedule", "0 3 * * *"], {
+        home: off,
+        io: refused.io,
+      }),
+    ).toBe(1);
+    expect(refused.errors()).toContain("operad plugin enable shell");
+
+    const on = (await makeHome({ plugins: [cronPluginPath, shellPluginPath] })).home;
+    const added = capture();
+    expect(
+      await main(["routines", "add", "--command", "echo hi", "--schedule", "0 3 * * *"], {
+        home: on,
+        io: added.io,
+      }),
+    ).toBe(0);
+    const listed = capture();
+    expect(await main(["routines", "list"], { home: on, io: listed.io })).toBe(0);
+    expect(listed.text()).toContain('command "echo hi"');
+  });
+});

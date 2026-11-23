@@ -281,6 +281,27 @@ describe("sending a reply", () => {
     await w.close();
   });
 
+  test("a recap on return is sent once, as one message", async () => {
+    const { w, chat } = await bound();
+    const api = new FakeApi();
+    await w.ctx.facts.append({
+      type: MESSAGE_FACT,
+      object: chatRef(chat),
+      data: {
+        id: "recap-1",
+        role: "recap",
+        from: { via: "chat", id: "recap" },
+        text: "While you were away (6 h):\n- Routine results: Morning news",
+        attachments: [],
+        source: { kind: "chat", ref: null },
+      },
+    });
+    await sender(w, api).sweepAll();
+    await sender(w, api).sweepChat(chat);
+    expect(api.sent.map((request) => request.text)).toEqual(["While you were away (6 h):\n• Routine results: Morning news"]);
+    await w.close();
+  });
+
   test("a failed reply is sent once as a message, in order with the replies", async () => {
     const { w, chat } = await bound();
     const api = new FakeApi();

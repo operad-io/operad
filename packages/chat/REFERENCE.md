@@ -328,7 +328,7 @@ the last finished reply's context; a new session leaves it out until the next
 reply. The chat's object view carries the same `context`. Every read also
 carries `data.queued` and `data.queuedCount`, the messages a run has not taken.
 
-Segments (ADR 0026 D20): each stretch that `/new` or a compaction starts is a
+Segments (ADR 0026 D21): each stretch that `/new` or a compaction starts is a
 segment. The Markdown puts `### <title> · <date, UTC>` before
 the first item of every segment but the first, and `data.segments` lists them
 (`number`, `at`, `kind`, `title`, `cursor`) once there are two or more. The
@@ -342,3 +342,10 @@ The transcript labels the model's messages with a speaker name, read each time
 it is drawn: `plugins.chat.settings.speaker`, `Operad Bot` when not set. A
 chat's parent object may carry a `speaker` of its own (a bot does), and that
 name is used instead. Messages already recorded get a changed name too.
+
+## The recap on return
+
+`plugins.chat.settings.awayMinutes` (default 240; 0 turns it off): a message
+written after this many minutes without the person's message or command is
+followed by one `recap` message listing the routine results and the replies that
+came meanwhile (ADR 0026 D21). It is not sent to the model.

@@ -51,3 +51,10 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0636-M6 | packages/shell/src/index.ts | `shell/check` no longer passed `params.env` to each line | `shell/check > env is added to every line's environment` |
+
+## T-0783 — the shell:command flow
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0783-M5 | packages/shell/src/index.ts | the scheduled step ignored `params.cwd` and ran in the home | `the shell:command flow > runs the command line in the given directory and records its output` |
+| T-0783-M6 | packages/shell/src/index.ts | the flow's failed end recorded `done` | `the shell:command flow > a non-zero exit ends the run failed, with the exit code and the output tail` |
