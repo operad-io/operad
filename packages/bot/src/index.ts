@@ -578,9 +578,10 @@ const chatAction: ActionTypeDefinition = {
   },
 };
 
-// Setup Dev (ADR 0030 D15): opens a chat on the bot whose first message is the
-// prepared prompt for one repository. The chat is an ordinary one; what the
-// agent proposes is a pending item.
+// Setup Dev (ADR 0030 D15): opens a chat on the bot whose first message shows
+// the chat's title and carries the prepared prompt for one repository as a
+// hidden instruction. The chat is an ordinary one; what the agent proposes is a
+// pending item.
 const setupDevAction: ActionTypeDefinition = {
   name: "setup-dev",
   on: BOT_TYPE,
@@ -627,8 +628,9 @@ const setupDevAction: ActionTypeDefinition = {
   },
 };
 
-// Setup <plugin> (ADR 0010 D7): opens a chat on the bot whose first message is
-// the plugin's guide, with what its check finds missing.
+// Setup <plugin> (ADR 0010 D7): opens a chat on the bot whose first message shows
+// the chat's title and carries the plugin's guide, with what its check finds
+// missing, as a hidden instruction.
 const setupAction: ActionTypeDefinition = {
   name: "setup",
   on: BOT_TYPE,
