@@ -37,6 +37,8 @@ The name the file gives inside `defineFlow` does not matter; the file name does.
 - `operad flows` lists them with the plugin column `home`.
 - `operad routines add --flow home:nightly --schedule "0 3 * * *"` starts one on a schedule.
 
+- `operad routines to-flow <id>` turns a routine that runs one command into such a file, ready to edit, and points the routine at it.
+
 ## Loading
 
 The files load when operad starts, and `serve` reloads when a file in `<home>/flows` changes, as it does for a plugin's code (see [cli](cli.md)). A file that does not load is refused: the reason names the file and goes to the error output. The other files, and `serve`, are not affected. A name another flow already uses is refused the same way.

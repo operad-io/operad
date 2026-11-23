@@ -70,3 +70,11 @@ the row fields.
 | T-0783-M2 | packages/source-cron/src/schedules.ts | the list showed the flow name instead of the command line | `command routines > --command writes the same rule as --flow shell:command --params, and list shows the line` |
 | T-0783-M3 | packages/source-cron/src/schedules.ts | a failed run's last result dropped the failing step's message | `command routines > a failed command's last result carries the step's message` |
 | T-0783-M4 | packages/source-cron/src/schedules.ts | every command routine got the same default object | `command routines > two command routines at one time get different objects` |
+
+## T-0785 — a command routine becomes a flow file
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0785-M1 | packages/source-cron/src/schedules.ts | the flow file was written over an existing file (`wx` became `w`) | `operad routines to-flow > refuses when the file already exists and changes nothing` |
+| T-0785-M2 | packages/source-cron/src/schedules.ts | the file ignored the routine's `--cwd` and used the home | `operad routines to-flow > writes a flow file that loads and runs the command, and points the routine at it` |
+| T-0785-M3 | packages/source-cron/src/schedules.ts | the routine kept starting `shell:command` instead of `home:<name>` | `operad routines to-flow > writes a flow file that loads and runs the command, and points the routine at it` |

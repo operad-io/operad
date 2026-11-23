@@ -2,7 +2,7 @@
 
 import { messageOf } from "@operad-io/engine";
 import { createHash } from "node:crypto";
-import { readFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { writeJsonAtomicSync } from "@operad-io/engine/platform";
 import {
@@ -110,6 +110,64 @@ function commandOf(rule: TriggerRule): string | undefined {
   const params = rule.start.params;
   if (!isRecord(params)) return undefined;
   return typeof params.command === "string" ? params.command : undefined;
+}
+
+/** The directory a command routine runs in: its own, or the home. */
+function commandCwd(rule: TriggerRule, home: string): string {
+  const params = rule.start.params;
+  return isRecord(params) && typeof params.cwd === "string" ? params.cwd : home;
+}
+
+const HOME_FLOW_NAME = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;
+
+/** The text of a flow file that does exactly what a command routine does, with notes on how to grow it. */
+export function routineFlowFile(name: string, command: string, cwd: string): string {
+  return `import { defineFlow } from "@operad-io/engine";
+
+// Made from a routine that ran one command. It does the same: run the command, then end.
+// Edit it freely; the routine now starts this flow as home:${name}.
+export default defineFlow({
+  name: ${JSON.stringify(name)},
+  entry: "run",
+  steps: [
+    {
+      id: "run",
+      kind: "plugin",
+      params: { use: "shell/command", params: { line: ${JSON.stringify(command)}, cwd: ${JSON.stringify(cwd)} } },
+      replay: "unsafe",
+      // The step passes on exit code 0 and fails on any other code (or a timeout).
+      next: { pass: "end_done", fail: "end_failed", interrupted: "end_cancelled" },
+    },
+
+    // To add a step: copy the step above under a new id, change its line, and point
+    // another step's "next" at it. A step may call any loaded plugin: "<plugin>/<step>".
+    //
+    // To wait for a person: add a step like this, and point a "next" at "ask".
+    // Each key of its "next" is one of the choices.
+    //   {
+    //     id: "ask",
+    //     kind: "wait_person",
+    //     params: { prompt: "The command failed. Run it again?", choices: ["again", "stop"] },
+    //     replay: "safe",
+    //     next: { again: "run", stop: "end_failed" },
+    //   },
+    //
+    // To branch on the exit code: a step only has the results pass and fail, so
+    // test the code in a step of its own. This one passes when the command exits 3:
+    //   {
+    //     id: "check_code",
+    //     kind: "plugin",
+    //     params: { use: "shell/command", params: { line: "./job; test $? -eq 3" } },
+    //     replay: "unsafe",
+    //     next: { pass: "end_done", fail: "end_failed", interrupted: "end_cancelled" },
+    //   },
+
+    { id: "end_done", kind: "end", params: { status: "done" }, replay: "safe" },
+    { id: "end_failed", kind: "end", params: { status: "failed" }, replay: "safe" },
+    { id: "end_cancelled", kind: "end", params: { status: "cancelled" }, replay: "safe" },
+  ],
+});
+`;
 }
 
 function range(count: number): number[] {
@@ -378,11 +436,11 @@ export function scheduledCommand(
   const now = options.now ?? Date.now;
   return {
     name: "routines",
-    args: "list [--json] | add (--flow <flow> [--params <json>] | --command <line> [--cwd <dir>]) --schedule <expression> [--object <id>] [--mode <mode>] | edit <id> [--flow <flow>] [--schedule <expression>] [--params <json>] [--object <id>] [--mode <mode>] | pause <id> | resume <id> | remove <id>",
+    args: "list [--json] | add (--flow <flow> [--params <json>] | --command <line> [--cwd <dir>]) --schedule <expression> [--object <id>] [--mode <mode>] | edit <id> [--flow <flow>] [--schedule <expression>] [--params <json>] [--object <id>] [--mode <mode>] | to-flow <id> [--name <name>] | pause <id> | resume <id> | remove <id>",
     async run(ctx, argv) {
       const [sub, ...rest] = argv;
       if (sub === undefined || sub === "help") {
-        throw new ScheduleError("routines: use list, add, edit, pause, resume or remove");
+        throw new ScheduleError("routines: use list, add, edit, to-flow, pause, resume or remove");
       }
       const parsed = parseArgs(rest);
 
@@ -490,6 +548,41 @@ export function scheduledCommand(
         writeRules(ctx.home, rules);
         baselineCronRule(ctx.home, edited, now());
         return `edited ${edited.start.flow} (${scheduledId(edited)})`;
+      }
+
+      if (sub === "to-flow") {
+        const id = oneId(parsed);
+        const rules = readRules(ctx.home);
+        const rule = found(rules, id);
+        const command = commandOf(rule);
+        if (command === undefined) {
+          throw new ScheduleError(`routine "${id}" does not run a command, so it has no flow file to make`);
+        }
+        const name = parsed.values.get("--name") ?? `routine-${id}`;
+        if (!HOME_FLOW_NAME.test(name)) {
+          throw new ScheduleError(
+            `routines: --name "${name}" may use letters, digits, ".", "_" and "-" and must start with a letter or digit`,
+          );
+        }
+        const flows = join(ctx.home, "flows");
+        const file = join(flows, `${name}.flow.ts`);
+        const converted: TriggerRule = { ...rule, start: { flow: `home:${name}` } };
+        const convertedId = scheduledId(converted);
+        if (scheduled(rules).some((entry) => scheduledId(entry) === convertedId)) {
+          throw new ScheduleError(`a routine "${convertedId}" already exists`);
+        }
+        mkdirSync(flows, { recursive: true });
+        try {
+          writeFileSync(file, routineFlowFile(name, command, commandCwd(rule, ctx.home)), { flag: "wx" });
+        } catch (error) {
+          if (error instanceof Error && "code" in error && error.code === "EEXIST") {
+            throw new ScheduleError(`${file} already exists; choose another --name or edit that file`);
+          }
+          throw new ScheduleError(`cannot write ${file}: ${String(error)}`);
+        }
+        writeRules(ctx.home, replace(rules, id, () => converted));
+        baselineCronRule(ctx.home, converted, now());
+        return `wrote ${file}; the routine (${convertedId}) now runs home:${name}`;
       }
 
       if (sub === "pause" || sub === "resume") {
