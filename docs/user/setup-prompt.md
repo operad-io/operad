@@ -16,7 +16,7 @@ The bot reads the repository and runs its checks under the chat's access level, 
 
 Before it writes the file the bot asks which way you want to work, in your language and in plain words: the agent makes a new branch in your folder and works there one thing at a time (best not to edit the folder meanwhile), or each piece of work gets its own separate folder, so several can go at once and your folder stays untouched. If you are unsure it chooses the first. Your answer becomes `workIn` in the proposed file (see [dev](dev.md#where-a-task-works)).
 
-The repository must be the root of a git work tree. It may have no remote: merges then stay in the local main branch. Every key the bot may write is described in [dev](dev.md). Read what it proposes before you approve it: the checks in `gate.commands` judge whether a change is good enough to reach review, so they should be the ones you trust. Commit `.operad/dev.json` afterwards; operad reads it from the main clone.
+The folder does not need git: with no git, or on a machine without the git program, it is set up as it is, works in place and is not asked about git; git is needed only when a task is created. It may be a git repository with no remote: merges then stay in the local main branch. A folder inside another git repository is refused, and the answer names the repository's folder to use instead. Every key the bot may write is described in [dev](dev.md). Read what it proposes before you approve it: the checks in `gate.commands` judge whether a change is good enough to reach review, so they should be the ones you trust. Commit `.operad/dev.json` afterwards; operad reads it from the main clone.
 
 This is the prompt the bot is given, with the bot and the directory filled in:
 
@@ -30,9 +30,12 @@ to you in.
 Reference, if you need a key's details: https://operad.io/docs/dev/ (the full key table)
 and https://operad.io/llms.txt.
 
-1. Look at the repository. Run `git remote -v` and find the main branch name in <repository directory>.
-   A repository with no git remote is fine: leave `remote` out of the file. Check which agents
-   are on PATH: `claude`, `pi`, `radian`. When none is, operad's own pi is the agent.
+1. Look at the folder. If <repository directory> has a `.git` entry, run `git remote -v` and find the
+   main branch name there. A folder with no git, a machine without the git program, and a
+   repository with no git remote are all fine: do not run `git` in a folder that is not a
+   repository, do not ask me about git, and leave `remote` out of the file. If <repository directory> is
+   inside another git repository, tell me that repository's folder and stop. Check which
+   agents are on PATH: `claude`, `pi`, `radian`. When none is, operad's own pi is the agent.
 
 2. Find this repo's checks. Read CI config (.github/workflows, .gitlab-ci.yml, ...), the
    Makefile, package.json scripts, pyproject, Cargo.toml or whatever applies. Choose the
@@ -45,7 +48,8 @@ and https://operad.io/llms.txt.
    are not there. Put the install step in `prepare` (for example
    `bun install --frozen-lockfile` or `npm ci`), only if the repo needs one.
 
-4. Ask me which way to work, before you write the file. Say it in my language and in plain
+4. Ask me which way to work, before you write the file. Skip this question when <repository directory> is
+   not a git repository: choose the first way without asking. Say it in my language and in plain
    words, about what changes for me; do not use the words clone, worktree or concurrency, and
    do not ask me to know them. Offer two ways:
    - In my folder: the agent makes a new branch in this folder and works there, one thing at

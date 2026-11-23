@@ -99,7 +99,7 @@ import {
   type ViewRow,
 } from "@operad-io/engine";
 import { loginBotFor } from "@operad-io/bot";
-import { stopAllKeptWorkers } from "@operad-io/engine/platform";
+import { findGit, stopAllKeptWorkers } from "@operad-io/engine/platform";
 import { ChannelTypeError, runMcpServer } from "@operad-io/mcp";
 import {
   guardBackgroundBusy,
@@ -898,6 +898,7 @@ function systemDoctorEnv(home: string, io: CliIo): DoctorEnv & { close(): Promis
         return { answering: false };
       }
     },
+    gitInstalled: () => findGit() !== undefined,
     testHost: async () => {
       const { registry } = await context();
       const fromEnv = process.env.OPERAD_CHECK_HOST;

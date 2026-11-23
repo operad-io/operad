@@ -43,7 +43,7 @@ and `operad help` print the whole table.
 | Command | Arguments | What it does and prints |
 |---|---|---|
 | `operad` | none | Creates the home when it has none, starts `serve` when none answers, and opens [the terminal client](tui.md) on the default bot's new chat, with the cursor in its input. The first message creates the chat. |
-| `operad doctor` | `[--json]` | Checks the home and changes nothing in it. Prints one line per check, `ok` or `problem`: the home and `config.json`, each enabled plugin, each agent with its version and whether it is signed in, whether `serve` answers, the test host when `dev.testHost` is set, and what `operad pending` reports as a setup problem. A `problem` line ends with the command to type next; for an agent that is not signed in, `operad bot:login <bot>` when operad can log in to that agent, else the agent's own command. Exits `1` when any line is a problem. `--json` prints `{ "ok", "checks": [{ "id", "ok", "message", "next" }] }`. |
+| `operad doctor` | `[--json]` | Checks the home and changes nothing in it. Prints one line per check, `ok` or `problem`: the home and `config.json`, each enabled plugin, each agent with its version and whether it is signed in, whether `serve` answers, an `ok` line saying so when git is not installed (chat works without it; a task needs it), the test host when `dev.testHost` is set, and what `operad pending` reports as a setup problem. A `problem` line ends with the command to type next; for an agent that is not signed in, `operad bot:login <bot>` when operad can log in to that agent, else the agent's own command. Exits `1` when any line is a problem. `--json` prints `{ "ok", "checks": [{ "id", "ok", "message", "next" }] }`. |
 | `operad init` | none | Creates `config.json` when it is missing and checks each loaded plugin. Prints `created <file>` or `using <file>`, then one `<plugin>: <result>` line per check. A new home enables `chat`, `bot` and `memory`, and enables `radian`, `claude` and `pi` for the commands found on `PATH`; `shell`, `dev` and `pool` stay off until they are enabled. When `claude` is found it also installs `@operad-io/harness-claude` and its SDK in the home. With no agent found it enables `pi` and installs operad's own pinned pi in the home; that download needs the network once, and running `operad init` again retries it. `codex` stays off until `operad plugin enable codex`. The checks of the enabled plugins: `shell` is ready when it is on, each enabled harness finds its agent on `PATH` or, for `pi`, the copy operad installed, and `dev` reaches each registered repository's remote when it is on (see [dev commands](#dev-commands)). A failed check exits `1`. |
 | `operad serve` | none | Runs the loop for this home: starts waits, runs steps, serves HTTP and runs notify. Prints `http <url>` for each listen address and `serving <home>`. Exit `4` when another `serve` holds the home. |
 | `operad serve stop` | `--timeout <secs>` | Stops this home's `serve` with SIGTERM; see [Stopping serve](#stopping-serve). |
@@ -382,17 +382,21 @@ is running` when no `serve` holds the home.
 
 ## dev commands
 
-`operad dev repo add <path> [--name <name>]` registers a directory that is a git
-work tree; a repository with no remote is fine, and its merges stay in its local
-main branch. It refuses, and writes nothing, a directory that is not
-the root of a git work tree, whose name is already
+`operad dev repo add <path> [--name <name>]` registers a directory. The directory
+needs no git, and the machine needs no git program: such a folder is added as it
+is, with `.operad/dev.json` set to work in place and naming no remote, and git is
+needed only when a task is created. A repository with no remote is fine, and its
+merges stay in its local main branch. It refuses, and writes nothing, a
+directory inside a git repository (`"<dir>" is inside the git repository at
+"<root>"; add "<root>" instead`), whose name is already
 registered and not removed, or whose path is already registered under another
 active name, and prints the reason. It writes `.operad/dev.json` when the
 repository has none. A name whose repository was removed is registered again at
 the new path, keeping its plans and tasks: to move a repository's folder, remove
 the repository, move the folder, then add it again under the same name.
-`operad init` checks, for each registered repository, that its remote can be
-reached and has the main branch published; it asks the remote read-only and
+`operad init` checks, for each registered repository that has a commit, that its
+remote can be reached and has the main branch published (a folder without git is
+skipped); it asks the remote read-only and
 pushes nothing. `operad dev repo list` prints `no repositories` or one
 `<name>  <path>` line per repository. `operad dev repo remove <name>` prints
 `removed <name>`. It refuses a repository that has an open task

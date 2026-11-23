@@ -7,7 +7,7 @@ merge. It is a plugin: the kernel knows none of these words.
 
 | word | what it is |
 |---|---|
-| **repo** | a git work tree with a remote that `dev` is allowed to work on; `operad dev repo add <path>` registers it |
+| **repo** | a folder (a git work tree, or one with no git until its first task) that `dev` is allowed to work on; `operad dev repo add <path>` registers it |
 | **plan** | one request, its tasks and how far they may run without you |
 | **task** | one unit of work in a plan, with a brief and the tasks that must merge before it |
 | **brief** | the Markdown a task's worker reads; a rework section is appended to it, and a trailing `## Changes` section records every edit |

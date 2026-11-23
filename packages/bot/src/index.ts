@@ -592,7 +592,7 @@ const setupDevAction: ActionTypeDefinition = {
       path: {
         type: "string",
         minLength: 1,
-        description: "The directory of the repository: the root of a git work tree that has a remote.",
+        description: "The directory of the repository or folder: any folder, with or without git, but not a subfolder of a git repository.",
       },
     },
     required: ["path"],

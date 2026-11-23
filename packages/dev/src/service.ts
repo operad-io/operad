@@ -12,9 +12,10 @@ import {
 import { homedir } from "node:os";
 import { basename, isAbsolute, join, relative, resolve } from "node:path";
 import { ViewError } from "@operad-io/engine";
-import { isBusy } from "@operad-io/engine/platform";
+import { isBusy, type GitFinderHost } from "@operad-io/engine/platform";
 import type { FlowDefinition, ObjectStore, StoredObject } from "@operad-io/engine";
 import { git } from "./git.ts";
+import { gitStateOf } from "./git-state.ts";
 import { withdrawIntegration } from "./integration-queue.ts";
 import { switchBackToStart } from "./mainclone.ts";
 import { withRepositoryLock } from "./lock.ts";
@@ -79,6 +80,8 @@ export interface AddRepositoryOptions {
   readonly path: string;
   readonly name?: string | undefined;
   readonly cwd?: string | undefined;
+  /** The machine the git program is looked up on; a test injects one without git. */
+  readonly finder?: GitFinderHost | undefined;
 }
 
 const REPOSITORY_TYPE = "repo";
@@ -468,7 +471,12 @@ function ensureExcludes(repositoryPath: string): void {
   appendFileSync(excludePath, `${prefix}${missing.join("\n")}\n`, "utf8");
 }
 
-function writeSettings(repositoryPath: string, name: string, hasRemote: boolean): void {
+function writeSettings(
+  repositoryPath: string,
+  name: string,
+  hasRemote: boolean,
+  inPlace: boolean,
+): void {
   const directory = join(repositoryPath, ".operad");
   mkdirSync(directory, { recursive: true });
   const settings = join(directory, "dev.json");
@@ -480,6 +488,7 @@ function writeSettings(repositoryPath: string, name: string, hasRemote: boolean)
         $schema: DEV_SETTINGS_SCHEMA,
         name,
         ...(hasRemote ? { remote: DEFAULT_DEV_SETTINGS.remote } : {}),
+        ...(inPlace ? { workIn: "branch" } : {}),
         mainBranch: DEFAULT_DEV_SETTINGS.mainBranch,
         worktreeRoot: DEFAULT_DEV_SETTINGS.worktreeRoot,
         concurrency: DEFAULT_DEV_SETTINGS.concurrency,
@@ -514,7 +523,10 @@ function repositoryHasRemote(
   };
 }
 
-/** Registers a git work tree; it may have no remote. */
+/**
+ * Registers a folder. It may have no remote, no git repository, or no git
+ * program on the machine; a subfolder of a repository is refused, naming the root.
+ */
 export async function addRepository(
   store: ObjectStore,
   options: AddRepositoryOptions,
@@ -523,26 +535,24 @@ export async function addRepository(
   if (!existsSync(from) || !statSync(from).isDirectory()) {
     throw new DevError("path", `no directory "${from}"`);
   }
-  const top = git(from, ["rev-parse", "--show-toplevel"]);
-  if (!top.ok || top.out.length === 0) {
+  // A folder needs git only to create a task (ADR 0039 D7): without the git
+  // program, or in no repository, it is registered as it is.
+  const state = gitStateOf(from, options.finder === undefined ? {} : { finder: options.finder });
+  if (state.state === "subfolder") {
     throw new DevError(
       "path",
-      `"${from}" is not a git work tree${top.err.length > 0 ? `: ${top.err}` : ""}`,
+      `"${from}" is inside the git repository at "${state.root}"; add "${state.root}" instead`,
     );
   }
-  const path = realpathSync(top.out);
-  if (path !== realpathSync(from)) {
-    throw new DevError(
-      "path",
-      `"${from}" is not the root of a git work tree`,
-    );
-  }
-  const bare = git(path, ["rev-parse", "--is-bare-repository"]);
-  if (bare.ok && bare.out === "true") {
+  const path = realpathSync(from);
+  const hasRepository = state.state === "no commit" || state.state === "ready";
+  const bare =
+    state.state === "no program" ? undefined : git(path, ["rev-parse", "--is-bare-repository"]);
+  if (bare !== undefined && bare.ok && bare.out === "true") {
     throw new DevError("path", `"${path}" is a bare repository`);
   }
   // A repository with no remote is allowed: its merges stay local.
-  const hasRemote = repositoryHasRemote(path).present;
+  const hasRemote = hasRepository && repositoryHasRemote(path).present;
 
   const name = validateRepositoryName(options.name ?? basename(path));
   const existing = await findRepository(store, name, { includeRemoved: true });
@@ -578,8 +588,8 @@ export async function addRepository(
         }
       : { ...previous, name, path, removed: false };
   await store.put(REPOSITORY_TYPE, name, data, "dev:repo-add");
-  writeSettings(path, name, hasRemote);
-  ensureExcludes(path);
+  writeSettings(path, name, hasRemote, !hasRepository);
+  if (hasRepository) ensureExcludes(path);
   return data;
 }
 

@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
+import { realGitFinderHost } from "@operad-io/engine/platform";
 import { addPlan, addRepository, addTask, cancelPlan, cancelTask, confirmPlan, confirmTask, devTestHooks, editTaskBrief, findRepository, getPlan, getTask, listRepositories, removeRepository, resolveRepository, setAuto, setPriority, updateTask } from "../../src/service.ts";
 import { idOfKey, briefBody, listAll, repositoryData, storeKey, taskData, type RepositoryData } from "../../src/model.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot, setTaskPhase, addRework, changesBody } from "../support.ts";
@@ -68,17 +69,44 @@ describe("dev repositories", () => {
     expect(await listRepositories(store)).toHaveLength(0);
   });
 
-  test("add refuses a directory that is not a git work tree", async () => {
+  test("a folder with no git is added as it is, working in place with no remote", async () => {
     const { root, store } = await setup();
     const plain = join(root, "plain");
     Bun.spawnSync({ cmd: ["mkdir", "-p", plain] });
-    await expect(
-      addRepository(store, { path: plain }),
-    ).rejects.toThrow(/git work tree/);
+    const data = await addRepository(store, { path: plain });
+    expect(data.name).toBe("plain");
+    expect(await findRepository(store, "plain")).toBeDefined();
+    const written = JSON.parse(readFileSync(join(plain, ".operad", "dev.json"), "utf8")) as Record<string, unknown>;
+    expect(written.workIn).toBe("branch");
+    expect("remote" in written).toBe(false);
+    // Nothing made it a repository.
+    expect(existsSync(join(plain, ".git"))).toBe(false);
+  });
 
-    // A refused add writes nothing: no registration and no settings file.
-    expect(await findRepository(store, "plain")).toBeUndefined();
-    expect(existsSync(join(plain, ".operad", "dev.json"))).toBe(false);
+  test("with no git program a folder is added too, and git is not run", async () => {
+    const { root, store } = await setup();
+    const repo = join(root, "no-program");
+    Bun.spawnSync({ cmd: ["git", "init", "-q", repo] });
+    await addRepository(store, {
+      path: repo,
+      finder: { ...realGitFinderHost(), platform: "linux", env: { PATH: "" }, which: () => null },
+    });
+    const written = JSON.parse(readFileSync(join(repo, ".operad", "dev.json"), "utf8")) as Record<string, unknown>;
+    expect(written.workIn).toBe("branch");
+    expect(readFileSync(join(repo, ".git", "info", "exclude"), "utf8")).not.toContain(".operad-worktrees/");
+  });
+
+  test("a subfolder of a repository is refused, naming the root", async () => {
+    const { root, store } = await setup();
+    const top = join(root, "top");
+    Bun.spawnSync({ cmd: ["git", "init", "-q", top] });
+    const sub = join(top, "sub");
+    Bun.spawnSync({ cmd: ["mkdir", "-p", sub] });
+    await expect(addRepository(store, { path: sub })).rejects.toThrow(
+      new RegExp(`inside the git repository at "[^"]*top"; add "[^"]*top" instead`),
+    );
+    expect(await findRepository(store, "sub")).toBeUndefined();
+    expect(existsSync(join(sub, ".operad", "dev.json"))).toBe(false);
   });
 
   test("a work tree with no remote is added, and its settings name no remote", async () => {
@@ -674,16 +702,16 @@ describe("git that succeeds without printing", () => {
     }
   });
 
-  test("repo add still refuses when git never prints", async () => {
+  test("repo add asks again, then takes a folder git never names a work tree for as a folder without git", async () => {
     const root = await tempRoot();
     const path = await makeGitRepository(root, "mute");
     const store = storeAt(root);
     const stub = silentGit(root, "rev-parse --show-toplevel", 100);
     try {
-      await expect(addRepository(store, { path })).rejects.toThrow(
-        /is not a git work tree: .*output was empty/,
-      );
+      await addRepository(store, { path });
       expect(stub.calls()).toBe(5);
+      const written = JSON.parse(readFileSync(join(path, ".operad", "dev.json"), "utf8")) as Record<string, unknown>;
+      expect(written.workIn).toBe("branch");
     } finally {
       stub.restore();
     }

@@ -113,14 +113,13 @@ describe("Setup Dev", () => {
     expect(Object.keys(plugins(other))).toEqual(["bot"]);
   });
 
-  test("it refuses a folder that is not a work tree root, text that is not a JSON object and a registered repository", async () => {
+  test("it refuses a subfolder of a repository naming the root, text that is not a JSON object and a registered repository", async () => {
     const r = await rig();
     const bare = repository(r, false);
-    const path = join(r.root, "plain");
-    mkdirSync(path);
-    await expect(r.command("bot", "setup-dev", ["default", path], DEV_JSON)).rejects.toThrow("not the root of a git work tree");
     mkdirSync(join(bare, "sub"));
-    await expect(r.command("bot", "setup-dev", ["default", join(bare, "sub")], DEV_JSON)).rejects.toThrow("not the root of a git work tree");
+    await expect(r.command("bot", "setup-dev", ["default", join(bare, "sub")], DEV_JSON)).rejects.toThrow(
+      `is inside the git repository at "${realpathSync(bare)}"`,
+    );
     execFileSync("git", ["-C", bare, "remote", "add", "origin", "https://example.com/repo.git"], { stdio: "ignore" });
     const real = bare;
     await expect(r.command("bot", "setup-dev", ["default", real], "[1]")).rejects.toThrow("must be a JSON object");
@@ -139,6 +138,31 @@ describe("Setup Dev without a remote", () => {
     const written = JSON.parse(readFileSync(join(path, ".operad", "dev.json"), "utf8")) as Record<string, unknown>;
     expect("remote" in written).toBe(false);
     expect(written.mainBranch).toBe("main");
+  });
+});
+
+describe("Setup Dev without git", () => {
+  test("a folder with no git is proposed, and the file written works in place with no remote", async () => {
+    const r = await rig();
+    const path = join(r.root, "plain");
+    mkdirSync(path);
+    const text = JSON.stringify({ name: "plain", remote: "origin", workIn: "worktree", concurrency: 2, mainBranch: "main" });
+    await r.command("bot", "setup-dev", ["default", path], text);
+    await r.act(PROPOSAL_TYPE, await proposalId(r), "approve");
+    const written = JSON.parse(readFileSync(join(path, ".operad", "dev.json"), "utf8")) as Record<string, unknown>;
+    expect("remote" in written).toBe(false);
+    expect("concurrency" in written).toBe(false);
+    expect(written.workIn).toBe("branch");
+    expect(existsSync(join(path, ".git"))).toBe(false);
+  });
+
+  test("the guide does not ask about git, and stops for a subfolder", () => {
+    const guide = readFileSync(join(import.meta.dir, "../../dev/skills/setup/SKILL.md"), "utf8");
+    const body = renderGuide(guideBody(guide), "default", "/repo");
+    expect(body).toContain("do not run `git` in a folder that is not a");
+    expect(body).toContain("do not ask me about git");
+    expect(body).toContain("inside another git repository, tell me that repository's folder and stop");
+    expect(body).toContain("Skip this question when /repo is");
   });
 });
 

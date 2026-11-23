@@ -42,6 +42,8 @@ export interface DoctorEnv {
   /** The test host when one is set; `undefined` when none is. */
   testHost(): Promise<{ readonly host: string; readonly reachable: boolean } | undefined>;
   setup(): Promise<readonly DoctorSetupItem[]>;
+  /** Whether the git program is installed; absent means the check is not made. */
+  gitInstalled?(): boolean;
 }
 
 export interface DoctorCheck {
@@ -164,6 +166,11 @@ export async function runDoctor(env: DoctorEnv): Promise<DoctorReport> {
     );
   } catch (error) {
     checks.push(bad("serve", `serve could not be checked: ${reasonOf(error)}`, "operad serve"));
+  }
+
+  // Not a problem: chat and file changes work without git, which only a task needs.
+  if (env.gitInstalled !== undefined && !env.gitInstalled()) {
+    checks.push(good("git", "git is not installed: chat works without it, and a task needs it"));
   }
 
   if (loadable) {

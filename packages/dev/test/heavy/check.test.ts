@@ -251,6 +251,27 @@ describe("dev init check", () => {
     expect(calls).not.toContain(pushUrl);
   });
 
+  test("a folder without git is skipped and never reported as missing git", async () => {
+    const { root, repositoryPath } = await setup();
+    const store = storeAt(root);
+    const plain = join(root, "plain");
+    mkdirSync(plain);
+    await addRepository(store, { path: plain });
+    await addRepository(store, { path: repositoryPath });
+
+    const checks = await registryAt(root, store, repositoryPath).checks();
+    expect(checks).toEqual([{ plugin: "dev", ok: true, message: "2 repositories checked" }]);
+
+    // Only the folder without git is registered: it still passes.
+    const alone = await tempRoot();
+    const only = join(alone, "only");
+    mkdirSync(only);
+    const aloneStore = storeAt(alone);
+    await addRepository(aloneStore, { path: only });
+    const [check] = await registryAt(alone, aloneStore, only).checks();
+    expect(check?.ok).toBe(true);
+  });
+
   test("no registered repository passes with a note", async () => {
     const { root, repositoryPath } = await setup();
     const registry = new PluginRegistry([createChatPlugin(), createDevPlugin()], {

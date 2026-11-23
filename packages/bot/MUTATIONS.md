@@ -447,3 +447,10 @@ changes for bots, in the order they were recorded. The root
 |---|---|---|---|
 | T-0753-M1 | packages/bot/src/schedule.ts | `isReplying` always returned false, so run now overwrote the replying firing's `last` | `run now is refused while the previous firing's chat is still replying, and keeps that firing's result` |
 | T-0753-M2 | packages/bot/src/schedule.ts | the restart path watched a manual run under `plannedAt` instead of `firedAt` | `a manual run's watch resumes after a restart under the run's own time` |
+
+## T-0730 — Setup Dev for a folder without git
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0730-M1 | packages/bot/src/setup-dev.ts | a subfolder of a repository was accepted | `Setup Dev > it refuses a subfolder of a repository naming the root, text that is not a JSON object and a registered repository` |
+| T-0730-M2 | packages/bot/src/setup-dev.ts | the proposal for a folder with no repository kept the text's `workIn` | `Setup Dev without git > a folder with no git is proposed, and the file written works in place with no remote` |

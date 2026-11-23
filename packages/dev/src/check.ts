@@ -11,6 +11,7 @@ import { messageOf, type MissingItem, type PluginBaseContext } from "@operad-io/
 /** The check's answer when something is missing (ADR 0010 D7). */
 type SetupMissing = { readonly note: string; readonly missing: readonly MissingItem[] };
 import { git } from "./git.ts";
+import { gitStateOf } from "./git-state.ts";
 import { listRepositories } from "./service.ts";
 import { readDevSettings } from "./settings.ts";
 
@@ -75,6 +76,14 @@ async function checkRepository(
   return remoteName;
 }
 
+function isReady(path: string): boolean {
+  try {
+    return gitStateOf(path).state === "ready";
+  } catch {
+    return false;
+  }
+}
+
 /** Runs the repository loop and reports one line, or throws with every failure. */
 export async function checkDev(ctx: PluginBaseContext): Promise<string | SetupMissing> {
   const repositories = await listRepositories(ctx.store);
@@ -87,6 +96,9 @@ export async function checkDev(ctx: PluginBaseContext): Promise<string | SetupMi
 
   const failures: string[] = [];
   for (const repository of repositories) {
+    // A folder without git, or with no commit yet, is not a failure: git is
+    // needed only to create a task, and the setup there makes the folder ready.
+    if (!isReady(repository.path)) continue;
     try {
       await checkRepository(repository);
     } catch (error) {

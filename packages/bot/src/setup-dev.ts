@@ -69,9 +69,11 @@ function rootOf(path: string): string {
     throw new BotError(`setup-dev: there is no directory "${path}"`);
   }
   const real = realpathSync(path);
+  // A folder needs git only to create a task: without the program, or in no
+  // repository, it is set up as it is. A subfolder of a repository is refused.
   const top = git(real, ["rev-parse", "--show-toplevel"]);
-  if (top === undefined || top.length === 0 || realpathSync(top) !== real) {
-    throw new BotError(`setup-dev: "${path}" is not the root of a git work tree`);
+  if (top !== undefined && top.length > 0 && realpathSync(top) !== real) {
+    throw new BotError(`setup-dev: "${path}" is inside the git repository at "${top}"; use "${top}" instead`);
   }
   return real;
 }
@@ -122,6 +124,11 @@ export async function proposeDev(
   if (!isRecord(parsed)) throw new BotError("setup-dev: the dev.json text must be a JSON object");
   // A repository with no remote works on its local main branch: the file names none.
   if ((git(repo, ["remote"]) ?? "").length === 0) delete parsed.remote;
+  // Without a repository the work is done in the folder itself, whatever the text says.
+  if ((git(repo, ["rev-parse", "--show-toplevel"]) ?? "").length === 0) {
+    parsed.workIn = "branch";
+    delete parsed.concurrency;
+  }
   if ((await registeredPaths(store)).some((path) => resolve(path) === repo)) {
     throw new BotError(`setup-dev: "${repo}" is already registered`);
   }
