@@ -1345,6 +1345,17 @@ export function newSessionAt(facts: readonly PluginFact[]): number {
 }
 
 /**
+ * Whether the next prompt is the first of a session a `/new` started: a `/new`
+ * is on record and no reply has come since. A reply that failed leaves it true,
+ * so the retry still carries the pointer the agent has not yet seen.
+ */
+export function startsAfterNew(facts: readonly PluginFact[], messages: readonly Message[]): boolean {
+  const since = newSessionAt(facts);
+  if (since < 0) return false;
+  return !messages.some((message) => message.role === "assistant" && message.sequence > since);
+}
+
+/**
  * The harness session after the last reply, else the chat's own reference. A
  * reply from before the latest `/new` is not the session in force.
  */

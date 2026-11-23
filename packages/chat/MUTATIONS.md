@@ -659,6 +659,13 @@ are append-only, so the old lines stay as history.
 | T-0765-M2 | packages/chat/src/model.ts | `lastReplyContext` ignored `chat.new`, so an agent with no session id kept showing the old context | `/new > an agent that reports no session id still shows no context after /new` |
 | T-0765-M3 | packages/chat/src/index.ts | `/new` ran while a reply was being written | `/new > it is refused while a reply is running and changes nothing` |
 
+## T-0772 — the earlier record pointer after `/new`
+
+| id | file | mutation | caught by |
+|---|---|---|---|
+| T-0772-M1 | packages/chat/src/model.ts | `startsAfterNew` stayed true after a reply, so every later message carried the pointer | `/new > the first message after /new carries a pointer to the earlier record, and only that one` |
+| T-0772-M2 | packages/chat/src/model.ts | `startsAfterNew` ignored `chat.new`, so no message carried the pointer | the same test |
+
 ## T-0766 — pi compacts a long chat
 
 | id | file | mutation | failing test |

@@ -151,6 +151,13 @@ starts a thread (`thread/start`, not `thread/resume`) and `radian` runs without
 reply, and the bot's memory notes ride on that reply as on any new session.
 Refused while a reply is being written.
 
+The first message after it also carries a short pointer (`[Earlier record of this
+chat]`, after any memory notes) telling the agent the earlier record exists: read
+it with the `section` tool (`chat:<id>`, `transcript`) and search it with `search`
+(scope `chats`, a bot chat) then `read`. The person does not see it. It repeats if
+that reply fails and is retried, and not after the first reply. A compaction
+(T-0766, not yet on main) does not carry it yet.
+
 ## `chat:retry <chat>`
 
 Answers the last message again when the last attempt failed, was stopped or was
