@@ -1,4 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
+import { configPath } from "@operad-io/engine";
 import { chmodSync, mkdirSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CHAT_TYPE, allMessages, chatRef, RUN_FACT, STOP_FACT } from "@operad-io/chat";
@@ -992,6 +993,58 @@ describe("the instructions after a tidy run", () => {
       restarted.start().stop();
       expect((await tidy(s.r))?.state).toBe("failed");
       expect(writable(s.memory)).toBe(true);
+    } finally {
+      s.views.close();
+    }
+  });
+
+  test("a plain reply with no commit ends the card quietly and makes the file writable", async () => {
+    const s = await setup(undefined, undefined, undefined, { runs: ended });
+    try {
+      const id = await running(s);
+      const first = allMessages(s.r.store, id)[0];
+      if (first === undefined) throw new Error("no message");
+      await s.r.store.append({
+        type: "chat.message",
+        object: chatRef(id),
+        cause: "test",
+        data: {
+          id: "assistant-quiet",
+          role: "assistant",
+          from: { via: "pi", id: "pi" },
+          text: "Nothing to change.",
+          attachments: [],
+          source: { kind: "pi", ref: null },
+          replyTo: [first.id],
+          runId: "run-quiet",
+        },
+      });
+      await s.source.settled();
+      expect(writable(s.memory)).toBe(true);
+      expect((await tidy(s.r))?.state).not.toBe("running");
+    } finally {
+      s.views.close();
+    }
+  });
+
+  test("serve start still ends a running card when the bot's settings cannot be read", async () => {
+    const s = await setup(undefined, undefined, undefined, { runs: ended });
+    try {
+      const id = await running(s);
+      s.source.start().stop();
+      await s.r.store.append({ type: RUN_FACT, object: chatRef(id), cause: "test", data: { runId: "run-stopped" } });
+      await s.r.store.append({
+        type: STOP_FACT,
+        object: chatRef(id),
+        cause: "test",
+        data: { runId: "run-stopped", by: { via: "test", id: "person" } },
+      });
+      expect((await tidy(s.r))?.state).toBe("running");
+      writeFileSync(configPath(s.r.home), "{ not json");
+      const restarted = new BotTidySource(s.ctx, { notify: s.notify });
+      await restarted.begin();
+      await restarted.settled();
+      expect((await tidy(s.r))?.state).toBe("failed");
     } finally {
       s.views.close();
     }

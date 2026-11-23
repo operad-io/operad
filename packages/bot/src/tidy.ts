@@ -914,7 +914,7 @@ export class BotTidySource {
     await this.watch(bot, chatId, auto, join(cwd, "memory"));
   }
 
-  private async watch(bot: string, chatId: string, auto: boolean, memoryDir: string): Promise<void> {
+  private async watch(bot: string, chatId: string, auto: boolean, memoryDir: string | undefined): Promise<void> {
     this.chatWatches.watchChatReply(
       chatId,
       chatId,
@@ -930,9 +930,11 @@ export class BotTidySource {
           // still gives the instructions back; the commit, if it comes, restores them.
           const outcome = lastReplyOutcome(read.messages, read.entries);
           const cancelled = stoppedRunAfter(read.facts, -1) !== undefined || outcome.kind === "stopped";
-          if (cancelled || outcome.kind !== "none") unlockInstructions(memoryDir);
-          // A cancelled or failed run makes no commit: its card ends here, not never.
-          if (!cancelled && outcome.kind !== "failed") return undefined;
+          if (memoryDir !== undefined && (cancelled || outcome.kind !== "none")) unlockInstructions(memoryDir);
+          // A run that ended without a commit (cancelled, failed or a plain
+          // reply) ends its card here, not never; the watch only reads once no
+          // reply is still being written.
+          if (!cancelled && outcome.kind === "none") return undefined;
           const stored = await this.ctx.store.get(CHAT_TYPE, chatId);
           if (stored === undefined) return undefined;
           const failure = [...read.entries].reverse().find((item) => item.kind === "failure");
@@ -1102,7 +1104,6 @@ export class BotTidySource {
         await this.failStart(data.bot, data, "Could not start: the run was not recorded");
         continue;
       }
-      if (memoryDir === undefined) continue;
       await this.watch(data.bot, data.chatId, data.auto === true, memoryDir);
     }
   }
