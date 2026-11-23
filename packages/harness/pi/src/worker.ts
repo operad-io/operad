@@ -46,6 +46,14 @@ import {
 } from "@operad-io/harness-process";
 import { findPi, loadPi } from "./pi-install.ts";
 import {
+  DEFAULT_CACHE_TTL_MS,
+  DEFAULT_KEEP_TURNS,
+  DEFAULT_MIN_PRUNE_CHARS,
+  lastAssistantAt,
+  pruneToolResults,
+  type PruneSettings,
+} from "./prune.ts";
+import {
   DEFAULT_BASH_TIMEOUT_SECS,
   parseInput,
   type FailureReason,
@@ -98,6 +106,8 @@ export interface WorkerHooks {
   registerProviders?(runtime: ModelRuntime): void;
   /** The clock for tool call times, in epoch milliseconds; the tests inject one. */
   now?: () => number;
+  /** The clock for the prune decision, apart from `now` so a reading here does not move the tool call times. */
+  pruneNow?: () => number;
   /** Sees the settings and loader options of one run; the tests use it. */
   observeResources?(seen: SeenResources): void;
 }
@@ -311,7 +321,29 @@ export async function runWorker(
   };
   // What a late answer continues; known once the session exists.
   let sessionFile: string | null = null;
+  // Old tool results leave what the model is sent once the prompt cache has
+  // expired (T-0767). pi's `context` hook gets a copy of the transcript and the
+  // session file is not touched. The time is `hooks.pruneNow` against the
+  // last model call this process made, else the last assistant message the
+  // session holds (a resumed session).
+  let lastModelCallAt: number | undefined;
+  const clock = hooks.pruneNow ?? Date.now;
   const operadExtension: ExtensionFactory = (pi) => {
+    pi.on("context", (event, ctx) => {
+      const promptCache = ctx.model?.promptCache;
+      const declared = process.env["PI_CACHE_RETENTION"] === "long" ? promptCache?.long : promptCache?.short;
+      const settings: PruneSettings = {
+        ttlMs: (input.prune?.cacheSecs ?? declared ?? DEFAULT_CACHE_TTL_MS / 1000) * 1000,
+        keepTurns: input.prune?.keepTurns ?? DEFAULT_KEEP_TURNS,
+        minChars: input.prune?.minChars ?? DEFAULT_MIN_PRUNE_CHARS,
+      };
+      const now = clock();
+      const outcome = pruneToolResults(event.messages, settings, now, lastModelCallAt ?? lastAssistantAt(event.messages));
+      lastModelCallAt = now;
+      if (outcome.pruned === 0) return undefined;
+      io.log(`pruned ${outcome.pruned} old tool results, ${outcome.freed} characters`);
+      return { messages: [...outcome.messages] };
+    });
     pi.on("tool_call", async (event) => {
       io.log(`tool_call ${event.toolName}`);
       if (event.toolName === "bash") {

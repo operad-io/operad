@@ -327,3 +327,14 @@ the row fields.
 | T-0766-M4 | packages/harness/pi/src/worker.ts | a failed flush turn left its error set, so the whole reply failed | `a failed flush turn does not stop the compaction or fail the reply` |
 | T-0766-M5 | packages/harness/pi/src/worker.ts | the context after a compaction was not reported, so the chat saw the old size | `a context over the share runs one silent flush turn and then compacts; the reply stays the first turn's` |
 | T-0766-M6 | packages/harness/pi/src/worker.ts | a compact-only run still sent the prompt to the model | `compact.only compacts a resumed session without a prompt and without a reply` |
+
+## T-0767 — pi prunes old tool results
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0767-M1 | packages/harness/pi/src/prune.ts | the cache lifetime check removed, so a live cache was pruned | `before the cache lifetime ends nothing is pruned` |
+| T-0767-M2 | packages/harness/pi/src/prune.ts | the minimum savings check removed | `below the minimum savings nothing is pruned even after expiry` |
+| T-0767-M3 | packages/harness/pi/src/prune.ts | the kept turns off by one (`>` for `>=`) | `after it, old results become a placeholder naming the tool and recent ones stay` |
+| T-0767-M4 | packages/harness/pi/src/prune.ts | the placeholder did not name the tool | `after it, old results become a placeholder naming the tool and recent ones stay` |
+| T-0767-M5 | packages/harness/pi/src/worker.ts | the `context` hook returned `undefined` instead of the pruned messages | `after the cache lifetime, old tool results reach the model as a placeholder and the session keeps them` |
+| T-0767-M6 | packages/harness/pi/src/worker.ts | a new process ignored the session's last assistant message time | `a resumed session is pruned by the time of its last message, not by a fresh process` |

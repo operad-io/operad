@@ -1064,6 +1064,11 @@ export interface ObjectTypeDefinition {
   readonly index?: readonly string[] | undefined;
   /** Ordered row filters for lists; see {@link ObjectFilterDefinition}. */
   readonly filters?: readonly ObjectFilterDefinition[] | undefined;
+  /**
+   * Row states no list shows, not even the kernel's `all`. An object in one of
+   * them is still read by its id.
+   */
+  readonly unlistedStates?: readonly string[] | undefined;
 }
 
 /** The value types an action argument may have. */

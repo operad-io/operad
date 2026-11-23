@@ -1445,3 +1445,4 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0762-flaky-log-backend-sqlite-two-processes-racing-st-M1 | `packages/engine/src/platform/sqlite-open.ts` | `waitForWriter` used a plain immediate transaction again, so one busy timeout ended the wait even while the other writer kept committing | `switching to WAL keeps waiting while the other writer keeps committing` |
+| T-0781-M1 | packages/engine/src/views/presentation.ts | the plain list (the `all` filter) kept rows in an unlisted state | `a run record is in no list > not in open, closed or all, in the tree, and still read by its id` |

@@ -294,3 +294,44 @@ describe("filters over HTTP", () => {
     expect((await get("/v1/objects?type=plain&filter=x")).status).toBe(400);
   });
 });
+
+describe("unlisted states", () => {
+  test("a row in an unlisted state is in no list, not even all, and a bad declaration is refused", async () => {
+    const store = new MemoryPluginStore({ root: "unused" });
+    const registry = new PluginRegistry(
+      [
+        def({
+          name: "jobs",
+          objects: [{ name: "job", filters: FILTERS, unlistedStates: ["hidden"] }],
+          views: {
+            job: {
+              row: (object: { id: string; data: Record<string, unknown> }) => ({
+                id: object.id,
+                title: object.id,
+                state: String(object.data.state),
+              }),
+              sections: () => [],
+              load: () => ({ markdown: "" }),
+            },
+          },
+        }),
+      ],
+      { store },
+    );
+    const views = createViews({ registry, store, onLog: () => undefined });
+    try {
+      await store.put("job", "a", { state: "open" }, "test");
+      await store.put("job", "b", { state: "hidden" }, "test");
+      for (const filter of ["active", "all"]) {
+        expect((await views.list("job", { filter })).rows.map((row) => row.id)).toEqual(["a"]);
+      }
+      expect((await views.list("job")).rows.map((row) => row.id)).toEqual(["a"]);
+      expect(await store.get("job", "b")).toBeDefined();
+    } finally {
+      views.close();
+    }
+    expect(() =>
+      new PluginRegistry([def({ name: "bad", objects: [{ name: "x", unlistedStates: [1] as unknown as string[] }] })], { store }),
+    ).toThrow("unlistedStates");
+  });
+});

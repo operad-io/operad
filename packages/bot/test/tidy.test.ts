@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, utimesSync, writeFileSync } from "node:fs";
+import { mkdirSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { CHAT_TYPE, allMessages, chatRef, RUN_FACT } from "@operad-io/chat";
 import { createViews, type ClientApi, type JsonValue, type ObjectStore, type RunControl } from "@operad-io/engine";
@@ -440,6 +440,8 @@ describe("Run and Skip", () => {
         entry: TIDY_ORIGIN,
       });
       expect((await tidy(s.r))?.state).toBe("running");
+      // The tidy never changes the person's instructions: the file is read-only while it runs.
+      expect(statSync(join(s.memory, "instructions.md")).mode & 0o222).toBe(0);
 
       await s.r.reply(id);
       await s.source.settled();

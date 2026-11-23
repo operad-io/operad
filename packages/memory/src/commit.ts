@@ -24,6 +24,7 @@ import {
   TIDY_COMMIT_FACT,
   TIDY_ORIGIN,
   applyAppendOnly,
+  restoreInstructions,
   lastTidyCommit,
   rewriteDrop,
 } from "./tidy.ts";
@@ -221,6 +222,7 @@ export async function commitBotRun(
       const repository = ensureRepository(memoryDir);
       let message = commitMessage(bot.tidy ? "tidy" : "memory", bot.bot, bot.chat);
       if (bot.tidy) {
+        restoreInstructions(repository, memoryDir);
         const baseline = lastTidyCommit(repository, memoryDir, bot.bot);
         if (baseline !== undefined && rewriteDrop(repository, memoryDir, baseline).voided) {
           applyAppendOnly(repository, memoryDir, baseline);

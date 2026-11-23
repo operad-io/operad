@@ -476,11 +476,11 @@ resuming waits for the next planned minute rather than catching up the paused
 period. A rule may not name the reserved source `operad` when it is added by a
 command.
 
-The cron source also owns the `scheduled` command, which lists, adds, edits,
+The cron source also owns the `routines` command, which lists, adds, edits,
 pauses, resumes and removes these rules without editing the file by hand. It
 writes the same `triggers.json`; there is no second store. A client reaches it
-as `operad scheduled ...`, over HTTP with `POST /v1/commands`, or through the
-MCP `command` tool. A list shows each scheduled flow's flow, schedule,
+as `operad routines ...`, over HTTP with `POST /v1/commands`, or through the
+MCP `command` tool. A list shows each routine's flow, schedule,
 parameters, next run, and the result and run id of its last run. An unknown flow
 or a bad cron expression is refused with the reason.
 

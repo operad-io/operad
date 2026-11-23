@@ -295,7 +295,7 @@ export class MemorySearch {
       const page = await store.list("chat", { ...(cursor === undefined ? {} : { cursor }), limit: 200 });
       for (const object of page.objects) {
         const owner = chatOwner(object.data);
-        if (owner === undefined) continue;
+        if (owner === undefined || object.data["run"] === true) continue;
         const id = `chat:${object.id}`;
         seen.add(id);
         const revision = store.latestFactSequence?.({ type: "chat", id: object.id });

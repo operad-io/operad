@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -8,6 +8,7 @@ import { MemoryPluginStore, PluginRegistry, isRecord } from "@operad-io/engine";
 import {
   MemorySearch,
   createMemoryPlugin,
+  lockInstructions,
   memoryGit,
   memoryTestHooks,
   memoryTidyState,
@@ -342,5 +343,63 @@ describe("a machine without git", () => {
     expect(later.result).toBe("done");
     expect(messages(memory)).toEqual(["memory: bot default, chat C-1"]);
     expect(messages(join(r.home, "wiki"))).toEqual(["wiki: bot default, chat C-1"]);
+  });
+});
+
+describe("a tidy run never changes the instructions", () => {
+  const tidyChat = async (r: Rig, id: string): Promise<void> => {
+    await
+    r.store.put(
+      "chat",
+      id,
+      { parent: "bot:default", cwd: r.cwd, title: "Dreaming", scheduled: { bot: "default", entry: "memory-tidy" } },
+      "test",
+    );
+  };
+
+  test("an edit, a rewrite after a mode change and a delete are all put back before the commit", async () => {
+    const r = await rig();
+    await botChat(r, "C-1");
+    const memory = join(r.cwd, "memory");
+    await r.run("C-1", "run-1");
+    const file = join(memory, "instructions.md");
+    const original = readFileSync(file, "utf8");
+    for (const [index, change] of [
+      (): void => writeFileSync(file, "changed\n"),
+      (): void => {
+        chmodSync(file, 0o644);
+        writeFileSync(file, "rewritten\n");
+      },
+      (): void => {
+        chmodSync(file, 0o644);
+        rmSync(file);
+      },
+    ].entries()) {
+      const chat = `C-${index + 2}`;
+      await tidyChat(r, chat);
+      lockInstructions(memory);
+      try {
+        change();
+      } catch {
+        // The read-only file refused the write; that is the guard working.
+      }
+      const outcome = await r.run(chat, `run-${chat}`);
+      expect(outcome.result).toBe("done");
+      expect(readFileSync(file, "utf8")).toBe(original);
+      expect(statSync(file).mode & 0o200).not.toBe(0);
+    }
+    expect(memoryGit(memory, ["log", "--format=%s", "--", "instructions.md"]).out.split("\n")).toEqual([
+      "memory: bot default, chat C-1",
+    ]);
+  });
+
+  test("the file is read-only while the run lasts", async () => {
+    const r = await rig();
+    await botChat(r, "C-1");
+    await r.run("C-1", "run-1");
+    const file = join(r.cwd, "memory", "instructions.md");
+    lockInstructions(join(r.cwd, "memory"));
+    expect(statSync(file).mode & 0o222).toBe(0);
+    expect(() => writeFileSync(file, "x")).toThrow();
   });
 });
