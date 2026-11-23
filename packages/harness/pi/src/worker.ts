@@ -49,6 +49,8 @@ import {
   DEFAULT_BASH_TIMEOUT_SECS,
   parseInput,
   type FailureReason,
+  type WorkerCompact,
+  type WorkerCompaction,
   type WorkerInput,
   type WorkerLine,
   type WorkerResult,
@@ -507,23 +509,28 @@ export async function runWorker(
   const now = hooks.now ?? Date.now;
   const increments = new Increments(io, now, input.secretValues ?? []);
   const started = new Map<string, number>();
+  // Armed again for each prompt: the flush turn settles after the reply did.
   let settle: () => void = () => {};
-  const settled = new Promise<void>((resolve) => {
-    settle = resolve;
-  });
+  const arm = (): Promise<void> =>
+    new Promise<void>((resolve) => {
+      settle = resolve;
+    });
+  let settled = arm();
+  // True while the silent flush turn runs: its words are not the reply's.
+  let quiet = false;
   session.subscribe((event) => {
     switch (event.type) {
       case "message_update": {
         const update = event.assistantMessageEvent;
         switch (update.type) {
           case "text_delta":
-            increments.text(update.delta);
+            if (!quiet) increments.text(update.delta);
             break;
           case "thinking_delta":
-            increments.thinking(update.delta);
+            if (!quiet) increments.thinking(update.delta);
             break;
           case "thinking_end":
-            increments.endThinking(update.content);
+            if (!quiet) increments.endThinking(update.content);
             break;
           default:
             break;
@@ -531,9 +538,17 @@ export async function runWorker(
         break;
       }
       case "message_end": {
-        if (event.message.role === "assistant") increments.endMessage(textOf(event.message.content, ""));
+        if (event.message.role === "assistant" && !quiet) increments.endMessage(textOf(event.message.content, ""));
         const line = tally.add(event.message);
-        if (line !== undefined) io.line(line);
+        if (line !== undefined) {
+          // The flush turn's usage and price count; its text does not show.
+          if (quiet && line.type === "message_end") {
+            const { text: _text, ...rest } = line;
+            io.line(rest);
+          } else {
+            io.line(line);
+          }
+        }
         break;
       }
       case "auto_retry_start": {
@@ -604,27 +619,81 @@ export async function runWorker(
     }
   });
 
-  const result = (name: "done" | "cancelled"): WorkerResult => ({
-    type: "result",
-    result: name,
-    sessionId: session.sessionFile ?? null,
-    usage: tally.usage,
-    cost: tally.cost,
-    finalMessage: session.getLastAssistantText() ?? null,
-    ...(tally.lastUsage === undefined
-      ? {}
-      : {
-          context: {
-            used:
-              tally.lastUsage.input +
-              tally.lastUsage.cache_read +
-              tally.lastUsage.cache_write,
-            ...(model?.contextWindow !== undefined && model.contextWindow > 0
-              ? { window: model.contextWindow }
-              : {}),
-          },
-        }),
-  });
+  // What the reply said and the context it ended with, held back from the
+  // flush turn and the compaction that may follow it.
+  let heldFinal: string | null | undefined;
+  let heldUsed: number | undefined;
+  let compaction: WorkerCompaction | undefined;
+  const usedNow = (): number | undefined =>
+    tally.lastUsage === undefined
+      ? undefined
+      : tally.lastUsage.input + tally.lastUsage.cache_read + tally.lastUsage.cache_write;
+
+  const result = (name: "done" | "cancelled"): WorkerResult => {
+    const used = heldUsed ?? usedNow();
+    return {
+      type: "result",
+      result: name,
+      sessionId: session.sessionFile ?? null,
+      usage: tally.usage,
+      cost: tally.cost,
+      finalMessage: heldFinal !== undefined ? heldFinal : (session.getLastAssistantText() ?? null),
+      ...(compaction === undefined ? {} : { compaction }),
+      ...(used === undefined
+        ? {}
+        : {
+            context: {
+              used,
+              ...(model?.contextWindow !== undefined && model.contextWindow > 0
+                ? { window: model.contextWindow }
+                : {}),
+            },
+          }),
+    };
+  };
+
+  // After a turn (ADR 0023 D13): when the context is over the share of the
+  // window the input names, or the input asks for it, one silent turn lets the
+  // agent write what it should keep, then pi compacts the session. A failed
+  // flush or compaction never fails the reply.
+  const compactIfDue = async (options: WorkerCompact): Promise<void> => {
+    const usage = session.getContextUsage();
+    const window = usage?.contextWindow ?? model?.contextWindow ?? 0;
+    const before = usage?.tokens ?? usedNow() ?? 0;
+    const forced = options.only === true || options.now === true;
+    if (!forced && !(window > 0 && before >= options.at * window)) return;
+    heldFinal = options.only === true ? null : (session.getLastAssistantText() ?? null);
+    heldUsed = usedNow();
+    let flushed = false;
+    if (options.flush !== undefined) {
+      const errorBefore = tally.lastError;
+      quiet = true;
+      settled = arm();
+      try {
+        await session.prompt(options.flush, { expandPromptTemplates: false });
+        if (!cancelled) await settled;
+        flushed = tally.lastError === undefined;
+      } catch (error) {
+        io.log(`the memory flush before compaction failed: ${messageOf(error)}`);
+      } finally {
+        quiet = false;
+        tally.lastError = errorBefore;
+      }
+    }
+    if (cancelled) return;
+    try {
+      const done = await session.compact();
+      compaction = {
+        reason: forced ? "manual" : "threshold",
+        before: done.tokensBefore,
+        ...(done.estimatedTokensAfter === undefined ? {} : { after: done.estimatedTokensAfter }),
+        flushed,
+      };
+      if (done.estimatedTokensAfter !== undefined) heldUsed = done.estimatedTokensAfter;
+    } catch (error) {
+      io.log(`the compaction failed: ${messageOf(error)}`);
+    }
+  };
 
   // Every way this run ends writes its Result here: text still held back as a
   // possible secret prefix is released first.
@@ -646,6 +715,7 @@ export async function runWorker(
   let cancelled = cancel.aborted;
   const onCancel = (): void => {
     cancelled = true;
+    session.abortCompaction();
     void session.abort();
   };
   cancel.addEventListener("abort", onCancel, { once: true });
@@ -658,7 +728,7 @@ export async function runWorker(
   });
 
   try {
-    if (!cancelled) {
+    if (!cancelled && input.compact?.only !== true) {
       try {
         const images = await Promise.all((input.images ?? []).map((image) => readImage(image)));
         // The prompt is operad's text, not a line at pi's terminal: a leading
@@ -683,6 +753,9 @@ export async function runWorker(
         }
       }
       if (!cancelled) await settled;
+    }
+    if (!cancelled && input.compact !== undefined && tally.lastError === undefined) {
+      await compactIfDue(input.compact);
     }
     if (cancelled) {
       await session.abort();

@@ -2,7 +2,7 @@
 
 - 状态：proposed（owner 2026-11-23 的讨论；"已定"一节是 owner 当场定的，"做法"一节的细节是提议）
 - 涉及 ADR：0026（chat，D3、D11、D16、D18）、0028（D10 默认入口）、0030（D10 定时、D11 提议、D13 夜间整理）、0033（Telegram，D5）、0037（chat 命令）、0023（pi，压缩）、0015（层级）、0018（创建的对象）
-- 涉及：`operad-chat-commands.md`（第二批 `/new`、`/compact`）、`operad-chat-next.md`（第 1、2、4 条）、`operad-conversation.md`（待决 3、5）、`operad-telegram.md`（待决 1）、`operad-desktop.md`
+- 涉及：`operad-chat-commands.md`（第二批 `/new`）、`operad-chat-next.md`（第 1、4 条）、`operad-conversation.md`（待决 3、5）、`operad-telegram.md`（待决 1）、`operad-desktop.md`
 - 来源：owner 2026-11-23 "现在 chat 太多了"；Claude Duet 的公开资料和评测；OpenClaw 的会话文档（session、compaction、session-pruning、cron-jobs）；`docs/research/2026-11-19-pi-durable.md`；`docs/research/2026-11-15-memory.md`
 
 ## 背景
@@ -54,7 +54,7 @@
 **长 chat 的前置**
 
 - `/new`：同一个 chat 开新会话，记录保留；自动进 Telegram 的命令菜单。
-- pi 自动压缩，压缩前一轮静默的记忆落盘（`operad-chat-next.md` 第 2 条的约束）。
+- pi 自动压缩和压缩前一轮静默的记忆落盘、`/compact`：已做（ADR 0023 D12、0037 D12）。
 - 修剪旧工具结果：等提示缓存过期后再做，pi 先做。
 - 自动翻篇（按天、按空闲）：这一轮不做；以后做成 bot 的设置，默认关。
 
@@ -69,7 +69,7 @@
 前两项互不依赖，可以并行：
 
 1. `/new`。
-2. pi 自动压缩加压缩前落盘，然后修剪旧工具结果。
+2. 修剪旧工具结果（pi 自动压缩和压缩前落盘已做）。
 3. Routine 对象、历史和结果送达；改名 Dreaming / 梦境整理。
    - 已落地（T-0768，见 ADR 0030 D10、D13）：Routine 对象（父对象是 bot，行、页面、历史里每次运行的过程和结果、页面上的操作）、运行不是 chat（`R-` 编号，不进 chat 列表）、Dreaming 作为内置 Routine、改名、30 天历史、现有定时 chat 一次性关闭。`bot:schedule-*` 和 `bot schedule` 保留旧名。
    - 还没做：结果送进 bot 的主 chat（依赖第 4 项的"主 chat"），现在仍走 `notify` 命令，通知指向 routine。

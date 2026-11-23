@@ -93,6 +93,7 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `StepTypeRegistry` | The step types validation may see. A single declaration or a list of them. | [flows](flows.md) |
 | `WaitPersonStep` | Asks a person; the turn ends and the process holds nothing while waiting. | [flows](flows.md) |
 | `WaitStep` | Waits for a time or for a plugin step's exit to change. | [flows](flows.md) |
+| `AgentCompaction` | What a harness's compaction of its session did: before and after in tokens, and whether a memory turn ran first. | [harness](harness.md) |
 | `AgentResultData` | What every harness `agent` step records as its facts. | [harness](harness.md) |
 | `AgentTimings` | The three durations of an agent step: start to ready, ready to first increment, and the whole step. | [harness](harness.md) |
 | `AgentResultName` | The result names a harness `agent` step declares: a subset of `EndResult`. | [harness](harness.md) |
