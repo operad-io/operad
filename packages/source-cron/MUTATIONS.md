@@ -63,3 +63,6 @@ the row fields.
 |---|---|---|---|
 | T-0644-M1 | packages/source-cron/src/index.ts | a poll recorded its minute before the emit, so a failed emit was skipped for the rest of that minute | `the cron source > an emit that fails is tried again within the same minute` |
 | T-0644-M2 | packages/source-cron/src/index.ts | a catch-up with nothing planned kept the old recorded time instead of resetting it to the poll's minute | `missed runs > a miss older than 7 days runs nothing` |
+| T-0782-M1 | packages/source-cron/src/index.ts | the plugin declared only `routines`, so the old name `scheduled` was unknown | `operad routines > the old name scheduled is the same command` |
+| T-0782-M2 | packages/source-cron/src/schedules.ts | an empty list printed `no scheduled flows` instead of `no routines` | `operad routines > the old name scheduled is the same command` |
+| T-0782-M3 | packages/source-cron/src/schedules.ts | the command's default name stayed `scheduled`, so `operad routines` was unknown | `operad routines > adds a flow, lists it, and refuses an unknown flow` |

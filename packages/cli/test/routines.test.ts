@@ -34,14 +34,14 @@ async function makeScheduledHome(): Promise<string> {
   return (await makeHome({ plugins: [flowPluginPath, cronPluginPath] })).home;
 }
 
-describe("operad scheduled", () => {
+describe("operad routines", () => {
   test("adds a flow, lists it, and refuses an unknown flow", async () => {
     const home = await makeScheduledHome();
     const added = capture();
     expect(
       await main(
         [
-          "scheduled",
+          "routines",
           "add",
           "--flow",
           "plugin-one",
@@ -53,10 +53,10 @@ describe("operad scheduled", () => {
         { home, io: added.io },
       ),
     ).toBe(0);
-    expect(added.text()).toContain("scheduled plugin-one");
+    expect(added.text()).toContain("routine plugin-one");
 
     const listed = capture();
-    expect(await main(["scheduled", "list", "--json"], { home, io: listed.io })).toBe(0);
+    expect(await main(["routines", "list", "--json"], { home, io: listed.io })).toBe(0);
     const entries = JSON.parse(listed.text()) as {
       flow: string;
       schedule: string;
@@ -74,7 +74,7 @@ describe("operad scheduled", () => {
     const refused = capture();
     expect(
       await main(
-        ["scheduled", "add", "--flow", "missing", "--schedule", "0 8 * * *"],
+        ["routines", "add", "--flow", "missing", "--schedule", "0 8 * * *"],
         { home, io: refused.io },
       ),
     ).toBe(1);
@@ -85,7 +85,7 @@ describe("operad scheduled", () => {
     const home = await makeScheduledHome();
     await main(
       [
-        "scheduled",
+        "routines",
         "add",
         "--flow",
         "plugin-one",
@@ -97,18 +97,37 @@ describe("operad scheduled", () => {
       { home, io: capture().io },
     );
     const before = capture();
-    expect(await main(["scheduled", "list", "--json"], { home, io: before.io })).toBe(0);
+    expect(await main(["routines", "list", "--json"], { home, io: before.io })).toBe(0);
     const [entry] = JSON.parse(before.text()) as { readonly id: string }[];
-    if (entry === undefined) throw new Error("no scheduled flow");
+    if (entry === undefined) throw new Error("no routine");
     expect(
-      await main(["scheduled", "edit", entry.id, "--params", ""], {
+      await main(["routines", "edit", entry.id, "--params", ""], {
         home,
         io: capture().io,
       }),
     ).toBe(0);
     const after = capture();
-    expect(await main(["scheduled", "list", "--json"], { home, io: after.io })).toBe(0);
+    expect(await main(["routines", "list", "--json"], { home, io: after.io })).toBe(0);
     const [cleared] = JSON.parse(after.text()) as { readonly params?: unknown }[];
     expect(cleared?.params).toBeUndefined();
+  });
+
+  test("the old name scheduled is the same command", async () => {
+    const home = await makeScheduledHome();
+    const empty = capture();
+    expect(await main(["scheduled", "list"], { home, io: empty.io })).toBe(0);
+    expect(empty.text()).toContain("no routines");
+    expect(
+      await main(["scheduled", "add", "--flow", "plugin-one", "--schedule", "0 8 * * *"], {
+        home,
+        io: capture().io,
+      }),
+    ).toBe(0);
+    const listed = capture();
+    expect(await main(["routines", "list", "--json"], { home, io: listed.io })).toBe(0);
+    expect(JSON.parse(listed.text())).toHaveLength(1);
+    const viaPlugin = capture();
+    expect(await main(["cron", "scheduled", "list", "--json"], { home, io: viaPlugin.io })).toBe(0);
+    expect(JSON.parse(viaPlugin.text())).toHaveLength(1);
   });
 });

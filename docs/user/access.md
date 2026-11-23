@@ -254,7 +254,7 @@ Only a message from one of the chat's own client sources (`ios`, `telegram`,
 
 In a background run the existing `alwaysAllow` entries are not used, and
 `allow_always` is not offered: a question asks again every time. This is
-deliberate: a scheduled or incoming run is held to the profile afresh rather
+deliberate: a routine or incoming run is held to the profile afresh rather
 than inheriting a permission a person gave in an earlier conversation.
 
 An **outward write** also asks first below `full`: a message, mail or

@@ -69,12 +69,12 @@ and `operad help` print the whole table.
 | `operad mcp` | `--claude-channel`, `--types <t,…>` | Runs the MCP server on stdio for a lead agent; see [the MCP page](mcp.md). |
 | `operad trigger <source> <key>` | `--type <type>`, `--object <id>`, `--summary <text>`, `--data <file>` | Sends one event through the rules. Prints `started <run>`, `waiting <pending id>`, `recorded in <run>`, `observed <flow> on <object>`, `not started: <reason>` or `recorded <id>`. |
 | `operad trigger rules` | none | Prints the rules in force, with the file each came from. Prints `no trigger rules`. |
-| `operad scheduled list` | `--json` | Lists the scheduled flows in `triggers.json`: each id, flow, cron schedule, object, mode, next run and the result and run id of its last run. Prints `no scheduled flows` when empty. `--json` prints the entries as JSON for a client. |
-| `operad scheduled add` | `--flow <flow>`, `--schedule <expression>`, `--params <json>`, `--object <id>`, `--mode <mode>` | Adds a cron rule that starts a loaded flow; the object defaults to `flow:<flow>` and the mode to `auto`. Refuses an unknown flow or a bad cron expression with the reason. A blank `--params ""` adds none. Prints the new schedule and its id. |
-| `operad scheduled edit <id>` | `--flow`, `--schedule`, `--params`, `--object`, `--mode` | Changes one scheduled flow and keeps the others. A changed schedule starts fresh. `--params ""` clears the flow's parameters. Prints `edited <flow> (<id>)`. |
-| `operad scheduled pause <id>` | none | Stops the schedule's ticks; the pause is written in `triggers.json` and survives a restart. Prints `paused <flow>`. |
-| `operad scheduled resume <id>` | none | Resumes a paused schedule at its next planned minute. Prints `resumed <flow>`. |
-| `operad scheduled remove <id>` | none | Deletes the schedule's rule. Prints `removed <flow> (<id>)`. |
+| `operad routines list` | `--json` | Lists the routines (flows that start on a schedule) in `triggers.json`: each id, flow, cron schedule, object, mode, next run and the result and run id of its last run. Prints `no routines` when empty. `--json` prints the entries as JSON for a client. |
+| `operad routines add` | `--flow <flow>`, `--schedule <expression>`, `--params <json>`, `--object <id>`, `--mode <mode>` | Adds a cron rule that starts a loaded flow; the object defaults to `flow:<flow>` and the mode to `auto`. Refuses an unknown flow or a bad cron expression with the reason. A blank `--params ""` adds none. Prints the new routine and its id. |
+| `operad routines edit <id>` | `--flow`, `--schedule`, `--params`, `--object`, `--mode` | Changes one routine and keeps the others. A changed schedule starts fresh. `--params ""` clears the flow's parameters. Prints `edited <flow> (<id>)`. |
+| `operad routines pause <id>` | none | Stops the routine's ticks; the pause is written in `triggers.json` and survives a restart. Prints `paused <flow>`. |
+| `operad routines resume <id>` | none | Resumes a paused routine at its next planned minute. Prints `resumed <flow>`. |
+| `operad routines remove <id>` | none | Deletes the routine's rule. Prints `removed <flow> (<id>)`. |
 | `operad:start <id>` | none | Starts the pending item an event created. Prints `started <run>`. |
 | `operad:dismiss <id>` | none | Dismisses the pending item an event created. Prints `dismissed <id>`. |
 | `operad <plugin>:<action> <id>` | the action's arguments, `--yes`, `--repo <name>` | Runs one action on one object; see [Actions](#actions). |
@@ -100,7 +100,7 @@ and `operad help` print the whole table.
 | `operad memory search <query>` | `--scope <scope>`, `--field <name>=<value>`, `--limit <n>` | Searches the shared wiki, the bot's memory and the bot's chats. Prints each result's document id, title, line range and snippet, then the directory notes that came back with it. `--scope` takes `wiki`, `memory` or `chats`; `--field` narrows by frontmatter; `--limit` caps the results. The same arguments may be given as JSON on stdin. |
 | `operad memory read <id>` | `from`, `to`, `--json` | Reads one document a search returned, or the line range named by `from` and `to` (both 1-based). A read of a note another note links to ends with its `Backlinks`, each with the linking note's path, line and an excerpt. Prints text by default; `--json` gives the same result, including a `backlinks` array. The id and range may also be given as JSON on stdin. |
 
-The scheduled flows verb is also reached with its plugin name as `operad cron scheduled ...`; the short `operad scheduled ...` is the same command.
+The routines verb is also reached with its plugin name as `operad cron routines ...`; the short `operad routines ...` is the same command.
 
 A client of `serve` does the same over HTTP with `GET /v1/plugins` and `POST /v1/plugins`, including installing with the `"install"` form; see [Plugins](http.md#plugins).
 
@@ -111,7 +111,7 @@ A client of `serve` does the same over HTTP with `GET /v1/plugins` and `POST /v1
 | `--help` | the commands the CLI owns | Prints the usage of that command. A plugin verb gets its arguments as they are, so `--help` is passed to the plugin and may be refused as an unknown option; use `operad help` for the command table. `operad --help` prints the whole table. |
 | `--version`, `-V` | `operad` | Prints `operad <version>`. |
 | `--timeout <secs>` | `serve stop` | How long to wait for the stopped `serve`: a whole number from 1, default 30. `0`, a missing value or a non-number is a usage error. |
-| `--json` | `pending`, `history`, `running`, `flows`, `list`, `show`, `settings`, `scheduled list`, `memory read` | Prints JSON instead of lines. `settings set` does not take it. |
+| `--json` | `pending`, `history`, `running`, `flows`, `list`, `show`, `settings`, `routines list`, `memory read` | Prints JSON instead of lines. `settings set` does not take it. |
 | `--filter <name>` | `list` | The filter to use; `all` shows every row. A type without filters refuses it. |
 | `--repo <name>` | `list`, `show`, `settings`, `settings set`, actions, plugin commands | Keeps the list to one repository, or says which repository a bare id lives in. |
 | `--where <field=value>` | `list` | One exact match on a field the type's rows carry; may be repeated. |

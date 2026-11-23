@@ -1,4 +1,4 @@
-/** Managing the scheduled flows in `triggers.json`, from a client. */
+/** Managing the routines (scheduled flows) in `triggers.json`, from a client. */
 
 import { messageOf } from "@operad-io/engine";
 import { createHash } from "node:crypto";
@@ -136,7 +136,7 @@ function scheduled(rules: readonly TriggerRule[]): readonly TriggerRule[] {
 
 function found(rules: readonly TriggerRule[], id: string): TriggerRule {
   const rule = scheduled(rules).find((entry) => scheduledId(entry) === id);
-  if (rule === undefined) throw new ScheduleError(`there is no scheduled flow "${id}"`);
+  if (rule === undefined) throw new ScheduleError(`there is no routine "${id}"`);
   return rule;
 }
 
@@ -192,7 +192,7 @@ function replace(
     replaced = true;
     return change(rule);
   });
-  if (!replaced) throw new ScheduleError(`there is no scheduled flow "${id}"`);
+  if (!replaced) throw new ScheduleError(`there is no routine "${id}"`);
   return next;
 }
 
@@ -333,47 +333,51 @@ function parseArgs(argv: readonly string[]): ParsedArgs {
 
 function required(parsed: ParsedArgs, name: string): string {
   const value = parsed.values.get(name);
-  if (value === undefined) throw new ScheduleError(`scheduled: ${name} is required`);
+  if (value === undefined) throw new ScheduleError(`routines: ${name} is required`);
   return value;
 }
 
 function oneId(parsed: ParsedArgs): string {
   const id = parsed.positionals[0];
-  if (id === undefined) throw new ScheduleError("scheduled: needs a scheduled flow id");
+  if (id === undefined) throw new ScheduleError("routines: needs a routine id");
   if (parsed.positionals.length > 1) {
-    throw new ScheduleError("scheduled: takes one scheduled flow id");
+    throw new ScheduleError("routines: takes one routine id");
   }
   return id;
 }
 
-/** The `scheduled` command: list, add, edit, pause, resume and remove. */
+/**
+ * The `routines` command: list, add, edit, pause, resume and remove. The old
+ * name `scheduled` is the same command (`name` given), kept for clients that
+ * still send it.
+ */
 export function scheduledCommand(
-  options: { readonly now?: (() => number) | undefined } = {},
+  options: { readonly now?: (() => number) | undefined; readonly name?: string | undefined } = {},
 ): CommandDefinition {
   const now = options.now ?? Date.now;
   return {
-    name: "scheduled",
+    name: options.name ?? "routines",
     args: "list [--json] | add --flow <flow> --schedule <expression> [--params <json>] [--object <id>] [--mode <mode>] | edit <id> [--flow <flow>] [--schedule <expression>] [--params <json>] [--object <id>] [--mode <mode>] | pause <id> | resume <id> | remove <id>",
     async run(ctx, argv) {
       const [sub, ...rest] = argv;
       if (sub === undefined || sub === "help") {
-        throw new ScheduleError("scheduled: use list, add, edit, pause, resume or remove");
+        throw new ScheduleError("routines: use list, add, edit, pause, resume or remove");
       }
       const parsed = parseArgs(rest);
 
       if (sub === "list") {
         if (parsed.positionals.length > 0) {
-          throw new ScheduleError("scheduled list takes no id");
+          throw new ScheduleError("routines list takes no id");
         }
         const entries = await listFlows(ctx.home, now());
         if (parsed.flags.has("--json")) return entries;
-        if (entries.length === 0) return "no scheduled flows";
+        if (entries.length === 0) return "no routines";
         return entries.map(line).join("\n");
       }
 
       if (sub === "add") {
         if (parsed.positionals.length > 0) {
-          throw new ScheduleError("scheduled add takes no id");
+          throw new ScheduleError("routines add takes no id");
         }
         const flow = checkedFlow(ctx, required(parsed, "--flow"));
         const schedule = checkedSchedule(required(parsed, "--schedule"));
@@ -395,11 +399,11 @@ export function scheduledCommand(
         const rules = readRules(ctx.home);
         const id = scheduledId(rule);
         if (scheduled(rules).some((entry) => scheduledId(entry) === id)) {
-          throw new ScheduleError(`a scheduled flow "${id}" already exists`);
+          throw new ScheduleError(`a routine "${id}" already exists`);
         }
         writeRules(ctx.home, [...rules, rule]);
         baselineCronRule(ctx.home, rule, now());
-        return `scheduled ${flow} (${id}) every ${schedule}`;
+        return `routine ${flow} (${id}) every ${schedule}`;
       }
 
       if (sub === "edit") {
@@ -429,13 +433,13 @@ export function scheduledCommand(
           };
           return edited;
         });
-        if (edited === undefined) throw new ScheduleError(`there is no scheduled flow "${id}"`);
+        if (edited === undefined) throw new ScheduleError(`there is no routine "${id}"`);
         const editedId = scheduledId(edited);
         if (
           editedId !== id &&
           scheduled(rules).filter((entry) => scheduledId(entry) === editedId).length > 1
         ) {
-          throw new ScheduleError(`a scheduled flow "${editedId}" already exists`);
+          throw new ScheduleError(`a routine "${editedId}" already exists`);
         }
         writeRules(ctx.home, rules);
         baselineCronRule(ctx.home, edited, now());
@@ -454,7 +458,7 @@ export function scheduledCommand(
                 : (({ paused: _paused, ...rest }) => rest)(rule);
           return changed;
         });
-        if (changed === undefined) throw new ScheduleError(`there is no scheduled flow "${id}"`);
+        if (changed === undefined) throw new ScheduleError(`there is no routine "${id}"`);
         writeRules(ctx.home, rules);
         baselineCronRule(ctx.home, changed, now());
         return sub === "pause"
@@ -480,7 +484,7 @@ export function scheduledCommand(
         return `removed ${removed.start.flow} (${id})`;
       }
 
-      throw new ScheduleError(`scheduled: unknown action "${sub}"`);
+      throw new ScheduleError(`routines: unknown action "${sub}"`);
     },
   };
 }
