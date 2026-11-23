@@ -110,6 +110,32 @@ export const CLOSED_FACT = "chat.closed";
 /** The fact type of one command a person typed in a chat, and how it went. */
 export const COMMAND_FACT = "chat.command";
 
+/** The fact type of a request to compact a chat's context (`/compact`) and of its being taken. */
+export const COMPACT_FACT = "chat.compact";
+
+/** The share of the model's window at which a pi chat compacts its context after a reply (ADR 0023 D13). */
+export const COMPACT_AT = 0.75;
+
+/**
+ * The one silent turn a bot chat runs before a compaction. It names no file:
+ * the bot's memory instructions, already on the chat, say how and where memory
+ * is written, and the turn writes under the same access rules as any other.
+ */
+export const COMPACT_FLUSH =
+  "Your context is about to be compacted, and what is only in it will be lost. " +
+  "Write now, to this bot's memory and by its memory instructions, what you should remember from this chat. " +
+  "Write only what is worth keeping and not already in memory; if there is nothing, write nothing. " +
+  "Do not answer or address the person. When you are done, reply with the one word: done.";
+
+/** Whether the latest `chat.compact` fact is a request that no run has taken yet. */
+export function compactRequested(facts: readonly PluginFact[]): boolean {
+  for (let index = facts.length - 1; index >= 0; index -= 1) {
+    const fact = facts[index];
+    if (fact?.type === COMPACT_FACT) return fact.data.kind === "request";
+  }
+  return false;
+}
+
 /** The list filters of chats: closed ones are hidden unless asked for. */
 export const CHAT_FILTERS = [
   { name: "open", default: true, states: ["open"] },
@@ -1211,7 +1237,9 @@ export function writingReply(
     if (fact.sequence <= started) return false;
     return stopOfFact(fact)?.runId === runId;
   });
-  if (ended || stopped) return undefined;
+  // A `/compact` run has no reply: its own done fact ends it.
+  const compacted = facts.some((fact) => fact.type === COMPACT_FACT && fact.data.kind === "done" && fact.data.runId === runId);
+  if (ended || stopped || compacted) return undefined;
   const replied = messages.some((message) => message.role === "assistant" && message.runId === runId);
   // The flow goes round again while messages arrived during the reply: a reply
   // for this run with messages still unanswered is the next round, not an end.

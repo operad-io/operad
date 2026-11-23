@@ -463,6 +463,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
           let skills: readonly string[] = [];
           let ownSettings: unknown;
           let retry: unknown;
+          let compact: ReturnType<typeof compactOf>;
           let images: ReturnType<typeof imageInputsOf> = [];
 
           const step = await readAgentStep(ctx, params, {
@@ -530,6 +531,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
               if (retry !== undefined && typeof retry !== "boolean") {
                 throw new Error(`${at}: params.retry: must be a boolean`);
               }
+              compact = compactOf(read.input.compact, `${at}: params.compact`);
               images = imageInputsOf(read.input.images ?? read.flow.images);
             },
           });
@@ -563,6 +565,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
             ...(skills.length === 0 ? {} : { skills }),
             ...(ownSettings === true ? { useOwnSettings: true } : {}),
             ...(retry === true ? { retry: true } : {}),
+            ...(compact === undefined ? {} : { compact }),
             ...(access.runAccess === undefined ? {} : { access: access.runAccess }),
             ...(access.secrets.length === 0 ? {} : { secretValues: access.secrets }),
           };
@@ -607,6 +610,32 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
       return `pi ${pi.version} at ${pi.dir} (floor ${PI_FLOOR}); the worker program is available`;
     },
   });
+}
+
+/** The compaction a chat reply asks for (ADR 0023 D13), checked here so a bad value fails the step by name. */
+function compactOf(
+  value: unknown,
+  at: string,
+): { at: number; flush?: string; now?: true; only?: true } | undefined {
+  if (value === undefined) return undefined;
+  if (!isRecord(value)) throw new Error(`${at}: must be an object`);
+  const share = value.at;
+  if (typeof share !== "number" || !Number.isFinite(share) || share <= 0 || share > 1) {
+    throw new Error(`${at}.at: must be a number above 0 and at most 1`);
+  }
+  const flush = value.flush;
+  if (flush !== undefined && typeof flush !== "string") throw new Error(`${at}.flush: must be a string`);
+  for (const field of ["now", "only"] as const) {
+    if (value[field] !== undefined && typeof value[field] !== "boolean") {
+      throw new Error(`${at}.${field}: must be a boolean`);
+    }
+  }
+  return {
+    at: share,
+    ...(flush === undefined || flush.length === 0 ? {} : { flush }),
+    ...(value.now === true ? { now: true as const } : {}),
+    ...(value.only === true ? { only: true as const } : {}),
+  };
 }
 
 export default createPiHarnessPlugin();

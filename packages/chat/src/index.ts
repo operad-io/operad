@@ -19,6 +19,7 @@ import {
   accessLevelPath,
   CLOSED_FACT,
   COMMAND_FACT,
+  COMPACT_FACT,
   costText,
   effectiveEffort,
   EFFORT_FACT,
@@ -823,6 +824,43 @@ const retryAction: ActionTypeDefinition = {
   },
 };
 
+/** Why `chat:compact` is not offered; absent when it is. */
+function compactRefusal(chat: ChatData, id: string): string | undefined {
+  if (chat.closed) return `${id} is closed; there is no context to compact`;
+  if (chat.harness !== "pi") return `the ${chat.harness} agent manages its own context; only a pi chat is compacted here`;
+  return undefined;
+}
+
+const compactAction: ActionTypeDefinition = {
+  name: "compact",
+  on: CHAT_TYPE,
+  command: "Compact this chat's context now, after the agent has written what to remember.",
+  when: (state) => compactRefusal(chatData(state), "") === undefined,
+  why: (object) => compactRefusal(chatData(object.data), object.id),
+  async run(ctx) {
+    const stored = await openChat(ctx, "there is no context to compact");
+    const refused = compactRefusal(chatData(stored.data), ctx.object.id);
+    if (refused !== undefined) throw new Error(refused);
+    if (ctx.emit === undefined) {
+      throw new Error("the context cannot be compacted here; operad serve is not running");
+    }
+    await ctx.facts.append({ type: COMPACT_FACT, object: chatRef(ctx.object.id), data: { kind: "request" } });
+    const read = readChat(ctx.store, ctx.object.id);
+    if ((await writingReplyNow(read.facts, read.messages, read.entries, ctx.runs)) !== undefined) {
+      // The reply being written goes round once more when it ends, and compacts then.
+      return "the context is compacted when the reply being written ends";
+    }
+    const known = CHAT_SOURCES.find((name) => name === ctx.actor.via);
+    await ctx.emit({
+      source: known ?? OTHER_SOURCE,
+      type: MESSAGE_EVENT,
+      key: `compact:${newMessageId()}`,
+      object: `${CHAT_TYPE}:${ctx.object.id}`,
+    });
+    return "compacting the context";
+  },
+};
+
 const helpAction: ActionTypeDefinition = {
   name: "help",
   on: CHAT_TYPE,
@@ -903,7 +941,7 @@ export function createChatPlugin() {
         mode: "auto" as const,
       },
     ],
-    actions: [sendAction, withdrawAction, editAction, modelAction, effortAction, accessAction, stopAction, retryAction, statusAction, closeAction, helpAction],
+    actions: [sendAction, withdrawAction, editAction, modelAction, effortAction, accessAction, stopAction, retryAction, compactAction, statusAction, closeAction, helpAction],
     views: { [CHAT_TYPE]: chatViews },
   });
 }

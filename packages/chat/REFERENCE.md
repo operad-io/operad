@@ -157,6 +157,19 @@ start in between. Typing `/retry` when it is not offered answers with the same
 refusal line as before and starts nothing; a reply being written is the one new
 line.
 
+## `chat:compact <chat>`
+
+Compacts a `pi` chat's context now (ADR 0037 D11); it is offered on an open
+chat whose agent is `pi` and nowhere else. It records a `chat.compact` request
+and, when no reply is being written, sends a message event keyed `compact:<id>`;
+a reply being written goes round once more when it ends. A round with no message
+waiting passes `compact.only` to the agent and writes no reply; one with a
+message waiting answers it with `compact.now`. The reply step marks the request
+taken before the agent starts. A pi reply always passes `compact.at` (0.75), and
+a chat with memory notes adds the flush turn's text; when the step's data says
+`compacted`, one `chat.command` line says so (`compact (automatic)` after a
+reply, `compact` after the command) and the notes ride whole on the next message.
+
 ## `chat:status <chat>`
 
 Reads the chat's facts and asks the run control whether the latest run is still

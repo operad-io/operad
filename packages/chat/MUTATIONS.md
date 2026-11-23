@@ -650,3 +650,14 @@ are append-only, so the old lines stay as history.
 | T-0761-M4 | packages/chat/src/views.ts | no guard against ending on a lone high surrogate | the same test |
 | T-0761-M5 | packages/chat/src/views.ts | the second pass cut answers to 64 bytes, under the preview | the line-end test and `the preview floor is broken only when nothing else is left` |
 | T-0763-M1 | packages/chat/src/views.ts | `shorten` takes a line end even when everything before it is whitespace | `a line end inside leading whitespace does not leave a bare ellipsis` |
+
+## T-0766 — pi compacts a long chat
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0766-M8 | packages/chat/src/reply.ts | a `/compact` request was not marked taken, so a failed compaction was tried again by the next round | `/compact > a compaction run is not 'writing' once it is done, and a failed one is not tried again by the next round` |
+| T-0766-M9 | packages/chat/src/reply.ts | no line said the context was compacted | `automatic compaction of a pi chat > a compacted reply leaves one short line after it, and the next message carries the notes whole again` |
+| T-0766-M10 | packages/chat/src/index.ts | `/compact` was offered on a chat of another agent | `/compact > it is offered, and listed by /help, only on a pi chat` |
+| T-0766-M11 | packages/chat/src/model.ts | a finished compaction run still counted as a reply being written | `/compact > a compaction run that is done is no longer a reply being written` |
+| T-0766-M12 | packages/chat/src/reply.ts | a chat without memory notes also got the flush turn | `automatic compaction of a pi chat > a pi reply asks for compaction at the share; a bot chat adds the memory flush turn, a chat without notes does not` |
+| T-0766-M13 | packages/chat/src/reply.ts | a `/compact` typed during a reply was not taken when it ended | `/compact > a /compact typed during a reply is taken by the next round of that same flow` |
