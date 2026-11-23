@@ -29,9 +29,10 @@ A repository whose `.operad/dev.json` names neither `worker` nor `workers`, and 
 ### D3: The boundary of hot reload
 
 - A running step uses the code it started with, to its end. The next step of a run uses the code on disk.
-- `serve` reloads when its own code, the code of a loaded plugin or the schema of a settings file changes: after a short quiet time it stops as `operad serve stop` does, then restarts in place.
+- `serve` reloads when its own code, the code of a loaded plugin, a flow file of the home (ADR 0003 D3) or the schema of a settings file changes: after a short quiet time it stops as `operad serve stop` does, then restarts in place.
 - A run process compares the code between two steps; if it changed, it exits cleanly, `serve` starts a new process that continues from the next step, and the history keeps one line for the handover.
 - A change to code that cannot be loaded (a syntax error, an invalid schema) does not bring down `serve` or a run process. `serve` keeps using the old code. A run process starts no new step (the next step must read the code on disk) and waits in place until the file loads or is changed back. The problem is shown where a user looks at load problems today, and the reload happens when the file loads again.
+- A flow file of the home that does not load is refused with its reason and is not a load problem in this sense: the reload happens and the other flows load.
 - A changed settings file is read again at the next use.
 
 ### D4: A plugin with third-party npm dependencies is not in the base install; enabling it installs it into the operad home

@@ -15,7 +15,7 @@
  * the tool calls (ADR 0033 D7).
  */
 
-import { CHAT_TYPE, PRIVATE_FACT, PRIVATE_OFF_LINE, PRIVATE_ON_LINE, allEntries, allMessages, chatData, chatFacts, deliveryHeader } from "@operad-io/chat";
+import { CHAT_TYPE, PRIVATE_FACT, PRIVATE_OFF_LINE, PRIVATE_ON_LINE, allEntries, allMessages, chatData, chatFacts, deliveryHeader, memoryWroteLine } from "@operad-io/chat";
 import { messageOf, type SourceContext } from "@operad-io/engine";
 import { BotApiError, type BotApi } from "./api.ts";
 import { TelegramEvents, type TelegramEvent } from "./events.ts";
@@ -193,7 +193,9 @@ export class ReplySender {
         continue;
       }
       if (message.role !== "assistant") continue;
-      outgoing.push({ id: message.id, at: message.at, sequence: message.sequence, text: message.text });
+      // Only the line of what the reply saved to memory follows the answer; what it used stays in the transcript.
+      const saved = memoryWroteLine(message.memory);
+      outgoing.push({ id: message.id, at: message.at, sequence: message.sequence, text: saved === undefined ? message.text : `${message.text}\n\n${saved}` });
     }
     // A failed reply has no assistant message; its one failure entry is sent too.
     for (const entry of allEntries(this.ctx.store, chatId)) {

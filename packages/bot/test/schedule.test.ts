@@ -22,6 +22,7 @@ import {
   SCHEDULE_RECENT_COUNT,
   SCHEDULE_RECENT_MAX,
 } from "../src/schedule.ts";
+import { findRoutine, ROUTINE_TYPE, scheduledPromptOf } from "../src/index.ts";
 import { closeOldScheduledChats, routineMarkdown } from "../src/routine.ts";
 import { cleanupRoots, rig } from "./support.ts";
 
@@ -104,6 +105,47 @@ async function add(
 }
 
 describe("scheduled prompts", () => {
+  test("a run that leaves the history when a run starts or ends loses its record; a newer one keeps it", async () => {
+    const r = await rig();
+    const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });
+    const notices: ScheduleNotice[] = [];
+    const clock = { value: Date.parse("2026-03-01T00:00:30Z") };
+    const source = sourceFor(r, views as unknown as ClientApi, clock, notices);
+    const day = 24 * 60 * 60_000;
+    const addRun = async (id: string, at: number): Promise<void> => {
+      await r.store.put(CHAT_TYPE, id, { run: true, title: "run" }, "test");
+      const object = await findRoutine(r.store, "default", "Morning");
+      if (object === undefined) throw new Error("no routine");
+      const runs = Array.isArray(object.data.runs) ? object.data.runs : [];
+      await r.store.put(ROUTINE_TYPE, object.id, { ...object.data, runs: [...runs, { id, at, status: "done" }] }, "test");
+    };
+    try {
+      await add(r, { name: "Morning", schedule: "* * * * *", prompt: "Collect the news." });
+      await source.begin();
+      await addRun("R-OLD-1", clock.value - 40 * day);
+      await addRun("R-NEW-1", clock.value - 2 * day);
+      clock.value = Date.parse("2026-03-01T00:01:10Z");
+      await source.poll();
+      // Starting the run dropped the old one.
+      expect(await r.store.get(CHAT_TYPE, "R-OLD-1")).toBeUndefined();
+      expect(await r.store.get(CHAT_TYPE, "R-NEW-1")).toBeDefined();
+      const id = (await chats(r)).find((item) => !item.startsWith("R-OLD") && !item.startsWith("R-NEW"));
+      if (id === undefined) throw new Error("no run");
+      // An old run found when the run ends is dropped then.
+      await addRun("R-OLD-2", clock.value - 45 * day);
+      await r.reply(id);
+      await source.settled();
+      expect(await r.store.get(CHAT_TYPE, "R-OLD-2")).toBeUndefined();
+      expect(await r.store.get(CHAT_TYPE, "R-NEW-1")).toBeDefined();
+      expect(await r.store.get(CHAT_TYPE, id)).toBeDefined();
+      const object = await findRoutine(r.store, "default", "Morning");
+      const entry = object === undefined ? undefined : scheduledPromptOf(object.data);
+      expect(entry?.runs?.map((run) => run.id)).toEqual(["R-NEW-1", id]);
+    } finally {
+      views.close();
+    }
+  });
+
   test("an entry fires on time, opens a new chat under the bot with its prompt, and the reply's notification carries a summary", async () => {
     const events: TriggerEvent[] = [];
     const r = await rig({}, ["claude", "pi"], (event) => events.push(event));

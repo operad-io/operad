@@ -18,6 +18,12 @@ export interface LoadPluginRegistryOptions extends PluginRegistryOptions {
   /** Defaults to `<home>/keys.json`. */
   readonly keysPath?: string | undefined;
   /**
+   * Where the reason a flow file of the home was refused goes. Defaults to
+   * `onLog`. A caller that counts load problems passes another: a refused flow
+   * file is not a reason to keep older code.
+   */
+  readonly onHomeFlowProblem?: ((message: string) => void) | undefined;
+  /**
    * Plugins whose package the distribution installs into the home when a person
    * enables them. A missing one is reported with the command that installs it.
    * Empty by default: the engine names no plugin.
@@ -274,6 +280,10 @@ export async function loadPluginRegistry(
     off: offNames(config.entries, options.optional ?? {}),
     disabledGuide: options.disabledGuide ?? offGuideReader(config.entries, options.optional ?? {}, home),
   });
+  // The person's own flows load once every plugin's steps are known; a file
+  // that does not load is reported and the rest still load.
+  const onFlowProblem = options.onHomeFlowProblem ?? onLog;
+  for (const refusal of await registry.loadHomeFlows()) onFlowProblem(refusal.message);
   // A harness reads its model list in the background; the load asks for none,
   // so a client that asks just after it gets the list the home already keeps.
   return registry;

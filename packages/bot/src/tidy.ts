@@ -64,6 +64,8 @@ import {
   replySummary,
   scheduledPromptOf,
   withRun,
+  droppedRuns,
+  forgetRuns,
   type RoutineRun,
   type ScheduleNotice,
 } from "./schedule.ts";
@@ -548,6 +550,7 @@ export async function syncDreaming(
   if (current === undefined || JSON.stringify(current.data) !== JSON.stringify(data)) {
     await store.put(ROUTINE_TYPE, id, data, "source:bot/tidy");
   }
+  if (run !== undefined) await forgetRuns(store, droppedRuns(entry?.runs, run, now));
 }
 
 /** The pending items the tidy cards make. */
