@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { join } from "node:path";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, writeFileSync } from "node:fs";
+import { delimiter, join } from "node:path";
 import { createViews, guideBody } from "@operad-io/engine";
 import { PROPOSAL_TYPE, proposalData, readPiped, renderGuide } from "../src/index.ts";
 import { cleanupRoots, rig } from "./support.ts";
@@ -141,7 +141,50 @@ describe("Setup Dev without a remote", () => {
   });
 });
 
+
+function refusingGit(root: string): { restore(): void } {
+  const real = Bun.which("git");
+  if (real === undefined) throw new Error("git is not on PATH");
+  const bin = join(root, "refusing-git");
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(
+    join(bin, "git"),
+    [
+      "#!/bin/sh",
+      'case "$*" in *"rev-parse --show-toplevel"*)',
+      "  echo 'fatal: detected dubious ownership in repository at /somewhere' >&2",
+      "  exit 128;;",
+      "esac",
+      `exec '${real}' "$@"`,
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(bin, "git"), 0o755);
+  const previous = process.env.PATH;
+  process.env.PATH = `${bin}${delimiter}${previous ?? ""}`;
+  return {
+    restore() {
+      if (previous === undefined) delete process.env.PATH;
+      else process.env.PATH = previous;
+    },
+  };
+}
+
 describe("Setup Dev without git", () => {
+  test("a repository git refuses is refused with git's message, not set up as a folder", async () => {
+    const r = await rig();
+    const path = repository(r, false);
+    const stub = refusingGit(r.root);
+    try {
+      await expect(r.command("bot", "setup-dev", ["default", path], DEV_JSON)).rejects.toThrow(
+        "fatal: detected dubious ownership in repository",
+      );
+    } finally {
+      stub.restore();
+    }
+    expect(await r.registry.standing()).toEqual([]);
+  });
+
   test("a folder with no git is proposed, and the file written works in place with no remote", async () => {
     const r = await rig();
     const path = join(r.root, "plain");

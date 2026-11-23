@@ -454,3 +454,4 @@ changes for bots, in the order they were recorded. The root
 |---|---|---|---|
 | T-0730-M1 | packages/bot/src/setup-dev.ts | a subfolder of a repository was accepted | `Setup Dev > it refuses a subfolder of a repository naming the root, text that is not a JSON object and a registered repository` |
 | T-0730-M2 | packages/bot/src/setup-dev.ts | the proposal for a folder with no repository kept the text's `workIn` | `Setup Dev without git > a folder with no git is proposed, and the file written works in place with no remote` |
+| T-0730-M3 | packages/bot/src/setup-dev.ts | a folder git refused was taken for one with no repository | `Setup Dev without git > a repository git refuses is refused with git's message, not set up as a folder` |

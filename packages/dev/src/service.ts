@@ -15,7 +15,7 @@ import { ViewError } from "@operad-io/engine";
 import { isBusy, type GitFinderHost } from "@operad-io/engine/platform";
 import type { FlowDefinition, ObjectStore, StoredObject } from "@operad-io/engine";
 import { git } from "./git.ts";
-import { gitStateOf } from "./git-state.ts";
+import { GitStateError, gitStateOf, type GitState } from "./git-state.ts";
 import { withdrawIntegration } from "./integration-queue.ts";
 import { switchBackToStart } from "./mainclone.ts";
 import { withRepositoryLock } from "./lock.ts";
@@ -537,7 +537,15 @@ export async function addRepository(
   }
   // A folder needs git only to create a task (ADR 0039 D7): without the git
   // program, or in no repository, it is registered as it is.
-  const state = gitStateOf(from, options.finder === undefined ? {} : { finder: options.finder });
+  let state: GitState;
+  try {
+    state = gitStateOf(from, options.finder === undefined ? {} : { finder: options.finder });
+  } catch (error) {
+    if (error instanceof GitStateError) {
+      throw new DevError("path", `"${from}" is not a git work tree: ${error.reason}`);
+    }
+    throw error;
+  }
   if (state.state === "subfolder") {
     throw new DevError(
       "path",

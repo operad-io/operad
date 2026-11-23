@@ -6,7 +6,7 @@
  * writes the file and asks `dev` to register the repository.
  */
 
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, realpathSync, statSync, writeFileSync } from "node:fs";
 import { isAbsolute, join, resolve } from "node:path";
@@ -64,6 +64,26 @@ function git(directory: string, args: readonly string[]): string | undefined {
   }
 }
 
+// The top of the work tree `directory` is in; undefined when there is no git
+// program or git says, in English, that the folder is in no work tree. Any other
+// refusal (dubious ownership, an unreadable .git, nothing printed) is an error
+// carrying git's message: the folder may be a repository.
+function toplevelOf(directory: string): string | undefined {
+  const program = findGit();
+  if (program === undefined) return undefined;
+  const result = spawnSync(program, ["-C", directory, "rev-parse", "--show-toplevel"], {
+    encoding: "utf8",
+    env: { ...process.env, LC_ALL: "C", LANGUAGE: "" },
+  });
+  const top = (result.stdout ?? "").trim();
+  if (result.status === 0 && top.length > 0) return top;
+  const reason = (result.stderr ?? "").trim();
+  if (result.status !== 0 && /not a git repository|this operation must be run in a work tree/i.test(reason)) {
+    return undefined;
+  }
+  throw new BotError(`setup-dev: git cannot tell what "${directory}" is: ${reason.length > 0 ? reason : "it printed nothing"}`);
+}
+
 function rootOf(path: string): string {
   if (!existsSync(path) || !statSync(path).isDirectory()) {
     throw new BotError(`setup-dev: there is no directory "${path}"`);
@@ -71,8 +91,8 @@ function rootOf(path: string): string {
   const real = realpathSync(path);
   // A folder needs git only to create a task: without the program, or in no
   // repository, it is set up as it is. A subfolder of a repository is refused.
-  const top = git(real, ["rev-parse", "--show-toplevel"]);
-  if (top !== undefined && top.length > 0 && realpathSync(top) !== real) {
+  const top = toplevelOf(real);
+  if (top !== undefined && realpathSync(top) !== real) {
     throw new BotError(`setup-dev: "${path}" is inside the git repository at "${top}"; use "${top}" instead`);
   }
   return real;
@@ -125,7 +145,7 @@ export async function proposeDev(
   // A repository with no remote works on its local main branch: the file names none.
   if ((git(repo, ["remote"]) ?? "").length === 0) delete parsed.remote;
   // Without a repository the work is done in the folder itself, whatever the text says.
-  if ((git(repo, ["rev-parse", "--show-toplevel"]) ?? "").length === 0) {
+  if (toplevelOf(repo) === undefined) {
     parsed.workIn = "branch";
     delete parsed.concurrency;
   }

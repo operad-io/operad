@@ -1696,3 +1696,12 @@ the row fields.
 | T-0730-M2 | packages/dev/src/service.ts | a folder without git was written without `workIn` `"branch"` | `dev repositories > a folder with no git is added as it is, working in place with no remote` |
 | T-0730-M3 | packages/dev/src/service.ts | the exclude file was written for a folder with no repository too | `dev repositories > a folder with no git is added as it is, working in place with no remote` |
 | T-0730-M4 | packages/dev/src/check.ts | the check did not skip a folder that is not ready | `dev init check > a folder without git is skipped and never reported as missing git` |
+
+## T-0730 rework — a failed git call is not "no repository"
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0730-M5 | packages/dev/src/git-state.ts | a refused `rev-parse --show-toplevel` read as `no repository` instead of an error | `gitStateOf > a folder git refuses is an error with git's message, not no repository` |
+| T-0730-M6 | packages/dev/src/git-state.ts | any failure of the question counted as git saying "no repository" | `gitStateOf > a folder git refuses is an error with git's message, not no repository` |
+| T-0730-M7 | packages/dev/src/git-state.ts | git's messages were not forced to English | `git that succeeds without printing > git's message in another language is still read as no repository` |
+| T-0730-M8 | packages/dev/src/check.ts | `checkDev` skipped a folder git could not judge | `dev init check > a folder git refuses is a failed check with git's message` |

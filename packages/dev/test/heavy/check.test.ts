@@ -74,6 +74,35 @@ function writeSettings(
   );
 }
 
+
+function refusingGit(root: string): { restore(): void } {
+  const real = Bun.which("git");
+  if (real === undefined) throw new Error("git is not on PATH");
+  const bin = join(root, "refusing-git");
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(
+    join(bin, "git"),
+    [
+      "#!/bin/sh",
+      'case "$*" in *"rev-parse --show-toplevel"*)',
+      "  echo 'fatal: detected dubious ownership in repository at /somewhere' >&2",
+      "  exit 128;;",
+      "esac",
+      `exec '${real}' "$@"`,
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(bin, "git"), 0o755);
+  const previous = process.env.PATH;
+  process.env.PATH = `${bin}${delimiter}${previous ?? ""}`;
+  return {
+    restore() {
+      if (previous === undefined) delete process.env.PATH;
+      else process.env.PATH = previous;
+    },
+  };
+}
+
 function registryAt(
   root: string,
   store: ReturnType<typeof storeAt>,
@@ -270,6 +299,20 @@ describe("dev init check", () => {
     await addRepository(aloneStore, { path: only });
     const [check] = await registryAt(alone, aloneStore, only).checks();
     expect(check?.ok).toBe(true);
+  });
+
+  test("a folder git refuses is a failed check with git's message", async () => {
+    const { root, repositoryPath } = await setup();
+    const store = storeAt(root);
+    await addRepository(store, { path: repositoryPath });
+    const stub = refusingGit(root);
+    try {
+      const [check] = await registryAt(root, store, repositoryPath).checks();
+      expect(check?.ok).toBe(false);
+      expect(check?.message).toContain("dubious ownership");
+    } finally {
+      stub.restore();
+    }
   });
 
   test("no registered repository passes with a note", async () => {

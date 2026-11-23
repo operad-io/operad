@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { delimiter, join } from "node:path";
 import { realGitFinderHost } from "@operad-io/engine/platform";
 import { addPlan, addRepository, addTask, cancelPlan, cancelTask, confirmPlan, confirmTask, devTestHooks, editTaskBrief, findRepository, getPlan, getTask, listRepositories, removeRepository, resolveRepository, setAuto, setPriority, updateTask } from "../../src/service.ts";
 import { idOfKey, briefBody, listAll, repositoryData, storeKey, taskData, type RepositoryData } from "../../src/model.ts";
@@ -687,6 +687,35 @@ describe("dev per-repository ids", () => {
   });
 });
 
+/** A `git` first on PATH that refuses `rev-parse --show-toplevel` as git does for a repository owned by someone else. */
+function refusingGit(root: string): { restore(): void } {
+  const real = Bun.which("git");
+  if (real === undefined) throw new Error("git is not on PATH");
+  const bin = join(root, `refusing-git-${Math.random().toString(36).slice(2)}`);
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(
+    join(bin, "git"),
+    [
+      "#!/bin/sh",
+      'case "$*" in *"rev-parse --show-toplevel"*)',
+      "  echo 'fatal: detected dubious ownership in repository at /somewhere' >&2",
+      "  exit 128;;",
+      "esac",
+      `exec '${real}' "$@"`,
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(bin, "git"), 0o755);
+  const previous = process.env.PATH;
+  process.env.PATH = `${bin}${delimiter}${previous ?? ""}`;
+  return {
+    restore() {
+      if (previous === undefined) delete process.env.PATH;
+      else process.env.PATH = previous;
+    },
+  };
+}
+
 describe("git that succeeds without printing", () => {
   test("repo add runs a query again when git exits 0 and prints nothing", async () => {
     const root = await tempRoot();
@@ -702,18 +731,56 @@ describe("git that succeeds without printing", () => {
     }
   });
 
-  test("repo add asks again, then takes a folder git never names a work tree for as a folder without git", async () => {
+  test("repo add still refuses when git never prints", async () => {
     const root = await tempRoot();
     const path = await makeGitRepository(root, "mute");
     const store = storeAt(root);
     const stub = silentGit(root, "rev-parse --show-toplevel", 100);
     try {
-      await addRepository(store, { path });
+      await expect(addRepository(store, { path })).rejects.toThrow(
+        /is not a git work tree: .*output was empty/,
+      );
       expect(stub.calls()).toBe(5);
-      const written = JSON.parse(readFileSync(join(path, ".operad", "dev.json"), "utf8")) as Record<string, unknown>;
-      expect(written.workIn).toBe("branch");
+      expect(await findRepository(store, "mute")).toBeUndefined();
+      expect(existsSync(join(path, ".operad", "dev.json"))).toBe(false);
     } finally {
       stub.restore();
+    }
+  });
+
+  test("a repository git refuses (dubious ownership) is refused with git's message, not added as a folder", async () => {
+    const root = await tempRoot();
+    const path = await makeGitRepository(root, "dubious");
+    const store = storeAt(root);
+    const stub = refusingGit(root);
+    try {
+      await expect(addRepository(store, { path })).rejects.toThrow(
+        /is not a git work tree: fatal: detected dubious ownership in repository/,
+      );
+      expect(await findRepository(store, "dubious")).toBeUndefined();
+      expect(existsSync(join(path, ".operad", "dev.json"))).toBe(false);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test("git's message in another language is still read as no repository", async () => {
+    const root = await tempRoot();
+    const plain = join(root, "plain-lang");
+    mkdirSync(plain);
+    const store = storeAt(root);
+    const previous = { LANG: process.env.LANG, LC_ALL: process.env.LC_ALL, LANGUAGE: process.env.LANGUAGE };
+    process.env.LANG = "de_DE.UTF-8";
+    process.env.LC_ALL = "de_DE.UTF-8";
+    process.env.LANGUAGE = "de";
+    try {
+      await addRepository(store, { path: plain });
+      expect(await findRepository(store, "plain-lang")).toBeDefined();
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
     }
   });
 

@@ -5,6 +5,9 @@
  * `ready`. The states and their use are in docs/research/2026-11-22-dev-without-git.md
  * section 5.
  *
+ * A folder git cannot judge (it refuses with dubious ownership, `.git` is
+ * unreadable, it prints nothing) is an error, `GitStateError`, never `no repository`.
+ *
  * Not told apart: a bare repository and a folder inside a `.git` directory both
  * have no work tree, so they read as `no repository`.
  */
@@ -50,6 +53,20 @@ export interface GitStateOptions {
   readonly finder?: GitFinderHost;
 }
 
+/** What git says when the folder is in no work tree (a bare repository has none either). */
+const NO_REPOSITORY = /not a git repository|this operation must be run in a work tree/i;
+
+/** Git could not say whether the folder is in a repository; `reason` is git's own message. */
+export class GitStateError extends Error {
+  constructor(
+    readonly folder: string,
+    readonly reason: string,
+  ) {
+    super(`git cannot tell what "${folder}" is: ${reason.length > 0 ? reason : "no detail"}`);
+    this.name = "GitStateError";
+  }
+}
+
 function canonical(path: string): string {
   try {
     return realpathSync(path);
@@ -78,8 +95,17 @@ export function gitStateOf(folder: string, stateOptions: GitStateOptions = {}): 
   // The finder runs nothing that could open the macOS install dialog.
   if (findGit(stateOptions.finder ?? { ...realGitFinderHost(), env }) === undefined) return { state: "no program" };
   const identity = identityOf(folder, options);
-  const top = git(folder, ["rev-parse", "--show-toplevel"], options);
-  if (!top.ok || top.out === "") return { state: "no repository", identity };
+  // Git's messages are forced to English for this one question, so the words
+  // that say "no repository" can be told from every other refusal.
+  const top = git(folder, ["rev-parse", "--show-toplevel"], {
+    env: { ...env, LC_ALL: "C", LANGUAGE: "" },
+  });
+  if (!top.ok) {
+    if (NO_REPOSITORY.test(top.err)) return { state: "no repository", identity };
+    // Dubious ownership, an unreadable .git, a git that prints nothing: the
+    // folder may well be a repository, so it is not taken for a plain folder.
+    throw new GitStateError(folder, top.err);
+  }
   if (canonical(top.out) !== canonical(folder)) {
     return { state: "subfolder", root: top.out, identity };
   }

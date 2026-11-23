@@ -76,14 +76,6 @@ async function checkRepository(
   return remoteName;
 }
 
-function isReady(path: string): boolean {
-  try {
-    return gitStateOf(path).state === "ready";
-  } catch {
-    return false;
-  }
-}
-
 /** Runs the repository loop and reports one line, or throws with every failure. */
 export async function checkDev(ctx: PluginBaseContext): Promise<string | SetupMissing> {
   const repositories = await listRepositories(ctx.store);
@@ -98,8 +90,9 @@ export async function checkDev(ctx: PluginBaseContext): Promise<string | SetupMi
   for (const repository of repositories) {
     // A folder without git, or with no commit yet, is not a failure: git is
     // needed only to create a task, and the setup there makes the folder ready.
-    if (!isReady(repository.path)) continue;
+    // A folder git cannot judge is a failure with git's own message.
     try {
+      if (gitStateOf(repository.path).state !== "ready") continue;
       await checkRepository(repository);
     } catch (error) {
       failures.push(`repository "${repository.name}": ${messageOf(error)}`);
