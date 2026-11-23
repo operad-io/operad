@@ -1271,17 +1271,14 @@ describe("dev/integrate main clone", () => {
     );
   });
 
-  test("an untracked file makes the clone dirty and it is left alone", async () => {
+  test("an untracked file elsewhere does not stop the clone from following (T-0747)", async () => {
     const state = await fixture();
     const before = cloneHead(state);
     writeFileSync(join(state.remote.repository, "scratch.txt"), "new\n");
     const result = await integrate(state);
     expect(result.result).toBe("merged");
-    expect(cloneHead(state)).toBe(before);
-    expect(result.data?.mainClone).toMatchObject({
-      updated: false,
-      note: "uncommitted changes",
-    });
+    expect(cloneHead(state)).not.toBe(before);
+    expect(result.data?.mainClone).toMatchObject({ updated: true });
   });
 
   test("a clone on another branch is left alone", async () => {
@@ -1348,7 +1345,7 @@ describe("dev/integrate main clone", () => {
     writeDevJson(state.remote.repository, { prepare: ["one", "two"] });
     await recordDevJson(state);
     await killedAt(state, "prepare", "dev/integrate", "integrate-run");
-    writeFileSync(join(state.remote.repository, "scratch.txt"), "mine\n");
+    writeFileSync(join(state.remote.repository, "README.md"), "mine\n");
     const calls: string[] = [];
     integrateTestHooks.runCommand = async (_cwd, line) => {
       calls.push(line);
