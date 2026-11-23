@@ -13,3 +13,4 @@ export * from "./step-reap.ts";
 export * from "./load.ts";
 export * from "./worker-reports.ts";
 export * from "./kept-workers.ts";
+export * from "./git-program.ts";

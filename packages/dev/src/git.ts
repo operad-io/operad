@@ -5,6 +5,8 @@
  * before an empty answer is believed.
  */
 
+import { findGit, GIT_NOT_INSTALLED, realGitFinderHost } from "@operad-io/engine/platform";
+
 export interface GitResult {
   readonly ok: boolean;
   readonly out: string;
@@ -75,8 +77,13 @@ export function printsOnSuccess(args: readonly string[]): boolean {
 
 function runOnce(cwd: string, args: readonly string[], options: GitOptions): GitResult {
   const started = Date.now();
+  const env = options.env ?? { ...process.env };
+  // The absolute path found now, not the word `git`: a PATH that changed after
+  // this process started is not seen by a spawn. Nothing is spawned without it.
+  const program = findGit({ ...realGitFinderHost(), env });
+  if (program === undefined) return { ok: false, out: "", err: GIT_NOT_INSTALLED };
   const result = Bun.spawnSync({
-    cmd: ["git", "-C", cwd, ...args],
+    cmd: [program, "-C", cwd, ...args],
     stdin:
       options.input === undefined
         ? "ignore"
@@ -85,8 +92,7 @@ function runOnce(cwd: string, args: readonly string[], options: GitOptions): Git
           : options.input,
     stdout: "pipe",
     stderr: "pipe",
-    // Passed on so the child is found through the current PATH.
-    env: options.env ?? { ...process.env },
+    env,
     timeout: options.timeoutMs ?? GIT_TIMEOUT_MS,
     killSignal: "SIGKILL",
   });

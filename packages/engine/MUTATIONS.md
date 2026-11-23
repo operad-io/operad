@@ -1430,3 +1430,12 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0714-M2 | packages/engine/src/views/types.ts | the types listing did not copy the plugin's `listTitle` into `pluginTitle` (the spread gave `{}`) | `the types listing > a plugin's list title is served as pluginTitle on each of its types, and absent otherwise` |
+
+## T-0728 — the git program finder
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0728-M1 | packages/engine/src/platform/git-program.ts | the macOS branch returned `/usr/bin/git` without asking `xcode-select -p` | `findGit > macOS: the stub is refused when xcode-select -p fails` |
+| T-0728-M2 | packages/engine/src/platform/git-program.ts | the Windows places were not looked at when PATH has no git | `findGit > Windows: the usual places are looked at when PATH has no git` |
+| T-0728-M3 | packages/engine/src/platform/git-program.ts | the first answer was kept in a module variable, so a git installed later was not found | `findGit > a git program put on PATH later is found on the next call` |
+| T-0728-M4 | packages/engine/src/platform/git-program.ts | `xcode-select` was run by name through PATH instead of `/usr/bin/xcode-select` | `findGit > macOS: xcode-select runs by absolute path, so a fake earlier on PATH is not used` |

@@ -19,7 +19,7 @@ import {
   type CommandContext,
   type ObjectStore,
 } from "@operad-io/engine";
-import { writeFileAtomic } from "@operad-io/engine/platform";
+import { findGit, writeFileAtomic } from "@operad-io/engine/platform";
 import { BotError, readBots } from "./bot.ts";
 import { setupDevPrompt } from "./setup.ts";
 
@@ -52,8 +52,10 @@ export const SETUP_DEV_INSTRUCTION =
   "To set up dev for a repository (Setup Dev), call the operad `command` tool with plugin `bot`, verb `setup-dev`, my bot and the repository's directory and no input: it answers with the steps. Nothing is turned on until I approve the proposal in Pending.";
 
 function git(directory: string, args: readonly string[]): string | undefined {
+  const program = findGit();
+  if (program === undefined) return undefined;
   try {
-    return execFileSync("git", ["-C", directory, ...args], {
+    return execFileSync(program, ["-C", directory, ...args], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
     }).trim();
