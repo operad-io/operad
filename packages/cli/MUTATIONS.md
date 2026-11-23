@@ -417,3 +417,9 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 |---|---|---|---|
 | T-0743-M1 | packages/cli/src/defaults.ts | `operad init` listed radian before claude and pi, so a new home preferred radian | `` `operad init` finds the agent on PATH > with radian, claude and pi on PATH, radian is not the first agent `` |
 | T-0743-M5 | packages/cli/src/main.ts | the plugin list left out the access levels a harness carries | `plugins over HTTP > GET /v1/plugins carries a harness's models with what it knows about each` |
+
+## T-0741 — serve stop reaches the supervisor
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0741-M1 | packages/cli/src/serve-stop.ts | `serve stop` ignored the supervisor file and signalled only the lock holder, so a stop during a reload signalled nothing and the supervisor started the next serve | `operad serve stop > a stop while a reload is in flight leaves no serve: the supervisor does not start the next one` |

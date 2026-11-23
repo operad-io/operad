@@ -698,8 +698,6 @@ describe("a reload with two listen addresses", () => {
   for (const changed of ["plugin", "engine"] as const) {
     test(`a bind that keeps failing after a ${changed} change leaves the old code serving both addresses; the next real change reloads`, async () => {
       const port = await freePort();
-      let blocked = await freePort();
-      while (blocked === port) blocked = await freePort();
       const second = secondAddress();
       const s = await setup({ port, listen: ["127.0.0.1", second] });
       // Both the new code and the restored old code retry for this long. The
@@ -713,7 +711,11 @@ describe("a reload with two listen addresses", () => {
       const output = new Output(serve.stdout, serve.stderr);
       // Another process holds the port the changed settings name, on the second
       // address, before the change is made: the new code cannot listen there.
-      const blocker = Bun.serve({ hostname: second, port: blocked, fetch: () => new Response("") });
+      // The system picks its port, so no other process can have taken it
+      // between choosing and binding.
+      const blocker = Bun.serve({ hostname: second, port: 0, fetch: () => new Response("") });
+      const blocked = blocker.port;
+      if (blocked === undefined || blocked === port) throw new Error("the blocker has no port of its own");
       // A file of the engine package that no module imports: it counts as engine code.
       const marker = fileURLToPath(new URL("../../../engine/zz-reload-test-marker.txt", import.meta.url));
       try {
@@ -757,10 +759,17 @@ describe("a reload with two listen addresses", () => {
         expect(await answers(urlOf("127.0.0.1", port))).toBe(true);
         expect(await answers(urlOf(second, port))).toBe(true);
       } finally {
-        rmSync(marker, { force: true });
         await blocker.stop(true);
-        await stopServe(s);
-        expect(await serve.exited).toBe(0);
+        // The marker goes only after serve has ended: serve watches the engine
+        // package, so removing it first is a change that can start another
+        // reload while the stop is in flight, and the supervisor then starts a
+        // serve that nothing stops.
+        try {
+          await stopServe(s);
+          expect(await serve.exited).toBe(0);
+        } finally {
+          rmSync(marker, { force: true });
+        }
       }
     }, 60_000);
   }

@@ -416,6 +416,15 @@ changes for bots, in the order they were recorded. The root
 | T-0745-M9 | packages/bot/src/index.ts | the speaker was written into the bot page unescaped | `the bot page's text > a value a person or the agent wrote is shown as text or code, not as Markdown` |
 | T-0745-M10 | packages/bot/src/follow-up.ts | a follow-up's text was written into the page unescaped | `the bot page's text > a follow-up's text is escaped` |
 
+## T-0748 — run a scheduled prompt now
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0748-M1 | packages/bot/src/schedule.ts | a run now recorded the current minute as the entry's planned time, moving the next timed run | `scheduled prompts > run now fires the entry once like a timed firing, records its result, and leaves the next timed run alone` |
+| T-0748-M2 | packages/bot/src/schedule.ts | a run now after a late timed run carried that run's lateness line | `scheduled prompts > run now fires the entry once like a timed firing, records its result, and leaves the next timed run alone` |
+| T-0748-M3 | packages/bot/src/schedule.ts | the run-now request was not cleared, so it fired at every check | `scheduled prompts > run now fires the entry once like a timed firing, records its result, and leaves the next timed run alone` |
+| T-0748-M4 | packages/bot/src/schedule.ts | run now of an unknown entry was accepted | `scheduled prompts > run now of an unknown entry is refused with a reason and opens no chat` |
+
 ## T-0746 — Lateness after skipped minutes
 
 | id | file | mutation | failing test |

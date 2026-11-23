@@ -9,12 +9,49 @@
  */
 
 import { StateError, pidAlive, readLockPid, serveLockPath } from "@operad-io/engine";
-import { stopAllKeptWorkers } from "@operad-io/engine/platform";
-import { existsSync } from "node:fs";
+import { stopAllKeptWorkers, writeJsonAtomicSync } from "@operad-io/engine/platform";
+import { existsSync, readFileSync, rmSync } from "node:fs";
+import { join } from "node:path";
 
 export const DEFAULT_STOP_TIMEOUT_SECS = 30;
 const COMMAND_ASKS = 20;
 const COMMAND_ASK_WAIT_MS = 50;
+
+function supervisorPath(home: string): string {
+  return join(home, "serve-supervisor.json");
+}
+
+/**
+ * A serve that runs under a supervisor names it in the home: the supervisor
+ * outlives each serve it starts and starts the next one after a reload, so
+ * `serve stop` must reach it, not only the serve that holds the lock.
+ */
+export function recordSupervisor(home: string, pid: number = process.ppid): void {
+  writeJsonAtomicSync(supervisorPath(home), { pid });
+}
+
+function readSupervisor(home: string): number | undefined {
+  try {
+    const raw: unknown = JSON.parse(readFileSync(supervisorPath(home), "utf8"));
+    const pid =
+      typeof raw === "object" && raw !== null ? (raw as { pid?: unknown }).pid : undefined;
+    return typeof pid === "number" ? pid : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** The parent of a process, or undefined when `ps` cannot say. */
+export function parentOf(pid: number): number | undefined {
+  const result = Bun.spawnSync({
+    cmd: ["ps", "-p", String(pid), "-o", "ppid="],
+    stdout: "pipe",
+    stderr: "ignore",
+  });
+  if (result.exitCode !== 0) return undefined;
+  const value = Number(result.stdout.toString().trim());
+  return Number.isInteger(value) && value > 0 ? value : undefined;
+}
 
 export interface ServeStopOptions {
   readonly home: string;
@@ -24,6 +61,7 @@ export interface ServeStopOptions {
   readonly isAlive?: ((pid: number) => boolean) | undefined;
   readonly commandOf?: ((pid: number) => string | undefined) | undefined;
   readonly signal?: ((pid: number) => void) | undefined;
+  readonly parentOf?: ((pid: number) => number | undefined) | undefined;
   readonly sleep?: ((ms: number) => Promise<void>) | undefined;
   readonly clock?: (() => number) | undefined;
 }
@@ -61,8 +99,19 @@ export async function serveStop(options: ServeStopOptions): Promise<void> {
   await stopAllKeptWorkers({ home: options.home });
   const path = serveLockPath(options.home);
   const isAlive = options.isAlive ?? pidAlive;
-  const pid = readLockPid(path);
-  if (pid === undefined || !isAlive(pid)) {
+  const lockPid = readLockPid(path);
+  const holder = lockPid !== undefined && isAlive(lockPid) ? lockPid : undefined;
+  // The supervisor of the serve, when there is one that is really its parent.
+  // Between two serves of a reload nothing holds the lock, and the supervisor
+  // is the only process that will start the next one.
+  let supervisor = readSupervisor(options.home);
+  if (supervisor !== undefined && !isAlive(supervisor)) supervisor = undefined;
+  if (supervisor !== undefined && holder !== undefined && holder !== supervisor) {
+    const parent = (options.parentOf ?? parentOf)(holder);
+    if (parent !== undefined && parent !== supervisor) supervisor = undefined;
+  }
+  const pid = supervisor ?? holder;
+  if (pid === undefined) {
     options.write(`no operad serve runs for ${options.home}\n`);
     return;
   }
@@ -99,7 +148,13 @@ export async function serveStop(options: ServeStopOptions): Promise<void> {
   const clock = options.clock ?? (() => Date.now());
   const deadline = clock() + options.timeoutSecs * 1_000;
   for (;;) {
-    if (!isAlive(pid) || !existsSync(path)) {
+    // The supervisor is gone, and so is every serve it started: the lock
+    // names no live process, or the file is gone.
+    const current = readLockPid(path);
+    const served = current !== undefined && isAlive(current) && existsSync(path);
+    const supervised = supervisor !== undefined && isAlive(supervisor);
+    if (supervisor === undefined ? !isAlive(pid) || !existsSync(path) : !supervised && !served) {
+      if (supervisor !== undefined) rmSync(supervisorPath(options.home), { force: true });
       options.write("stopped\n");
       return;
     }
