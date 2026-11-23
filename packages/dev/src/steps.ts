@@ -61,6 +61,7 @@ import {
   type BaseSettings,
   type GitResult,
 } from "./git.ts";
+import { taskGitRefusal } from "./git-state.ts";
 import { runPrepare, taskStepAccess } from "./prepare.ts";
 import { classifyStop, isConnectionError, STOP_REASONS } from "./stops.ts";
 import { findRepository, putTaskKeepingPlanCost, withRepoLock } from "./service.ts";
@@ -777,6 +778,8 @@ export function prepareWorktree(
   taskId: string,
   mergeMain = true,
 ): Prepared {
+  const refusal = taskGitRefusal(repository.path);
+  if (refusal !== undefined) return failed(refusal);
   const fetch = fetchRemote(repository.path, settings);
   if (!fetch.ok) {
     return failed(
@@ -924,6 +927,8 @@ export async function prepareBranch(
   taskId: string,
   options: BranchOptions,
 ): Promise<Prepared> {
+  const refusal = taskGitRefusal(repository.path);
+  if (refusal !== undefined) return failed(refusal);
   const fetch = fetchRemote(repository.path, settings);
   if (!fetch.ok) {
     return failed(

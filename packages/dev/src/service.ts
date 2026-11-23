@@ -15,7 +15,7 @@ import { ViewError } from "@operad-io/engine";
 import { isBusy, type GitFinderHost } from "@operad-io/engine/platform";
 import type { FlowDefinition, ObjectStore, StoredObject } from "@operad-io/engine";
 import { git } from "./git.ts";
-import { GitStateError, gitStateOf, type GitState } from "./git-state.ts";
+import { assertCanCreateTask, GitStateError, gitStateOf, type GitState } from "./git-state.ts";
 import { withdrawIntegration } from "./integration-queue.ts";
 import { switchBackToStart } from "./mainclone.ts";
 import { withRepositoryLock } from "./lock.ts";
@@ -936,6 +936,7 @@ export async function addPlan(
       ? 1
       : validatePlanConcurrency(options.concurrency);
   return withRepoLock(store, options.repository.name, async (repository) => {
+    assertCanCreateTask(repository.path);
     const id = await nextId(store, "plan", repository.name, slug);
     const data: PlanData = {
       repository: repository.name,
@@ -1105,6 +1106,7 @@ export async function addTaskLocked(
       `plan "${idOfKey(currentPlan.id)}" is not in repository "${repository.name}"`,
     );
   }
+  assertCanCreateTask(repository.path);
   const id = await nextId(store, "task", repository.name, slug);
   const tasks = await allTasks(store);
   const after = validateAfter(
