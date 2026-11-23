@@ -762,3 +762,8 @@ Each row was applied to the source, `bun test test/segments.test.ts` was run, an
 | T-0779-M1 | packages/chat/src/reply.ts | the reply's profile did not deny writes to the bot's memory during a stretch | `/private > the reply's profile leaves the bot's memory readable and not writable, only while it is on` |
 | T-0779-M2 | packages/chat/src/reply.ts | the memory flush was still given after a stretch ended, while the session held it | `the memory flush before a compaction > is given to a session with no stretch, skipped while it is on, and skipped after it until /new` |
 | T-0779-M3 | packages/chat/src/index.ts | a message sent during a stretch was not marked | `/private > messages and their answers are marked; those before and after the stretch are not` |
+| T-0779-M8 | packages/chat/src/views.ts | the chat row did not show the standing status while a stretch was on | `/private > the row and every page show the standing status while it is on, and only then` |
+| T-0779-M9 | packages/chat/src/views.ts | the transcript page did not show the standing status while a stretch was on | `/private > the row and every page show the standing status while it is on, and only then` |
+| T-0779-M10 | packages/chat/src/index.ts | `/private` was not refused on a chat that is not a bot's | `/private > a chat that is not a bot's has no memory and refuses it` |
+| T-0779-M11 | packages/chat/src/index.ts | `/private` was not refused while a reply was being written | `/private > it is refused while a reply is being written` |
+| T-0779-M12 | packages/chat/src/model.ts | the line that ends a stretch no longer suggested `/new` | `/private > a bot chat turns the stretch on and off with the same command, and says what it is and is not` |
