@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, statSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, statSync, utimesSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { CHAT_TYPE, allMessages, chatRef, RUN_FACT } from "@operad-io/chat";
+import { CHAT_TYPE, allMessages, chatRef, RUN_FACT, STOP_FACT } from "@operad-io/chat";
 import { createViews, type ClientApi, type JsonValue, type ObjectStore, type RunControl } from "@operad-io/engine";
 import { EMPTY_LINK_REPORT, TIDY_ORIGIN, createMemoryPlugin, ensureRepository, lastTidyCommit, memoryGit, tidyCommitForChat } from "@operad-io/memory";
 import {
@@ -882,6 +882,71 @@ describe("Run without asking", () => {
       s.clock.value = Date.parse("2026-01-02T03:31:00Z");
       await s.source.poll();
       expect(await chats(s.r)).toHaveLength(1);
+    } finally {
+      s.views.close();
+    }
+  });
+});
+
+describe("the instructions after a tidy run", () => {
+  const ended: RunControl = { active: () => false, cancel: () => false };
+  const writable = (memory: string): boolean => (statSync(join(memory, "instructions.md")).mode & 0o222) !== 0;
+
+  async function running(s: Awaited<ReturnType<typeof setup>>): Promise<string> {
+    note(s.memory, "tea.md", "likes tea\n");
+    s.clock.value = Date.parse("2026-01-01T03:31:00Z");
+    await s.source.poll();
+    await s.r.act(TIDY_TYPE, "default", "bot/run");
+    await s.source.poll();
+    const id = (await chats(s.r))[0];
+    if (id === undefined) throw new Error("no tidy chat");
+    expect(writable(s.memory)).toBe(false);
+    return id;
+  }
+
+  test("a cancelled run, with no commit, makes the file writable again", async () => {
+    const s = await setup(undefined, undefined, undefined, { runs: ended });
+    try {
+      const id = await running(s);
+      await s.r.store.append({ type: RUN_FACT, object: chatRef(id), cause: "test", data: { runId: "run-stopped" } });
+      await s.r.store.append({
+        type: STOP_FACT,
+        object: chatRef(id),
+        cause: "test",
+        data: { runId: "run-stopped", by: { via: "test", id: "person" } },
+      });
+      await s.source.settled();
+      expect(writable(s.memory)).toBe(true);
+    } finally {
+      s.views.close();
+    }
+  });
+
+  test("a failed run, with no commit, makes the file writable again", async () => {
+    const s = await setup(undefined, undefined, undefined, { runs: ended });
+    try {
+      const id = await running(s);
+      await s.r.store.append({ type: RUN_FACT, object: chatRef(id), cause: "test", data: { runId: "run-failed" } });
+      await s.r.store.append({
+        type: "chat.entry",
+        object: chatRef(id),
+        cause: "test",
+        data: { runId: "run-failed", kind: "failure", text: "The reply failed: quota" },
+      });
+      await s.source.settled();
+      expect(writable(s.memory)).toBe(true);
+    } finally {
+      s.views.close();
+    }
+  });
+
+  test("serve start makes the file writable when no tidy run is going", async () => {
+    const s = await setup();
+    try {
+      expect((await tidy(s.r))?.state).toBe("idle");
+      chmodSync(join(s.memory, "instructions.md"), 0o444);
+      await s.source.begin();
+      expect(writable(s.memory)).toBe(true);
     } finally {
       s.views.close();
     }

@@ -12,6 +12,8 @@ import {
   allEntries,
   allMessages,
   chatData,
+  lastReplyOutcome,
+  stoppedRunAfter,
   chatFacts,
   costText,
   writingReplyNow,
@@ -908,10 +910,10 @@ export class BotTidySource {
       return;
     }
     await this.put(bot, { ...running, chatId }, "source:bot/tidy", { id: chatId, at: now, status: "running" });
-    await this.watch(bot, chatId, auto);
+    await this.watch(bot, chatId, auto, join(cwd, "memory"));
   }
 
-  private async watch(bot: string, chatId: string, auto: boolean): Promise<void> {
+  private async watch(bot: string, chatId: string, auto: boolean, memoryDir: string): Promise<void> {
     this.chatWatches.watchChatReply(
       chatId,
       chatId,
@@ -922,7 +924,14 @@ export class BotTidySource {
             isRecord(fact.data) &&
             fact.data["chat"] === chatId,
         );
-        if (!committed) return undefined;
+        if (!committed) {
+          // A run that ended (cancelled, failed or quiet) without its commit
+          // still gives the instructions back; the commit, if it comes, restores them.
+          if (stoppedRunAfter(read.facts, -1) !== undefined || lastReplyOutcome(read.messages, read.entries).kind !== "none") {
+            unlockInstructions(memoryDir);
+          }
+          return undefined;
+        }
         const stored = await this.ctx.store.get(CHAT_TYPE, chatId);
         if (stored === undefined) return undefined;
         const reply = [...read.messages].reverse().find((message) => message.role === "assistant");
@@ -1069,13 +1078,32 @@ export class BotTidySource {
   private async resume(): Promise<void> {
     for (const object of await this.tidyObjects()) {
       const data = tidyDataOf(object.data);
-      if (data?.state !== "running") continue;
+      if (data === undefined) continue;
+      const memoryDir = this.memoryDirOf(data.bot);
+      if (data.state !== "running") {
+        // No run is going: nothing may keep the instructions read-only.
+        if (memoryDir !== undefined) unlockInstructions(memoryDir);
+        continue;
+      }
+      if (memoryDir !== undefined && data.chatId === undefined) unlockInstructions(memoryDir);
       if (data.chatId === undefined) {
         // The process died after marking the run but before recording its chat.
         await this.failStart(data.bot, data, "Could not start: the run was not recorded");
         continue;
       }
-      await this.watch(data.bot, data.chatId, data.auto === true);
+      if (memoryDir === undefined) continue;
+      await this.watch(data.bot, data.chatId, data.auto === true, memoryDir);
+    }
+  }
+
+  /** The bot's memory directory, or undefined when its settings cannot be read. */
+  private memoryDirOf(bot: string): string | undefined {
+    try {
+      const settings = readBots(this.ctx.home, this.ctx.settings)[bot];
+      if (settings === undefined) return undefined;
+      return join(workingDirectory(this.ctx.home, bot, settings), "memory");
+    } catch {
+      return undefined;
     }
   }
 

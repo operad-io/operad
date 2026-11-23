@@ -509,3 +509,6 @@ changes for bots, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0788-M2 | packages/bot/src/delivery.ts | the delivery did not carry the routine's object id | `a routine's result reaches the bot's main chat > a result with content is one message in the main chat, headed with the routine, and starts no reply` |
+| T-0792-M1 | packages/bot/src/tidy.ts | a cancelled run with no commit left the instructions read-only | `the instructions after a tidy run > a cancelled run, with no commit, makes the file writable again` |
+| T-0792-M2 | packages/bot/src/tidy.ts | a failed run with no commit left the instructions read-only | `the instructions after a tidy run > a failed run, with no commit, makes the file writable again` |
+| T-0792-M3 | packages/bot/src/tidy.ts | serve start did not make the instructions writable when no run was going | `the instructions after a tidy run > serve start makes the file writable when no tidy run is going` |
