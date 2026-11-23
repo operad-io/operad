@@ -85,9 +85,12 @@ describe("/private", () => {
     expect(chatData((await r.store.get(CHAT_TYPE, chat))?.data ?? {}).private).toBeUndefined();
     const said = lines(r, chat);
     expect(said.map((line) => line.ok)).toEqual([true, true]);
-    expect(said[0]?.outcome).toContain("not deletion and not a separate chat");
-    expect(said[0]?.outcome).toContain(PRIVATE_STATUS);
-    expect(said[1]?.outcome).toContain("/new");
+    expect(said[0]?.outcome).toBe(
+      "Not remembered / 不记入记忆: on. Messages from here stay in this chat but are not saved to memory or search. Send /private again to end it.",
+    );
+    expect(said[1]?.outcome).toBe(
+      "Not remembered / 不记入记忆: off. What you sent meanwhile was not saved, but this chat may still recall it. Send /new to start clean.",
+    );
     const facts = chatFacts(r.store, chat).filter((fact) => fact.type === PRIVATE_FACT);
     expect(facts.map((fact) => fact.data.on)).toEqual([true, false]);
     // A command is not a message and starts no reply.

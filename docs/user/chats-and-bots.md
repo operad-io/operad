@@ -157,8 +157,13 @@ them; this is not deletion and not a separate chat. They do not enter the bot's
 memory: the bot cannot write a note during the stretch (it can still read its
 notes), the memory flush before a compaction is skipped, Dreaming leaves the
 messages out, and they are not in the search index, so the bot cannot find them
-again. Telegram shows a line when the stretch starts and when it ends. The
-command is refused while a reply is being written.
+again. The chat answers `/private` with one of two lines, and Telegram shows the same line
+when the stretch starts and when it ends:
+
+- On: `Not remembered / 不记入记忆: on. Messages from here stay in this chat but are not saved to memory or search. Send /private again to end it.`
+- Off: `Not remembered / 不记入记忆: off. What you sent meanwhile was not saved, but this chat may still recall it. Send /new to start clean.`
+
+The command is refused while a reply is being written.
 
 The stretch is still in the agent's own session. A compaction could carry it
 into later context, so when you end the stretch the chat suggests `/new`; until
