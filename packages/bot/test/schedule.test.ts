@@ -16,6 +16,7 @@ import {
   lateText,
   SCHEDULE_PREAMBLE,
   markdownCode,
+  scheduledInstruction,
   scheduledMarkdown,
   SCHEDULE_QUIET_MARKER,
   SCHEDULE_RECENT_COUNT,
@@ -26,6 +27,22 @@ import { cleanupRoots, rig } from "./support.ts";
 process.env.TZ = "UTC";
 
 afterAll(cleanupRoots);
+
+describe("scheduledInstruction", () => {
+  const at = Date.parse("2026-01-01T08:00:00Z");
+  const entry = (skippedEarlier: boolean): ScheduledPrompt => ({
+    name: "Morning",
+    schedule: "* * * * *",
+    prompt: "Digest.",
+    paused: false,
+    last: { plannedAt: at, firedAt: at + 5_000, schedule: "* * * * *", ...(skippedEarlier ? { skippedEarlier } : {}) },
+  });
+
+  test("a firing in its own minute after skipped minutes still says it is a catch-up", () => {
+    expect(scheduledInstruction(entry(true))).toContain("Scheduled for");
+    expect(scheduledInstruction(entry(false))).not.toContain("Scheduled for");
+  });
+});
 
 describe("lateText", () => {
   test("counts hours and the minute left in words, singular or plural", () => {
