@@ -1414,7 +1414,7 @@ async function replyOnce(
 
   const resumed = isRecord(params) ? params : {};
   const session =
-    typeof resumed.resumeSession === "string" ? resumed.resumeSession : currentSession(chat, messages);
+    typeof resumed.resumeSession === "string" ? resumed.resumeSession : currentSession(chat, messages, read.facts);
   // The context the last reply in this session ended with; a smaller one after
   // this reply means the agent compacted the session.
   const previousUsed = lastContextUsed(messages, session);

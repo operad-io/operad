@@ -193,7 +193,7 @@ describe("commands in chat:send", () => {
       .map((line: string) => /^- `\/([^`]+)`/.exec(line)?.[1])
       .filter((name: string | undefined): name is string => name !== undefined)
       .sort();
-    expect(listed).toEqual(["access", "close", "help", "status", "stop"]);
+    expect(listed).toEqual(["access", "close", "help", "new", "status", "stop"]);
     expect(String(help.value)).not.toContain("`/model`");
     expect(String(help.value)).not.toContain("`/effort`");
     // Nothing failed, stopped or was interrupted, so a retry would start no reply.
@@ -311,7 +311,7 @@ describe("commands in chat:send", () => {
       .map((line: string) => /^- `\/([^`]+)`/.exec(line)?.[1])
       .filter((name: string | undefined): name is string => name !== undefined)
       .sort();
-    expect(listed).toEqual(["access", "close", "effort", "help", "model", "other_model", "status", "stop"]);
+    expect(listed).toEqual(["access", "close", "effort", "help", "model", "new", "other_model", "status", "stop"]);
     expect(text).not.toContain("/send");
     expect(text).not.toContain("/hidden");
     expect(commandFacts(r, chat)[0]?.outcome).toBe(text);

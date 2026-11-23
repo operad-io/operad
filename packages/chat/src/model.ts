@@ -33,6 +33,9 @@ export const RUN_FACT = "chat.run";
 /** The fact type of a run a `/stop` cancelled, so status and retry need not read the command's words. */
 export const STOP_FACT = "chat.stop";
 
+/** The fact type of a `/new`: the session in force ends here and the next reply starts a fresh one. */
+export const NEW_FACT = "chat.new";
+
 /** The fact type of messages an attempt took, when no reply message can name them. */
 export const ANSWER_FACT = "chat.answered";
 
@@ -1316,14 +1319,27 @@ export function unanswered(
   );
 }
 
-/** The harness session after the last reply, else the chat's own reference. */
+/** The sequence of the latest `/new` on a chat, or -1 when it has had none. */
+export function newSessionAt(facts: readonly PluginFact[]): number {
+  let at = -1;
+  for (const fact of facts) if (fact.type === NEW_FACT && fact.sequence > at) at = fact.sequence;
+  return at;
+}
+
+/**
+ * The harness session after the last reply, else the chat's own reference. A
+ * reply from before the latest `/new` is not the session in force.
+ */
 export function currentSession(
   chat: ChatData,
   messages: readonly Message[],
+  facts: readonly PluginFact[] = [],
 ): string | undefined {
+  const since = newSessionAt(facts);
   for (let index = messages.length - 1; index >= 0; index -= 1) {
     const message = messages[index];
-    if (message?.role === "assistant" && message.session !== undefined) return message.session;
+    if (message === undefined || message.sequence < since) break;
+    if (message.role === "assistant" && message.session !== undefined) return message.session;
   }
   return typeof chat.session === "string" && chat.session.length > 0 ? chat.session : undefined;
 }
@@ -1337,6 +1353,7 @@ export function currentSession(
 export function lastReplyContext(
   chat: ChatData,
   messages: readonly Message[],
+  facts: readonly PluginFact[] = [],
 ): ChatContext | undefined {
   let last: Message | undefined;
   for (let index = messages.length - 1; index >= 0; index -= 1) {
@@ -1345,7 +1362,7 @@ export function lastReplyContext(
     last = message;
     break;
   }
-  if (last?.context === undefined) return undefined;
+  if (last?.context === undefined || last.sequence < newSessionAt(facts)) return undefined;
   if ((chat.session ?? undefined) !== (last.session ?? undefined)) return undefined;
   const model = last.model ?? chat.model ?? chat.lastModel;
   return {
