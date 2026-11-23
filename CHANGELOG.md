@@ -7,6 +7,83 @@ the same version.
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-11-23
+
+The release lets `dev` work in a folder without git until the first task, adds
+a branch way of working next to worktrees, gives bots follow-ups and scheduled
+prompts that can run now, and makes Setup Dev's chat readable. Folders without
+git, repositories without a remote and machines without git are all accepted.
+
+### Added
+
+- A folder without git, or a machine without git, can be added
+  (`operad dev repo add`) and chatted with; the chat may change files there.
+  Git is needed only to create a task. Creating a plan or a task, and the step
+  that prepares a task's working place, refuse a folder whose git is not ready
+  and say in one sentence what to do: install git, set up git here, make the
+  first commit, or add the repository's root instead of a subfolder.
+- Set up git here: at the first task in a folder without git, the bot proposes
+  one pending item with the `.gitignore`, the list of files the first commit
+  would hold, and the name and email for it. Approving runs `git init` when
+  needed and the first commit of exactly the listed files, and the folder
+  becomes a repository that works in a branch with no remote. An existing
+  `.gitignore` is kept: a proposal that would drop one of its lines is refused.
+  Secret names (`.env*`, keys) must stay ignored. The home folder and a disk
+  root are refused, and above 5000 files the item asks to check the
+  `.gitignore` first. When git is not installed, the bot's guide walks through
+  installing it, each command a pending item.
+- `workIn` in `.operad/dev.json`: `worktree` (each task in its own worktree, as
+  before) or `branch` (each task on its own branch in the main clone, one task
+  at a time). Setup Dev explains the two and asks which to use. A branch-mode
+  task holds the main clone until it ends; meanwhile a repository chat is
+  read-only there, and a task does not start while a chat reply that can write
+  is live.
+- A repository with no remote works: merges move the local main branch.
+- Follow-ups: a bot's agent can set follow-ups for itself in a chat (at most 5
+  per chat, at most 30 days ahead); `operad bot follow-up` and
+  `operad bot follow-ups` set, list and cancel them.
+- Scheduled prompts: Run now runs one at once without moving its next timed
+  run, and is refused while the previous firing is still replying. A scheduled
+  prompt can end quietly and carries its last results into the next firing.
+  The bot row carries the server's IANA time zone so clients show the next run
+  in it.
+- `operad doctor` says when git is not installed (chat works without it; a task
+  needs it).
+- A bot's memory and the shared wiki are plain folders when git is not
+  installed, and become repositories, with no question, once it is.
+- A task's Review section shows each review round with its fix level.
+
+### Changed
+
+- Setup Dev's chat (and any `Setup <plugin>` chat) shows only its title as the
+  first message; the prepared prompt goes to the agent without being shown.
+- `.operad/dev.json` is read when an attempt starts and used for that attempt.
+- Finding git never opens the macOS install dialog; a missing git is reported
+  as "git is not installed" instead of an error.
+- The dev list is titled Projects.
+
+### Fixed
+
+- A failed git call (dubious ownership, an unreadable `.git`) is no longer
+  taken for a folder without a repository.
+- An empty change left by a worker that did not finish (for example stopped by
+  a usage limit) goes back to work instead of passing review and reaching
+  merge; `dev:reverify` refuses such a task.
+- A commit made on the main clone during an attempt is reported.
+- In a long chat, a page over its size cap no longer cuts the newest replies:
+  the oldest replies are shortened first, and every shortened text is marked
+  `cut: true`; reading the page with `full=true` gives it whole.
+- A task's retries use the `.operad/dev.json` its attempt started with, like
+  its other steps.
+- A chat that moved to its worktree is no longer read-only.
+- A new chat gets an agent that carries its access level, or is refused at
+  creation.
+- `operad serve stop` also stops the supervisor, so a reload in flight does not
+  start a serve after it.
+- The main clone fast-forwards past untracked files.
+- Terminal client marks and the folder icon use characters common terminal
+  fonts carry.
+
 ## [0.2.0] - 2026-11-22
 
 The release adds a first-run path (`operad` alone opens a chat, `operad doctor`
@@ -272,7 +349,8 @@ The first public release. Install it with `bun add -g @operad-io/cli`; it needs
   `operad http token rotate` replaces it. The app itself is not in this
   repository.
 
-[Unreleased]: https://github.com/operad-io/operad/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/operad-io/operad/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/operad-io/operad/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/operad-io/operad/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/operad-io/operad/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/operad-io/operad/releases/tag/v0.1.0
