@@ -1301,6 +1301,7 @@ describe("dev views", () => {
         model: "gpt-x",
         sha: "abcdef0123456789",
         runs: [{ round: 1, role: "primary", use: "pi/agent", args: [], model: "gpt-x", reason: "initial", outcome: "report" }],
+        fixLevel: "minor",
         findings: [{ file: "a.ts", line: 3, severity: "major", summary: "uses <b>raw</b> *html*", trigger: "when empty" }],
         verified: ["ran the tests"],
       },
@@ -1317,11 +1318,14 @@ describe("dev views", () => {
     expect(first.markdown).toContain("Attempt 1, round 2");
     expect(first.markdown).toContain("Result: pass");
     expect(first.markdown).toContain("`pi/agent`");
+    // Round 2 recorded no fix level: none is read from the repository's dev.json.
+    expect(first.markdown).not.toContain("Fix level");
     expect(first.next).toBe("1");
     expect(first.pages?.map((p) => p.label)).toEqual(["attempt 1, round 2", "attempt 1, round 1"]);
     const older = (await taskViews.load({ store } as never, latest, "review", { cursor: "1" })) as { markdown: string };
     expect(older.markdown).toContain("Result: findings (1 major)");
     expect(older.markdown).toContain("`gpt-x`");
+    expect(older.markdown).toContain("Fix level: minor");
     expect(older.markdown).toContain("`a.ts:3` major: uses \\<b\\>raw\\</b\\> \\*html\\*");
     expect(older.markdown).not.toContain("<b>");
     expect(older.markdown).toContain("ran the tests");
