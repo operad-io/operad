@@ -445,3 +445,39 @@ describe("a reply's structured form", () => {
     expect(fullTool?.output.text.length ?? 0).toBeGreaterThan(0);
   });
 });
+
+describe("a page over the size cap cuts the oldest replies first", () => {
+  async function longChat(count: number): Promise<{ readonly r: Rig; readonly chat: string }> {
+    const r = await rig(async () => reply(`${r.calls.length}: ${"word ".repeat(180)}end`));
+    const chat = await r.chat();
+    for (let index = 1; index <= count; index += 1) {
+      await r.say(chat, `question ${index}`);
+      await r.round(chat);
+    }
+    return { r, chat };
+  }
+  const bytesOf = (value: unknown): number => Buffer.byteLength(typeof value === "string" ? value : JSON.stringify(value), "utf8");
+
+  test("the newest replies stay whole, older ones are cut and marked, and the whole read has every text", async () => {
+    const { r, chat } = await longChat(8);
+    const whole = await view(r, chat, { full: true });
+    const cap = bytesOf(whole.markdown) + bytesOf(whole.data) - 2_500;
+    const page = await view(r, chat, { sectionCapBytes: cap });
+    expect(bytesOf(page.markdown) + bytesOf(page.data)).toBeLessThanOrEqual(cap);
+
+    const shown = replies(page);
+    const all = replies(whole);
+    expect(shown).toHaveLength(8);
+    const last = shown.at(-1);
+    expect(last?.answer?.text).toBe(all.at(-1)?.answer?.text ?? "x");
+    expect(last?.answer?.cut).toBeUndefined();
+    const first = shown[0];
+    expect(first?.answer?.cut).toBe(true);
+    expect((first?.answer?.text.length ?? 0) < (all[0]?.answer?.text.length ?? 0)).toBe(true);
+    // Once a reply is whole, every newer one is whole.
+    const cutFlags = shown.map((one) => one.answer?.cut === true);
+    expect(cutFlags).toEqual([...cutFlags].sort((a, b) => Number(b) - Number(a)));
+    for (const one of all) expect(one.answer?.cut).toBeUndefined();
+    expect(all.every((one) => one.answer !== undefined && one.answer.text.endsWith("end"))).toBe(true);
+  });
+});
