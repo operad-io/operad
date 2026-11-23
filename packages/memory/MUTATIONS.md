@@ -181,3 +181,10 @@ the row fields.
 |---|---|---|---|
 | T-0683-M1 | packages/memory/src/tidy.ts | `tidyCommitSummary` read only the tidy commit's own stat instead of the run from its baseline, so a chat's ordinary memory commit was missing | `a tidy run's summary > covers the chat's own memory commit before an empty tidy commit`, `Run and Skip > a result card reads the chat's own memory commit before an empty tidy commit` |
 | T-0726-M1 | packages/memory/skills/memory/SKILL.md | the progress-file sentence was reworded away | `the memory skill is shipped with the package` |
+
+## T-0735 — memory without git
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0735-M1 | packages/memory/src/memory.ts | `ensureRepository` skipped the no-program check, so it fell through to `git init` and threw "git is not installed" | `a machine without git > the wiki and the memory are plain folders with no error; git appearing makes the first commit` |
+| T-0735-M2 | packages/memory/src/commit.ts | `commitChanges` ignored `tracked` and ran git status on a plain folder, throwing | `a machine without git > the wiki and the memory are plain folders with no error; git appearing makes the first commit` |

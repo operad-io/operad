@@ -1,13 +1,16 @@
-import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { afterAll, afterEach, describe, expect, test } from "bun:test";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import type { GitFinderHost } from "@operad-io/engine/platform";
 import { MemoryPluginStore, PluginRegistry, isRecord } from "@operad-io/engine";
 import {
   MemorySearch,
   createMemoryPlugin,
   memoryGit,
+  memoryTestHooks,
+  memoryTidyState,
   parseNoteLinks,
   resolveNoteLink,
   searchDatabasePath,
@@ -298,5 +301,46 @@ describe("one link parser for the index and the link table", () => {
     } finally {
       search.close();
     }
+  });
+});
+
+describe("a machine without git", () => {
+  // macOS with a stub git and no command line tools: xcode-select fails.
+  const noTools: GitFinderHost = {
+    platform: "darwin",
+    env: { PATH: "/nowhere" },
+    which: (): string | null => null,
+    exists: (path) => path === "/usr/bin/git",
+    run: () => ({ code: 2, out: "" }),
+  };
+
+  afterEach(() => {
+    memoryTestHooks.finder = undefined;
+  });
+
+  test("the wiki and the memory are plain folders with no error; git appearing makes the first commit", async () => {
+    const r = await rig();
+    await botChat(r, "C-1");
+    const memory = join(r.cwd, "memory");
+    mkdirSync(memory, { recursive: true });
+    writeFileSync(join(memory, "note.md"), "first\n");
+    mkdirSync(join(r.home, "wiki"), { recursive: true });
+    writeFileSync(join(r.home, "wiki", "note.md"), "a note\n");
+
+    memoryTestHooks.finder = noTools;
+    const outcome = await r.run("C-1", "run-1");
+    expect(outcome.result).toBe("done");
+    expect(outcome.data["memory"]).toBeNull();
+    expect(outcome.data["wiki"]).toBeNull();
+    expect(existsSync(join(memory, ".git"))).toBe(false);
+    expect(existsSync(join(r.home, "wiki", ".git"))).toBe(false);
+    expect(readFileSync(join(memory, "note.md"), "utf8")).toBe("first\n");
+    expect(memoryTidyState(memory).repository.tracked).toBe(false);
+
+    memoryTestHooks.finder = undefined;
+    const later = await r.run("C-1", "run-2");
+    expect(later.result).toBe("done");
+    expect(messages(memory)).toEqual(["memory: bot default, chat C-1"]);
+    expect(messages(join(r.home, "wiki"))).toEqual(["wiki: bot default, chat C-1"]);
   });
 });
