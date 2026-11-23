@@ -204,3 +204,44 @@ export function earlierRecordPointer(chatId: string): string {
     "[End of earlier record]",
   ].join("\n");
 }
+
+/** The tool's own name: the part after the last `__`, `.`, `:` or `/` of a name such as `mcp__operad__read`. */
+function toolBase(name: string): string {
+  const parts = name.toLowerCase().split(/__|[.:/]/);
+  return parts[parts.length - 1] ?? "";
+}
+
+/** The note name a document id of the `read` tool shows: `memory:<bot>:<path>` is `memory/<path>`, `wiki:<path>` is `wiki/<path>`. */
+function nameOfDocument(id: string): string | undefined {
+  if (id.startsWith("wiki:")) return `wiki/${id.slice("wiki:".length)}`;
+  if (!id.startsWith("memory:")) return undefined;
+  const rest = id.slice("memory:".length);
+  const colon = rest.indexOf(":");
+  return `memory/${colon < 0 ? rest : rest.slice(colon + 1)}`;
+}
+
+/**
+ * The memory notes this reply read, from the tool calls it reported: documents
+ * of the memory and the wiki read with the operad `read` tool, and files under
+ * the bot's `memory/` read with a file tool. A search alone is not a use.
+ */
+export function memoryReadHere(entries: readonly FoldEntry[]): readonly string[] {
+  const found: string[] = [];
+  for (const entry of entries) {
+    if (entry.kind !== "tool" || entry.result !== "done" || toolBase(entry.toolName) !== "read") continue;
+    const input = entry.input ?? "";
+    for (const match of input.matchAll(/\b(?:memory:[^\s"',}]+|wiki:[^\s"',}]+)/g)) {
+      const name = nameOfDocument(match[0]);
+      if (name !== undefined) found.push(name);
+    }
+    for (const match of input.matchAll(/(?:^|[\s"'=:/])(memory\/[^\s"',}]+\.md)\b/g)) {
+      if (match[1] !== undefined) found.push(match[1]);
+    }
+  }
+  return found;
+}
+
+/** The notes a reply used: those that rode on its message, then those it read; each once, in that order. */
+export function memoryUsedBy(carried: readonly NoteContent[], entries: readonly FoldEntry[]): readonly string[] {
+  return [...new Set([...carried.map((note) => note.file.name), ...memoryReadHere(entries)])];
+}

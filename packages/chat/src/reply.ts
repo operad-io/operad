@@ -70,12 +70,13 @@ import {
   usageOf,
   worseQuality,
   timingsOf,
+  memoryShownOf,
   CHAT_TYPE,
   type EntryData,
   type Message,
   type MessageData,
 } from "./model.ts";
-import { earlierRecordPointer, noteBlock, noteFilesOf, noteHashesAfter, notesToAttach, notesWrittenHere, readNoteFiles, type NoteFile } from "./notes.ts";
+import { earlierRecordPointer, memoryUsedBy, noteBlock, noteFilesOf, noteHashesAfter, notesToAttach, notesWrittenHere, readNoteFiles, type NoteFile } from "./notes.ts";
 import { queueTestHooks, syncQueuedLocked, takeLocked, withQueueLock } from "./queue.ts";
 import { agentLogPath, foldLogTail } from "./tail.ts";
 
@@ -1376,24 +1377,32 @@ export async function keepInterrupted(ctx: StepContext, _params: unknown): Promi
  * commit). A failure is logged, never put in the chat: the answer is already
  * written, and remembering it must not undo the answer.
  */
-async function runAfterStep(ctx: StepContext, step: string | undefined, object: RunObject, result: string | undefined): Promise<void> {
-  if (step === undefined) return;
-  if (result !== undefined && result !== "done" && result !== "failed") return;
+async function runAfterStep(ctx: StepContext, step: string | undefined, object: RunObject, result: string | undefined): Promise<Readonly<Record<string, unknown>> | undefined> {
+  if (step === undefined) return undefined;
+  if (result !== undefined && result !== "done" && result !== "failed") return undefined;
   const runStep = ctx.runStep;
-  if (runStep === undefined) return;
+  if (runStep === undefined) return undefined;
   if (ctx.stepLoaded !== undefined && !ctx.stepLoaded(step)) {
     ctx.logger.write(`after ${step}: the step is not loaded\n`);
-    return;
+    return undefined;
   }
   try {
     const outcome = await runStep(step, { chat: object.id }, { runId: ctx.runId, object, params: ctx.params, signal: ctx.signal });
     if (outcome.result !== "done") {
       const message = isRecord(outcome.data) && typeof outcome.data.message === "string" ? outcome.data.message : `it ended ${outcome.result}`;
       ctx.logger.write(`after ${step}: ${message}\n`);
+      return undefined;
     }
+    return isRecord(outcome.data) ? outcome.data : undefined;
   } catch (error) {
     ctx.logger.write(`after ${step}: ${messageOf(error)}\n`);
+    return undefined;
   }
+}
+
+/** The notes an after step says it wrote: the `wrote` list of its data, each a file and a summary. */
+function wroteOf(data: Readonly<Record<string, unknown>> | undefined): readonly { readonly file: string; readonly summary: string }[] {
+  return memoryShownOf({ wrote: data?.wrote })?.wrote ?? [];
 }
 
 /** The after step a chat's refresh step names now, read for a run that ended without a round. */
@@ -1414,6 +1423,8 @@ async function afterStepOfRefresh(ctx: StepContext, chat: ChatData, object: RunO
 /** What one round leaves for the work after it: the after step, and the note hashes it records. */
 interface ReplyState {
   after?: string | undefined;
+  /** Set once the after step ran before the reply was recorded, so the finally block does not run it twice. */
+  afterRan?: boolean | undefined;
   keepNotes?: (() => Promise<void>) | undefined;
 }
 
@@ -1428,7 +1439,7 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   } finally {
     const object = ctx.object;
     if (object !== undefined) {
-      await runAfterStep(ctx, state.after, object, result);
+      if (state.afterRan !== true) await runAfterStep(ctx, state.after, object, result);
       if (state.keepNotes !== undefined) {
         try {
           await state.keepNotes();
@@ -1959,6 +1970,24 @@ async function replyOnce(
 
   await recordEntries(ctx, object.id, folded, { finalText: text, stopped: false });
 
+  // The memory commit runs before the reply is recorded, so the reply names
+  // the notes the run wrote. It runs once, after the last round of a run: a
+  // round that leaves messages to answer leaves it to the round after, and the
+  // end of the step does not run it again.
+  let afterData: Readonly<Record<string, unknown>> | undefined;
+  if (state.after !== undefined) {
+    const taken = new Set([...pending.map((message) => message.id), ...(midRun?.handed ?? [])]);
+    const before = readChat(ctx.store, object.id);
+    const moreToAnswer =
+      unanswered(before.messages, before.facts).some((message) => !taken.has(message.id)) ||
+      (chat.harness === "pi" && compactRequested(before.facts));
+    if (!moreToAnswer) {
+      afterData = await runAfterStep(ctx, state.after, object, "done");
+      state.afterRan = true;
+    }
+  }
+  const memory = memoryShownOf({ wrote: wroteOf(afterData), used: memoryUsedBy(carried, folded.entries) });
+
   // The reply is a fact before the step counts as done: a rerun reads it and
   // does not answer the same messages twice.
   const reply: MessageData = {
@@ -1976,6 +2005,7 @@ async function replyOnce(
       ? {}
       : { context: { used: replyContext.used, ...(window === undefined ? {} : { window }) } }),
     ...(timings === undefined ? {} : { timings }),
+    ...(memory === undefined ? {} : { memory }),
   };
   await ctx.facts.append({ type: MESSAGE_FACT, object: chatRef(object.id), data: reply });
   // After the reply, one short line says the context was compacted.
