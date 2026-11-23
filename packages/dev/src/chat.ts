@@ -53,6 +53,7 @@ import {
   type DevSettings,
 } from "./settings.ts";
 import { git } from "./git.ts";
+import { gitStateOf } from "./git-state.ts";
 import { cloneHolder } from "./service.ts";
 import { isRegistered, prepareWorktree, workBranch, worktreePath } from "./steps.ts";
 
@@ -231,6 +232,8 @@ export function repositoryChatContext(input: {
   /** The task that holds the main clone on its own branch; the reply is read-only meanwhile. */
   readonly heldBy?: string | undefined;
   readonly branch?: string | undefined;
+  /** The folder has no git (no program, no repository or no commit): nothing records or undoes a change. */
+  readonly noGit?: boolean;
   readonly skills: readonly string[];
   readonly denyCommands: readonly string[];
 }): RepositoryChatContext {
@@ -244,6 +247,13 @@ export function repositoryChatContext(input: {
       : input.readOnly
       ? "This chat is read-only in the main clone. Commands that only read run at once; a call that changes a file asks the person first."
       : `This chat works in its own worktree on the branch ${input.branch ?? "unknown"}. Changes reach main through a task, not by merging here.`,
+    ...(input.noGit === true
+      ? [
+          input.inPlace === true && input.heldBy === undefined
+            ? "This folder has no git (no repository with a commit), so nothing records or undoes a change. The chat may change files here at its access level; say what you changed."
+            : "This folder has no git (no repository with a commit).",
+        ]
+      : []),
     ...(input.denyCommands.length === 0
       ? []
       : [`These commands are refused here: ${input.denyCommands.join(", ")}.`]),
@@ -269,6 +279,30 @@ export function repositoryChatContext(input: {
     parts.push(lines.join("\n"));
   }
   return { where, text: parts.join("\n\n") };
+}
+
+/** True when the folder is known to have no git; a folder git cannot judge claims nothing. */
+function folderHasNoGit(folder: string): boolean {
+  try {
+    const state = gitStateOf(folder).state;
+    return state === "no program" || state === "no repository" || state === "no commit";
+  } catch {
+    return false;
+  }
+}
+
+/** Why a worktree cannot be opened in the folder, or undefined when git is ready there. */
+function worktreeRefusal(folder: string): string | undefined {
+  try {
+    const state = gitStateOf(folder);
+    if (state.state === "ready") return undefined;
+    if (state.state === "subfolder") {
+      return `this folder is inside the git repository at ${state.root}; a worktree needs the repository's own folder`;
+    }
+    return "this folder has no git yet, so a chat cannot get a worktree here; the chat can change files in the folder itself";
+  } catch (error) {
+    return messageOf(error);
+  }
 }
 
 /** The event dev sends after a live worktree yes, so the chat answers the same message there. */
@@ -544,6 +578,7 @@ export async function runChatSettings(ctx: StepContext, params: unknown): Promis
   const context = repositoryChatContext({
     repository: name,
     cwd,
+    ...(hasWorktree || !folderHasNoGit(repository.path) ? {} : { noGit: true }),
     readOnly: !hasWorktree && !inPlace,
     inPlace,
     ...(holder === undefined ? {} : { heldBy: holder }),
@@ -649,6 +684,8 @@ async function openChatWorktree(
   } catch (error) {
     return failed(error instanceof DevError ? error.message : String(error));
   }
+  const refusal = worktreeRefusal(repository.path);
+  if (refusal !== undefined) return failed(refusal);
   const worktreeName = chatWorktreeName(chatId);
   const prepared = prepareWorktree(repository, settings, worktreeName);
   if (prepared.kind !== "ready") {

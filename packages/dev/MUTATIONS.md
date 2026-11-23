@@ -1705,3 +1705,10 @@ the row fields.
 | T-0730-M6 | packages/dev/src/git-state.ts | any failure of the question counted as git saying "no repository" | `gitStateOf > a folder git refuses is an error with git's message, not no repository` |
 | T-0730-M7 | packages/dev/src/git-state.ts | git's messages were not forced to English | `git that succeeds without printing > git's message in another language is still read as no repository` |
 | T-0730-M8 | packages/dev/src/check.ts | `checkDev` skipped a folder git could not judge | `dev init check > a folder git refuses is a failed check with git's message` |
+
+## T-0731 — chat in a folder without git
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0731-M1 | packages/dev/src/chat.ts | `openChatWorktree` did not refuse a folder that is not ready, so the step and the access change went on to git | `a chat in a folder without git > a worktree is refused, by the step and by the access change, and the chat stays` |
+| T-0731-M2 | packages/dev/src/chat.ts | the chat context never said the folder has no git | `a chat in a folder without git > opens, and its context says there is no git and the chat may change files` |
