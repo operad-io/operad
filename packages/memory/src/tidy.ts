@@ -4,7 +4,7 @@
  * drops too many existing index entries and keeps only additions instead.
  */
 
-import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { dirname, join, relative, sep } from "node:path";
 import {
   MEMORY_INDEX_MAX,
@@ -339,4 +339,44 @@ export function tidyCommitSummary(
     changed: /changed|insertion|deletion/.test(summary),
     summary,
   };
+}
+
+const INSTRUCTIONS_FILE = "instructions.md";
+
+/**
+ * Makes the person's instructions read-only for the length of a tidy run. A
+ * tidy never changes them; the run's commit puts them back anyway, in case the
+ * run got past the mode.
+ */
+export function lockInstructions(memoryDir: string): void {
+  const file = join(memoryDir, INSTRUCTIONS_FILE);
+  if (existsSync(file)) chmodSync(file, 0o444);
+}
+
+/** Ends the read-only mode of the instructions. */
+export function unlockInstructions(memoryDir: string): void {
+  const file = join(memoryDir, INSTRUCTIONS_FILE);
+  if (existsSync(file)) chmodSync(file, 0o644);
+}
+
+/**
+ * Ends the read-only mode and puts the instructions back as the last commit
+ * has them, whatever the run did to the file (changed it, deleted it, or made
+ * it writable and rewrote it). A file no commit has yet is only made writable.
+ * Returns true when it had to rewrite the file.
+ */
+export function restoreInstructions(repository: Repository, directory: string): boolean {
+  const file = join(directory, INSTRUCTIONS_FILE);
+  const path = relative(repository.root, file).split(sep).join("/");
+  // The file is tracked and differs from the last commit: check it out again.
+  // Git writes the bytes as they were, which a trimmed `show` would not.
+  const tracked = memoryGit(repository.root, ["ls-tree", "--name-only", "HEAD", "--", path]);
+  const changed = memoryGit(repository.root, ["status", "--porcelain", "--", path]);
+  let restored = false;
+  if (tracked.ok && tracked.out.length > 0 && changed.out.length > 0) {
+    if (existsSync(file)) chmodSync(file, 0o644);
+    restored = memoryGit(repository.root, ["checkout", "HEAD", "--", path]).ok;
+  }
+  if (existsSync(file)) chmodSync(file, 0o644);
+  return restored;
 }

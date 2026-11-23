@@ -188,3 +188,5 @@ the row fields.
 |---|---|---|---|
 | T-0735-M1 | packages/memory/src/memory.ts | `ensureRepository` skipped the no-program check, so it fell through to `git init` and threw "git is not installed" | `a machine without git > the wiki and the memory are plain folders with no error; git appearing makes the first commit` |
 | T-0735-M2 | packages/memory/src/commit.ts | `commitChanges` ignored `tracked` and ran git status on a plain folder, throwing | `a machine without git > the wiki and the memory are plain folders with no error; git appearing makes the first commit` |
+| T-0781-M2 | packages/memory/src/search/service.ts | a run record was indexed as a chat | `the full-text index > the record of a routine's run is not a chat hit` |
+| T-0781-M3 | packages/memory/src/commit.ts | a tidy run's commit did not put the instructions back | `a tidy run never changes the instructions > an edit, a rewrite after a mode change and a delete are all put back before the commit` |

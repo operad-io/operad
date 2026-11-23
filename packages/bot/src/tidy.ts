@@ -37,11 +37,13 @@ import {
   ensureMemoryLayout,
   ensureRepository,
   linkReport,
+  lockInstructions,
   memoryEnabled,
   memoryTidyState,
   openMemorySearch,
   tidyCommitForChat,
   tidyCommitSummary,
+  unlockInstructions,
   wikiDirectoryOfHome,
   type LinkReport,
 } from "@operad-io/memory";
@@ -859,6 +861,8 @@ export class BotTidySource {
     await this.put(bot, running, "source:bot/tidy");
     const model = backgroundModel(settings, this.ctx);
     let chatId: string | undefined;
+    // The tidy never changes the person's instructions: read-only until the run's commit.
+    lockInstructions(join(cwd, "memory"));
     try {
       const run = await this.ctx.client.act("bot:chat", `${BOT_TYPE}:${bot}`, {
         args: {
@@ -872,12 +876,14 @@ export class BotTidySource {
         ? run.opens.slice(CHAT_TYPE.length + 1)
         : undefined;
     } catch (error) {
+      unlockInstructions(join(cwd, "memory"));
       const message = messageOf(error);
       await this.failStart(bot, running, `Could not start: ${message}`);
       await this.chatWatches.log(`dreaming of bot ${bot} could not start: ${message}`);
       return;
     }
     if (chatId === undefined) {
+      unlockInstructions(join(cwd, "memory"));
       await this.failStart(bot, running, "Could not start: it started no run");
       await this.chatWatches.log(`dreaming of bot ${bot} started no run`);
       return;

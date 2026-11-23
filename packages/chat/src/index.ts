@@ -904,7 +904,7 @@ export function createChatPlugin() {
     name: "chat",
     kind: "domain",
     version: pkg.version,
-    objects: [{ name: CHAT_TYPE, index: ["parent"], filters: CHAT_FILTERS }],
+    objects: [{ name: CHAT_TYPE, index: ["parent"], filters: CHAT_FILTERS, unlistedStates: ["run"] }],
     settings: {
       type: "object",
       properties: {

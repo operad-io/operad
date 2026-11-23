@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { filterShows, typeFilters } from "@operad-io/engine";
+import { createViews, filterShows, typeFilters } from "@operad-io/engine";
 import { CHAT_TYPE, chatData, chatViews, createChat, createChatPlugin } from "../src/index.ts";
 import { cleanupRoots, reply, rig } from "./support.ts";
 
@@ -34,5 +34,27 @@ describe("the record of a routine's run", () => {
     for (const filter of lists) expect(filterShows(filter, row.state)).toBe(false);
     const chatRow = chatViews.row((await r.store.get(CHAT_TYPE, first)) ?? object);
     expect(lists.some((filter) => filterShows(filter, chatRow.state))).toBe(true);
+  });
+});
+
+describe("a run record is in no list", () => {
+  test("not in open, closed or all, in the tree, and still read by its id", async () => {
+    const r = await rig(() => reply("x"));
+    const chat = await r.chat();
+    const run = await createChat(r.store, { harness: "fake", cwd: r.root, title: "Morning", run: true }, "test");
+    const views = createViews({ registry: r.registry, store: r.store, onLog: () => undefined });
+    try {
+      for (const filter of ["open", "closed", "all"]) {
+        const page = await views.list(CHAT_TYPE, { filter });
+        expect(page.rows.map((row) => row.id)).not.toContain(run);
+      }
+      expect((await views.list(CHAT_TYPE, { filter: "all" })).rows.map((row) => row.id)).toContain(chat);
+      expect((await views.list(CHAT_TYPE)).rows.map((row) => row.id)).not.toContain(run);
+      expect((await views.listTree(CHAT_TYPE, { root: true, filter: "all" })).rows.map((row) => row.id)).not.toContain(run);
+      // Readable from its routine's page: the object is still there.
+      expect(await r.store.get(CHAT_TYPE, run)).toBeDefined();
+    } finally {
+      views.close();
+    }
   });
 });

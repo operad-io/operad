@@ -137,6 +137,18 @@ describe("the full-text index", () => {
     r.search.close();
   });
 
+  test("the record of a routine's run is not a chat hit", async () => {
+    const r = await rig();
+    await r.store.put("chat", "C-A", { parent: "bot:default", cwd: r.botA, title: "A chat" }, "test");
+    await r.store.put("chat", "R-0001", { parent: "bot:default", cwd: r.botA, title: "Morning", run: true }, "test");
+    message(r.store, "C-A", "m-a", "the saffron at home is good");
+    message(r.store, "R-0001", "m-r", "the saffron in the run is good");
+    await r.search.refresh(r.store);
+    const found = r.search.search({ text: "saffron", cwd: r.botA, scopes: ["chats"] });
+    expect(found.hits.map((hit) => hit.id)).toEqual(["chat:C-A"]);
+    r.search.close();
+  });
+
   test("a bot sees only its own memory and chats beside the shared wiki", async () => {
     const r = await rig();
     file(join(r.home, "wiki", "shared.md"), "# Shared\n\ncurry recipe\n");

@@ -676,3 +676,4 @@ are append-only, so the old lines stay as history.
 | T-0773-M2 | packages/chat/src/reply.ts | the brief call's cost was left out of the chat's cost | the same test |
 | T-0773-M3 | packages/chat/src/reply.ts | the brief call did not resume the old session | the same test |
 | T-0773-M4 | packages/chat/src/model.ts | a recorded brief never cleared the due brief, so every round called again | the same test and `a message sent before the round gets the brief in the same round, once` |
+| T-0781-M5 | packages/chat/src/index.ts | the chat type declared no unlisted state, so a run record showed in `all` | `a run record is in no list > not in open, closed or all, in the tree, and still read by its id` |

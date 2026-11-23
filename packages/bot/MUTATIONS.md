@@ -479,3 +479,4 @@ changes for bots, in the order they were recorded. The root
 | T-0768-M6 | packages/bot/src/routine.ts | Dreaming offered edit, pause and remove like a routine a person made | `Run and Skip > Run starts the tidy after no chat is replying and leaves no pending item when it finishes` |
 | T-0768-M7 | packages/bot/src/index.ts | a routine stored on a bot object was lost instead of moved to a routine object | `a routine's own page > the entries a bot object still carries become routine objects once, and the bot loses the field` |
 | T-0768-M8 | packages/bot/src/routine.ts | a quiet run showed as done in the row | `scheduled prompts > a reply that is exactly the marker records its result and runs no notify command; any other reply notifies` |
+| T-0781-M4 | packages/bot/src/tidy.ts | the tidy launch did not make the instructions read-only | `Run and Skip > Run starts the tidy after no chat is replying and leaves no pending item when it finishes` |
