@@ -12,6 +12,7 @@ import {
   tidyPrompt,
   tidyWork,
   type ScheduleNotice,
+  type TidySourceContext,
   type TidyWork,
 } from "../src/index.ts";
 import { cleanupRoots, rig, writePlugins } from "./support.ts";
@@ -45,8 +46,7 @@ async function setup(
   const notices: ScheduleNotice[] = [];
   const memory = join(r.home, "bot", "default", "memory");
   options.prepare?.(memory);
-  const source = new BotTidySource(
-    {
+  const ctx: TidySourceContext = {
       store: r.store,
       home: r.home,
       settings: { bots },
@@ -57,15 +57,13 @@ async function setup(
       harnessCapabilities: capabilities,
       ...(options.work === undefined ? {} : { work: options.work }),
       ...(options.runs === undefined ? {} : { runs: options.runs }),
-    },
-    {
-      notify: async (notice) => {
-        notices.push(notice);
-      },
-    },
-  );
+  };
+  const notify = async (notice: ScheduleNotice): Promise<void> => {
+    notices.push(notice);
+  };
+  const source = new BotTidySource(ctx, { notify });
   await source.begin();
-  return { r, views, clock, notices, source, memory };
+  return { r, views, clock, notices, source, memory, ctx, notify };
 }
 
 async function chats(r: Awaited<ReturnType<typeof rig>>): Promise<readonly string[]> {
@@ -917,6 +915,10 @@ describe("the instructions after a tidy run", () => {
       });
       await s.source.settled();
       expect(writable(s.memory)).toBe(true);
+      const card = await tidy(s.r);
+      expect(card?.state).toBe("failed");
+      expect(card?.chatId).toBeUndefined();
+      expect(card?.outcome?.summary).toContain("cancelled");
     } finally {
       s.views.close();
     }
@@ -934,6 +936,34 @@ describe("the instructions after a tidy run", () => {
         data: { runId: "run-failed", kind: "failure", text: "The reply failed: quota" },
       });
       await s.source.settled();
+      expect(writable(s.memory)).toBe(true);
+      const card = await tidy(s.r);
+      expect(card?.state).toBe("failed");
+      expect(card?.outcome?.summary).toContain("quota");
+    } finally {
+      s.views.close();
+    }
+  });
+
+  test("serve start ends a running card whose run was cancelled", async () => {
+    const s = await setup(undefined, undefined, undefined, { runs: ended });
+    try {
+      const id = await running(s);
+      s.source.start().stop();
+      await s.r.store.append({ type: RUN_FACT, object: chatRef(id), cause: "test", data: { runId: "run-stopped" } });
+      await s.r.store.append({
+        type: STOP_FACT,
+        object: chatRef(id),
+        cause: "test",
+        data: { runId: "run-stopped", by: { via: "test", id: "person" } },
+      });
+      expect((await tidy(s.r))?.state).toBe("running");
+      // A new source, as after a restart, finds the card still running.
+      const restarted = new BotTidySource(s.ctx, { notify: s.notify });
+      await restarted.begin();
+      await restarted.settled();
+      restarted.start().stop();
+      expect((await tidy(s.r))?.state).toBe("failed");
       expect(writable(s.memory)).toBe(true);
     } finally {
       s.views.close();
