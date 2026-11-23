@@ -45,7 +45,7 @@ export const BRIEF_FACT = "chat.brief";
 /**
  * The fact type of `/private` turned on or off: `on`, and who did it. The chat's
  * `private` field holds the state in force; messages recorded while it is on
- * carry `private: true` (ADR 0026 D26).
+ * carry `private: true` (ADR 0026 D22).
  */
 export const PRIVATE_FACT = "chat.private";
 

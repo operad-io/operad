@@ -74,3 +74,7 @@ It records a `chat.compact` request fact and starts a reply run when none is bei
 
 The command's own line says `compacting the context`. When the run ends, a second line says the context was compacted (from about how many tokens to about how many, and whether the agent wrote to memory first), or that nothing was compacted. An automatic compaction leaves the same kind of line, named `compact (automatic)`, after the reply it followed. Both are `chat.command` facts, so no client changes; they are not messages and are never part of what the agent is given.
 
+
+### D13: `/private` starts and ends a stretch that is not remembered
+
+`chat:private` is a command action offered on an open chat of a bot, `/private`; the same command turns the stretch off. It takes no argument and is refused while a reply is being written. Its line says what the stretch is and is not, and when it ends says the stretch is still in the session's context and suggests `/new` (ADR 0026 D22). It is listed in `/help`, the TUI's `/` list and the Telegram menu from its declaration: "Start or end a stretch that is not remembered: messages stay in the chat but do not enter the bot's memory."

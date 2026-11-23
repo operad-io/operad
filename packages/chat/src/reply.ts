@@ -902,7 +902,7 @@ export function withAttachmentReads(
  * The profile with the bot's memory directories read-only: denied for writing,
  * with a read path through the deny, as a wiki the bot may not write is. It is
  * what keeps a stretch that is not remembered from writing a note, whatever
- * the model is asked (ADR 0026 D26).
+ * the model is asked (ADR 0026 D22).
  */
 export function withMemoryReadOnly(
   access: Readonly<Record<string, JsonValue>>,

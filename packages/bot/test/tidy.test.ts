@@ -299,6 +299,33 @@ describe("dates in the tidy prompt", () => {
   });
 });
 
+describe("Dreaming and a stretch that is not remembered", () => {
+  test("the chats the check reads leave out marked messages, and a chat that holds only those is not read", async () => {
+    const s = await setup();
+    try {
+      const say = async (chat: string, id: string, text: string, extra: Record<string, unknown> = {}) => {
+        await s.r.store.append({
+          type: "chat.message",
+          object: chatRef(chat),
+          cause: "test",
+          data: { id, role: "user", text, from: { via: "cli", id: "p" }, attachments: [], source: { kind: "cli", ref: null }, ...extra },
+        });
+      };
+      await s.r.store.put(CHAT_TYPE, "C-1", { parent: "bot:default", harness: "pi", cwd: "/", access: {}, skills: [], title: "mixed", closed: false, channels: [] }, "test");
+      await s.r.store.put(CHAT_TYPE, "C-2", { parent: "bot:default", harness: "pi", cwd: "/", access: {}, skills: [], title: "hidden", closed: false, channels: [] }, "test");
+      await say("C-1", "a", "keep this");
+      await say("C-1", "b", "hide this", { private: true });
+      await say("C-2", "c", "all hidden", { private: true });
+      const work = await tidyWork(s.r.store, "default", join(s.r.home, "bot", "default"), { home: s.r.home });
+      expect(work.chats.map((chat) => chat.id)).toEqual(["C-1"]);
+      expect(work.chats[0]?.messages.map((message) => message.text)).toEqual(["keep this"]);
+      expect(tidyPrompt("default", work)).not.toContain("hide this");
+    } finally {
+      s.views.close();
+    }
+  });
+});
+
 describe("the link lists in the tidy prompt", () => {
   test("a list with something to look at is in the prompt, and empty lists add nothing", () => {
     const report = {
