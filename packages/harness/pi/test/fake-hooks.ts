@@ -10,6 +10,7 @@
  * - `FAKE_CONTEXT_FILE`: each call's messages are appended to it, one JSON
  *   line per call.
  * - `FAKE_CLOCK_STEP`: every reading of the clock moves on by this many milliseconds.
+ * - `FAKE_PRUNE_CLOCK_STEP`: the same for the clock of the prune decision, which is a separate one. `FAKE_PRUNE_CLOCK_BASE` is its first reading, in epoch ms.
  * - `FAKE_RESOURCES_FILE`: each run's settings and resource loader options are
  *   appended to it, one JSON object per run.
  *
@@ -73,10 +74,19 @@ export function fakeHooks(
     return value;
   };
 
+  const pruneStep = Number(env["FAKE_PRUNE_CLOCK_STEP"] ?? "0");
+  let pruneReading = Number(env["FAKE_PRUNE_CLOCK_BASE"] ?? "1700000000000");
+  const pruneNow = (): number => {
+    const value = pruneReading;
+    pruneReading += pruneStep;
+    return value;
+  };
+
   const resourcesFile = env["FAKE_RESOURCES_FILE"];
   return {
     registerProviders: (runtime) => provider.register(runtime),
     ...(step > 0 ? { now } : {}),
+    ...(pruneStep > 0 || env["FAKE_PRUNE_CLOCK_BASE"] !== undefined ? { pruneNow } : {}),
     ...(resourcesFile === undefined
       ? {}
       : {

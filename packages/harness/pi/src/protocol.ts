@@ -66,6 +66,18 @@ export interface WorkerInput {
   readonly keep?: WorkerKeep | undefined;
   /** Set by a chat reply: compact the context when it nears the window (ADR 0023 D13). */
   readonly compact?: WorkerCompact | undefined;
+  /** Overrides of the defaults for pruning old tool results (T-0767); pruning is on without it. */
+  readonly prune?: WorkerPrune | undefined;
+}
+
+/** What a run may change about pruning; each absent field keeps the default in `prune.ts`. */
+export interface WorkerPrune {
+  /** Seconds since the last model message after which the prompt cache counts as expired. */
+  readonly cacheSecs?: number | undefined;
+  /** Assistant turns, counted from the last, whose tool results are kept. At least 1. */
+  readonly keepTurns?: number | undefined;
+  /** Characters of tool output a prune must free. */
+  readonly minChars?: number | undefined;
 }
 
 /** When and how a reply compacts the session's context. Without it pi never compacts. */
@@ -143,6 +155,28 @@ function readCompact(
   return { ok: true, value: { at, flush: flush === "" ? undefined : flush, now, only } };
 }
 
+function readPrune(
+  value: Readonly<Record<string, unknown>>,
+): { readonly ok: true; readonly value: WorkerPrune | undefined } | { readonly ok: false; readonly message: string } {
+  const found = value["prune"];
+  if (found === undefined) return { ok: true, value: undefined };
+  if (!isRecord(found)) return { ok: false, message: "prune must be an object" };
+  const number = (key: string, least: number): number | undefined | null => {
+    const raw = found[key];
+    if (raw === undefined) return undefined;
+    return typeof raw === "number" && Number.isFinite(raw) && raw >= least ? raw : null;
+  };
+  const cacheSecs = number("cacheSecs", 0);
+  if (cacheSecs === null) return { ok: false, message: "prune.cacheSecs must be a number, 0 or more" };
+  const keepTurns = number("keepTurns", 1);
+  if (keepTurns === null || (keepTurns !== undefined && !Number.isInteger(keepTurns))) {
+    return { ok: false, message: "prune.keepTurns must be a whole number, 1 or more" };
+  }
+  const minChars = number("minChars", 0);
+  if (minChars === null) return { ok: false, message: "prune.minChars must be a number, 0 or more" };
+  return { ok: true, value: { cacheSecs, keepTurns, minChars } };
+}
+
 export type ParsedInput =
   | { readonly ok: true; readonly input: WorkerInput }
   | { readonly ok: false; readonly message: string };
@@ -208,6 +242,9 @@ export function parseInput(value: unknown): ParsedInput {
   const compact = readCompact(value);
   if (!compact.ok) return compact;
 
+  const prune = readPrune(value);
+  if (!prune.ok) return prune;
+
   return {
     ok: true,
     input: {
@@ -232,6 +269,7 @@ export function parseInput(value: unknown): ParsedInput {
       retry: retry.value,
       keep: keep.value,
       compact: compact.value,
+      prune: prune.value,
     },
   };
 }
