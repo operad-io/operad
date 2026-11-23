@@ -666,6 +666,17 @@ are append-only, so the old lines stay as history.
 | T-0772-M1 | packages/chat/src/model.ts | `startsAfterNew` stayed true after a reply, so every later message carried the pointer | `/new > the first message after /new carries a pointer to the earlier record, and only that one` |
 | T-0772-M2 | packages/chat/src/model.ts | `startsAfterNew` ignored `chat.new`, so no message carried the pointer | the same test |
 
+| T-0768-M2 | packages/chat/src/model.ts | a run record took a chat number | `the record of a routine's run > takes an R- id of its own, leaves the chat numbers alone, and is in no chat list` |
+| T-0768-M3 | packages/chat/src/views.ts | a run record showed in the open chat list | `the record of a routine's run > takes an R- id of its own, leaves the chat numbers alone, and is in no chat list` |
+## T-0773 — `/new <goal>` brief
+
+| id | file | mutation | caught by |
+|---|---|---|---|
+| T-0773-M1 | packages/chat/src/model.ts | the brief rode on every later prompt, not only the first reply of the new session | `/new > with a goal > one call builds the brief from the old session; the new session starts with it; the cost is recorded` |
+| T-0773-M2 | packages/chat/src/reply.ts | the brief call's cost was left out of the chat's cost | the same test |
+| T-0773-M3 | packages/chat/src/reply.ts | the brief call did not resume the old session | the same test |
+| T-0773-M4 | packages/chat/src/model.ts | a recorded brief never cleared the due brief, so every round called again | the same test and `a message sent before the round gets the brief in the same round, once` |
+
 ## T-0766 — pi compacts a long chat
 
 | id | file | mutation | failing test |

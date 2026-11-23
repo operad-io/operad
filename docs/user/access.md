@@ -79,7 +79,7 @@ ask at `full`; they still apply at `plan`, `ask` and `edits`. An outward-write
 question does not apply at `full`; in a background run at `plan`, `ask` or `edits` it still asks.
 A chat starts at `plan` on a repository and at the bot's `accessLevel` setting
 on a bot (`ask` unless set; `full` asks nothing but the deny rules), except a
-chat a scheduled prompt opens, which starts at `full`; `/access <level>` changes it; see
+run of a routine, which starts at `full`; `/access <level>` changes it; see
 [Chats and bots](chats-and-bots.md#access-level).
 
 `readPaths` lets a read reach a directory under an ancestor in `denyPaths`. It

@@ -1,14 +1,14 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import { personStarted } from "@operad-io/access-match";
-import { CHAT_TYPE, ENTRY_FACT, allMessages, promptFor, chatRef, RUN_FACT } from "@operad-io/chat";
+import { CHAT_TYPE, createChat, ENTRY_FACT, allMessages, promptFor, chatRef, RUN_FACT } from "@operad-io/chat";
 import { createViews, type ClientApi, type RunControl, type TriggerEvent } from "@operad-io/engine";
 import {
   BotScheduleSource,
   PROPOSAL_TYPE,
   nextRun,
   proposalData,
-  scheduledPrompts,
+  routinesOf,
   type ScheduleNotice,
   type ScheduledPrompt,
 } from "../src/index.ts";
@@ -17,11 +17,12 @@ import {
   SCHEDULE_PREAMBLE,
   markdownCode,
   scheduledInstruction,
-  scheduledMarkdown,
+  withRun,
   SCHEDULE_QUIET_MARKER,
   SCHEDULE_RECENT_COUNT,
   SCHEDULE_RECENT_MAX,
 } from "../src/schedule.ts";
+import { closeOldScheduledChats, routineMarkdown } from "../src/routine.ts";
 import { cleanupRoots, rig } from "./support.ts";
 
 process.env.TZ = "UTC";
@@ -127,8 +128,14 @@ describe("scheduled prompts", () => {
       expect(chat?.data.accessLevel).toBe("full");
       expect(chat?.data.accessDefault).toBe("full");
       expect(chat?.data.scheduled).toEqual({ bot: "default", entry: "Morning" });
+      // A run is not a chat: its id is not a chat's, and no chat list shows it.
+      expect(id.startsWith("R-")).toBe(true);
+      expect(chat?.data.run).toBe(true);
       const chatRow = (await views.get(`chat:${id}`)).row;
-      expect(chatRow.data).toMatchObject({ scheduled: { bot: "default", entry: "Morning" } });
+      expect(chatRow.state).toBe("run");
+      for (const filter of ["open", "closed"]) {
+        expect((await views.list("chat", { filter })).rows.map((row) => row.id)).not.toContain(id);
+      }
       const messages = allMessages(r.store, id);
       expect(messages.map((message) => message.text)).toEqual(["Collect the news."]);
       expect(messages[0]?.instruction).toBe(SCHEDULE_PREAMBLE);
@@ -140,29 +147,36 @@ describe("scheduled prompts", () => {
       // Answer the scheduled prompt as the fake agent does.
       await r.reply(id);
       await source.settled();
-      expect(notices).toEqual([{ chatId: id, title: "Morning (2026-01-01)", summary: "ok" }]);
-      const bot = await r.store.get("bot", "default");
-      const entry = scheduledPrompts(bot?.data ?? {}).find((item) => item.name === "Morning");
-      expect(entry?.last).toMatchObject({ chatId: id, result: "ok", notified: true });
-      const botRow = (await views.list("bot")).rows.find((row) => row.id === "default");
-      const rowData = botRow?.data as
-        | { readonly scheduled?: readonly Readonly<Record<string, unknown>>[] }
-        | undefined;
-      expect(rowData?.scheduled?.[0]).toMatchObject({ lastResult: "ok", lastChatId: id });
-      const page = await views.section("bot:default", "bot", undefined, { full: true });
-      expect(page.markdown).toContain("Scheduled:");
-      expect(page.markdown).toContain("Morning");
-      expect(page.markdown).toContain(`chat ${id}: ok`);
+      expect(notices).toEqual([{ routineId: "RT-0001", runId: id, title: "Morning", summary: "ok" }]);
+      const entry = (await routinesOf(r.store, "default")).find((item) => item.name === "Morning");
+      expect(entry?.last).toMatchObject({ runId: id, result: "ok", notified: true });
+      expect(entry?.runs).toEqual([{ id, at: Date.parse("2026-01-01T00:01:10Z"), status: "done", result: "ok" }]);
+      // The routine is a row of its own, under its bot, with its last result.
+      const row = (await views.list("bot-routine")).rows.find((item) => item.title === "Morning");
+      expect(row).toMatchObject({ id: "RT-0001", parent: "bot:default", note: "default", state: "open" });
+      expect(row?.data).toMatchObject({ bot: "default", lastResult: "done", lastSummary: "ok", builtin: false });
+      // Its page lists the run as history, and the run's section shows the process and result.
+      const detail = await views.get("bot-routine:RT-0001");
+      expect(detail.sections.map((section) => section.id)).toEqual(["routine", `run-${id}`, "history"]);
+      const page = await views.section("bot-routine:RT-0001", "routine", undefined, { full: true });
+      expect(page.markdown).toContain("Collect the news.");
+      expect(page.markdown).not.toContain("chat");
+      const run = await views.section("bot-routine:RT-0001", `run-${id}`, undefined, { full: true });
+      expect(run.markdown).toContain("ok");
+      const botPage = await views.section("bot:default", "bot", undefined, { full: true });
+      expect(botPage.markdown).toContain("Routines:");
+      expect(botPage.markdown).toContain("Morning");
     } finally {
       views.close();
     }
   });
 
   test("the bot page shows a cron as code and a person's names as text, not Markdown", () => {
-    const lines = scheduledMarkdown(
+    const lines = routineMarkdown(
       [{ name: "Morning *briefing*", schedule: "33 18 * * *", prompt: "Go.", paused: false }],
       Date.parse("2026-01-01T00:00:00Z"),
     );
+    expect(lines[0]).toBe("Routines:");
     expect(lines[1]).toContain("(`33 18 * * *`, next ");
     expect(lines[1]).toContain("Morning \\*briefing\\*");
     expect(markdownCode("a`b")).toBe("``a`b``");
@@ -288,8 +302,8 @@ describe("scheduled prompts", () => {
       await source.settled();
       expect(notices).toHaveLength(1);
       const bot = await r.store.get("bot", "default");
-      const entry = scheduledPrompts(bot?.data ?? {}).find((item) => item.name === "Edited");
-      expect(entry?.last).toMatchObject({ chatId: id, result: "ok", notified: true });
+      const entry = (await routinesOf(r.store, "default")).find((item) => item.name === "Edited");
+      expect(entry?.last).toMatchObject({ runId: id, result: "ok", notified: true });
     } finally {
       views.close();
     }
@@ -366,7 +380,7 @@ describe("scheduled prompts", () => {
       effort: "",
     });
     expect(
-      scheduledPrompts((await r.store.get("bot", "default"))?.data ?? {}),
+      (await routinesOf(r.store, "default")),
     ).toEqual([{ name: "Morning", schedule: "0 8 * * *", prompt: "At eight.", paused: false }]);
   });
 
@@ -439,14 +453,16 @@ describe("scheduled prompts", () => {
       await source.begin();
       const quiet = await fireAndAnswer(r, source, clock, "2026-01-01T00:01:10Z", ` ${SCHEDULE_QUIET_MARKER}\n`, 1);
       expect(notices).toEqual([]);
-      let entry = scheduledPrompts((await r.store.get("bot", "default"))?.data ?? {})[0];
-      expect(entry?.last).toMatchObject({ chatId: quiet.id, result: "Nothing to report.", notified: true });
+      let entry = (await routinesOf(r.store, "default"))[0];
+      expect(entry?.runs).toMatchObject([{ id: quiet.id, status: "quiet", result: "Nothing to report." }]);
+      expect((await views.list("bot-routine")).rows[0]?.data).toMatchObject({ lastResult: "nothing to report" });
+      expect(entry?.last).toMatchObject({ runId: quiet.id, result: "Nothing to report.", notified: true });
 
       // The marker inside a longer reply is not a quiet ending.
       const loud = await fireAndAnswer(r, source, clock, "2026-01-01T00:02:10Z", `${SCHEDULE_QUIET_MARKER} but one thing`, 2);
-      expect(notices.map((notice) => notice.chatId)).toEqual([loud.id]);
-      entry = scheduledPrompts((await r.store.get("bot", "default"))?.data ?? {})[0];
-      expect(entry?.last).toMatchObject({ chatId: loud.id, notified: true });
+      expect(notices.map((notice) => notice.runId)).toEqual([loud.id]);
+      entry = (await routinesOf(r.store, "default"))[0];
+      expect(entry?.last).toMatchObject({ runId: loud.id, notified: true });
     } finally {
       views.close();
     }
@@ -479,6 +495,9 @@ describe("scheduled prompts", () => {
       });
       await source.settled();
       expect(notices.map((notice) => notice.summary)).toEqual(["agent crashed"]);
+      // The run is in the history as failed, and the row says so.
+      expect((await routinesOf(r.store, "default"))[0]?.runs).toMatchObject([{ id, status: "failed", result: "agent crashed" }]);
+      expect((await views.list("bot-routine")).rows[0]?.data).toMatchObject({ lastResult: "failed" });
     } finally {
       views.close();
     }
@@ -556,9 +575,9 @@ describe("scheduled prompts", () => {
       expect(fifth.prompt).toContain(SCHEDULE_PREAMBLE);
       // Another entry's results stay out of this prompt.
       const bot = await r.store.get("bot", "default");
-      const other = scheduledPrompts(bot?.data ?? {}).find((item) => item.name === "Other");
+      const other = (await routinesOf(r.store, "default")).find((item) => item.name === "Other");
       expect(other?.recent).toBeUndefined();
-      const watch = scheduledPrompts(bot?.data ?? {}).find((item) => item.name === "Watch");
+      const watch = (await routinesOf(r.store, "default")).find((item) => item.name === "Watch");
       expect(watch?.recent).toHaveLength(SCHEDULE_RECENT_COUNT);
     } finally {
       views.close();
@@ -576,7 +595,7 @@ describe("scheduled prompts", () => {
       await source.begin();
       const readEntry = async (): Promise<ScheduledPrompt> => {
         const bot = await r.store.get("bot", "default");
-        const found = scheduledPrompts(bot?.data ?? {}).find((item) => item.name === "Morning");
+        const found = (await routinesOf(r.store, "default")).find((item) => item.name === "Morning");
         if (found === undefined) throw new Error("no entry");
         return found;
       };
@@ -593,7 +612,7 @@ describe("scheduled prompts", () => {
       expect(notices.map((notice) => notice.summary)).toEqual(["Three items."]);
       const after = await readEntry();
       expect(after.runNow).toBeUndefined();
-      expect(after.last?.chatId).toBe(first.id);
+      expect(after.last?.runId).toBe(first.id);
       expect(after.last?.result).toBe("Three items.");
       expect(after.last?.plannedAt).toBe(before.last?.plannedAt ?? -1);
       expect(after.recent?.map((item) => item.result)).toEqual(["Three items."]);
@@ -627,7 +646,7 @@ describe("scheduled prompts", () => {
       await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "At eight." });
       await source.begin();
       await expect(r.act("bot", "default", "bot/schedule-run-now", { name: "Nope" })).rejects.toThrow(
-        'has no scheduled prompt "Nope"',
+        'has no routine "Nope"',
       );
       await source.poll();
       expect(await chats(r)).toHaveLength(0);
@@ -678,7 +697,7 @@ describe("scheduled prompts", () => {
       const [timedChat] = await chats(r);
       if (timedChat === undefined) throw new Error("no timed chat");
       await expect(r.act("bot", "default", "bot/schedule-run-now", { name: "Morning" })).rejects.toThrow(
-        "still replying to its previous firing",
+        "still running its previous run",
       );
       await source.poll();
       expect(await chats(r)).toHaveLength(1);
@@ -710,7 +729,7 @@ describe("scheduled prompts", () => {
       const restarted = sourceFor(r, views as unknown as ClientApi, clock, notices);
       await restarted.begin();
       await answerChat(r, restarted, chat, "After restart.", 1);
-      const entry = scheduledPrompts((await r.store.get("bot", "default"))?.data ?? {})[0];
+      const entry = (await routinesOf(r.store, "default"))[0];
       expect(entry?.last).toMatchObject({ manual: true, result: "After restart." });
       expect(entry?.recent).toEqual([{ plannedAt: Date.parse("2026-01-01T07:10:10Z"), result: "After restart." }]);
       // The first source is still alive in this test, so it may notify too.
@@ -744,7 +763,7 @@ describe("scheduled prompts", () => {
     }
   });
 
-  test("a bot row carries its scheduled prompts as structured data", async () => {
+  test("a routine row carries its schedule, next run and last result as structured data", async () => {
     const r = await rig();
     const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });
     try {
@@ -756,30 +775,22 @@ describe("scheduled prompts", () => {
         effort: "claude-high",
       });
       await add(r, { name: "Paused", schedule: "0 9 * * *", prompt: "Later.", paused: true });
-      const row = (await views.list("bot")).rows.find((entry) => entry.id === "default");
-      const data = row?.data as
-        | { readonly scheduled?: readonly Readonly<Record<string, unknown>>[] }
-        | undefined;
-      expect(data?.scheduled).toHaveLength(2);
-      expect(data?.scheduled?.[0]).toMatchObject({
-        name: "Morning",
+      const rows = (await views.list("bot-routine")).rows;
+      expect(rows.map((row) => row.title)).toEqual(["Morning", "Paused"]);
+      expect(rows[0]?.data).toMatchObject({
+        bot: "default",
         schedule: "0 8 * * *",
         prompt: "Digest.",
         model: "claude-a",
         effort: "claude-high",
         paused: false,
         lastResult: null,
-        lastChatId: null,
       });
-      expect(typeof data?.scheduled?.[0]?.nextRun).toBe("string");
-      expect(data?.scheduled?.[1]).toMatchObject({
-        name: "Paused",
-        model: null,
-        effort: null,
-        paused: true,
-        nextRun: null,
-      });
-      expect((await views.get("bot:default")).row.data).toEqual(row?.data);
+      expect(typeof (rows[0]?.data as { nextRun?: unknown }).nextRun).toBe("string");
+      expect(rows[1]).toMatchObject({ state: "paused", data: { paused: true, nextRun: null, model: null, effort: null } });
+      // The bot row no longer carries them.
+      const botRow = (await views.list("bot")).rows.find((entry) => entry.id === "default");
+      expect(botRow?.data).not.toHaveProperty("scheduled");
     } finally {
       views.close();
     }
@@ -802,7 +813,7 @@ describe("scheduled prompts", () => {
     }
   });
 
-  test("the view shows next run time and the last result and chat id; edit, pause, resume and remove are actions", async () => {
+  test("the view shows next run time and the last result; edit, pause, resume and remove are actions", async () => {
     const r = await rig();
     const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });
     try {
@@ -816,16 +827,20 @@ describe("scheduled prompts", () => {
         "bot:schedule-remove",
       ]));
       await r.act("bot", "default", "bot/schedule-pause", { name: "Morning" });
-      let entry = scheduledPrompts((await r.store.get("bot", "default"))?.data ?? {})[0];
+      let entry = (await routinesOf(r.store, "default"))[0];
       expect(entry?.paused).toBe(true);
       await r.act("bot", "default", "bot/schedule-resume", { name: "Morning" });
-      entry = scheduledPrompts((await r.store.get("bot", "default"))?.data ?? {})[0];
+      entry = (await routinesOf(r.store, "default"))[0];
       expect(entry?.paused).toBe(false);
       if (entry === undefined) throw new Error("no entry");
       expect(nextRun(entry, Date.parse("2026-01-01T07:00:10Z"))).toBe(Date.parse("2026-01-01T08:00:00Z"));
       const page = await views.section("bot:default", "bot", undefined, { full: true });
       expect(page.markdown).toContain("Morning (`0 8 * * *`");
       expect(page.markdown).toContain("next ");
+      // The routine's own page has the same actions, without the name.
+      const own = (await views.get("bot-routine:RT-0001")).actions.map((action) => action.name);
+      expect(own).toEqual(expect.arrayContaining(["bot:edit", "bot:pause", "bot:run-now", "bot:remove"]));
+      expect(own).not.toContain("bot:resume");
     } finally {
       views.close();
     }
@@ -834,7 +849,7 @@ describe("scheduled prompts", () => {
 
 describe("schedules a chat proposes", () => {
   const entries = async (r: Awaited<ReturnType<typeof rig>>): Promise<readonly ScheduledPrompt[]> =>
-    scheduledPrompts((await r.store.get("bot", "default"))?.data ?? {});
+    (await routinesOf(r.store, "default"));
 
   test("a bot chat starts with the line that a schedule is a proposal", async () => {
     const r = await rig();
@@ -864,7 +879,7 @@ describe("schedules a chat proposes", () => {
       "--effort",
       "claude-low",
     ]);
-    expect(String(said)).toContain('proposed scheduled prompt "Morning"');
+    expect(String(said)).toContain('proposed routine "Morning"');
     expect(await entries(r)).toEqual([]);
 
     const items = await r.registry.standing();
@@ -886,7 +901,7 @@ describe("schedules a chat proposes", () => {
       const review = await views.section(`${PROPOSAL_TYPE}:${id}`, "review", undefined, {
         full: true,
       });
-      expect(review.markdown).toContain("Scheduled prompt Morning");
+      expect(review.markdown).toContain("Routine Morning");
       expect(review.markdown).toContain("every morning at 8");
       expect(review.markdown).toContain("0 8 * * *");
       expect(review.markdown).toContain("Collect the news.");
@@ -1070,7 +1085,7 @@ describe("schedules a chat proposes", () => {
 
 describe("schedules a chat refuses to propose", () => {
   const entries = async (r: Awaited<ReturnType<typeof rig>>): Promise<readonly ScheduledPrompt[]> =>
-    scheduledPrompts((await r.store.get("bot", "default"))?.data ?? {});
+    (await routinesOf(r.store, "default"));
 
   async function unchanged(r: Awaited<ReturnType<typeof rig>>): Promise<void> {
     expect(await r.registry.standing()).toEqual([]);
@@ -1094,7 +1109,7 @@ describe("schedules a chat refuses to propose", () => {
         "--prompt",
         "At nine.",
       ]),
-    ).rejects.toThrow('bot default already has a scheduled prompt "Morning"');
+    ).rejects.toThrow('bot default already has a routine "Morning"');
     await unchanged(r);
   });
 
@@ -1111,7 +1126,7 @@ describe("schedules a chat refuses to propose", () => {
         "--words",
         "every evening at 9",
       ]),
-    ).rejects.toThrow('bot default has no scheduled prompt "Evening"');
+    ).rejects.toThrow('bot default has no routine "Evening"');
     await unchanged(r);
   });
 
@@ -1126,7 +1141,7 @@ describe("schedules a chat refuses to propose", () => {
         "--words",
         "every evening at 9",
       ]),
-    ).rejects.toThrow('bot default has no scheduled prompt "Evening"');
+    ).rejects.toThrow('bot default has no routine "Evening"');
     await unchanged(r);
   });
 
@@ -1177,7 +1192,7 @@ describe("schedules a chat refuses to propose", () => {
         "--words",
         "every morning at 8",
       ]),
-    ).rejects.toThrow("editing a scheduled prompt needs a field to change");
+    ).rejects.toThrow("editing a routine needs a field to change");
     await unchanged(r);
   });
 
@@ -1194,7 +1209,101 @@ describe("schedules a chat refuses to propose", () => {
         "--prompt",
         "At nine.",
       ]),
-    ).rejects.toThrow("removing a scheduled prompt takes only its name");
+    ).rejects.toThrow("removing a routine takes only its name");
     await unchanged(r);
+  });
+});
+
+describe("a routine's own page", () => {
+  test("edit, pause, resume, run now and remove work from the routine and need no name", async () => {
+    const r = await rig();
+    try {
+      await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "Digest." });
+      await r.act("bot-routine", "RT-0001", "bot/edit", { schedule: "0 9 * * *", prompt: "Longer digest." });
+      expect((await routinesOf(r.store, "default"))[0]).toMatchObject({ schedule: "0 9 * * *", prompt: "Longer digest." });
+      await r.act("bot-routine", "RT-0001", "bot/pause", {});
+      expect((await routinesOf(r.store, "default"))[0]?.paused).toBe(true);
+      await r.act("bot-routine", "RT-0001", "bot/resume", {});
+      expect((await routinesOf(r.store, "default"))[0]?.paused).toBe(false);
+      await r.act("bot-routine", "RT-0001", "bot/run-now", {});
+      expect((await routinesOf(r.store, "default"))[0]?.runNow).toBeNumber();
+      await r.act("bot-routine", "RT-0001", "bot/remove", {});
+      expect(await routinesOf(r.store, "default")).toEqual([]);
+      // The object stays, marked removed, in the removed filter only.
+      expect((await r.store.get("bot-routine", "RT-0001"))?.data.removed).toBe(true);
+      // A name can be used again.
+      await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "Again." });
+      expect((await routinesOf(r.store, "default"))[0]?.prompt).toBe("Again.");
+    } finally {
+      // nothing to close
+    }
+  });
+
+  test("the entries a bot object still carries become routine objects once, and the bot loses the field", async () => {
+    const r = await rig();
+    const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });
+    try {
+      const bot = await r.store.get("bot", "default");
+      if (bot === undefined) throw new Error("no bot");
+      await r.store.put(
+        "bot",
+        "default",
+        {
+          ...bot.data,
+          scheduled: [
+            { name: "Old", schedule: "0 8 * * *", prompt: "Old prompt.", paused: false, last: { plannedAt: 1, schedule: "0 8 * * *", chatId: "C-0003", result: "fine" } },
+          ],
+        },
+        "test",
+      );
+      await views.list("bot");
+      await views.list("bot");
+      const entries = await routinesOf(r.store, "default");
+      expect(entries).toHaveLength(1);
+      expect(entries[0]).toMatchObject({ name: "Old", prompt: "Old prompt.", last: { runId: "C-0003", result: "fine" } });
+      expect((await r.store.get("bot", "default"))?.data).not.toHaveProperty("scheduled");
+    } finally {
+      views.close();
+    }
+  });
+
+  test("a run older than 30 days leaves the history when the next run is recorded", () => {
+    const now = Date.parse("2026-03-01T00:00:00Z");
+    const day = 24 * 60 * 60_000;
+    const runs = withRun(
+      [
+        { id: "R-0001", at: now - 31 * day, status: "done" },
+        { id: "R-0002", at: now - 29 * day, status: "done" },
+      ],
+      { id: "R-0003", at: now, status: "running" },
+      now,
+    );
+    expect(runs.map((run) => run.id)).toEqual(["R-0002", "R-0003"]);
+    // A run recorded again by id replaces itself.
+    expect(withRun(runs, { id: "R-0003", at: now, status: "done" }, now).map((run) => run.status)).toEqual(["done", "done"]);
+  });
+
+  test("chats the old scheduled prompts opened are closed once; runs and other chats are left alone", async () => {
+    const r = await rig();
+    const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });
+    try {
+      const old = await r.open("default");
+      const plain = await r.open("default");
+      const oldChat = await r.store.get(CHAT_TYPE, old);
+      if (oldChat === undefined) throw new Error("no chat");
+      await r.store.put(CHAT_TYPE, old, { ...oldChat.data, scheduled: { bot: "default", entry: "Morning" } }, "test");
+      const record = await createChat(
+        r.store,
+        { harness: "claude", cwd: r.root, title: "Morning (2026-01-01)", run: true, scheduled: { bot: "default", entry: "Morning" } },
+        "test",
+      );
+      expect(await closeOldScheduledChats(r.store, views as unknown as ClientApi)).toBe(1);
+      expect((await r.store.get(CHAT_TYPE, record))?.data.closed).not.toBe(true);
+      expect((await r.store.get(CHAT_TYPE, old))?.data.closed).toBe(true);
+      expect((await r.store.get(CHAT_TYPE, plain))?.data.closed).not.toBe(true);
+      expect(await closeOldScheduledChats(r.store, views as unknown as ClientApi)).toBe(0);
+    } finally {
+      views.close();
+    }
   });
 });

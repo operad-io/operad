@@ -7,7 +7,7 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { AskTimeoutError, type AgentCompaction, attachmentDir, isRecord, messageOf, modelIds, safeFileName, type AskOutcome, type AskRecheck, type AskRequest, type ChoiceInfo, type CostQuality, type JsonValue, type PluginStepResult, type RunObject, type StepAsker, type StepContext, type UsageTokens } from "@operad-io/engine";
+import { AskTimeoutError, type AgentCompaction, attachmentDir, isRecord, messageOf, modelIds, safeFileName, type AskOutcome, type AskRecheck, type AskRequest, type ChoiceInfo, type CostQuality, type JsonValue, type PluginFact, type PluginStepResult, type RunObject, type StepAsker, type StepContext, type UsageTokens } from "@operad-io/engine";
 import { isAccessLevel, match, MCP_TOOL, withAccessLevel, writeLiveAccess, type AccessLevel } from "@operad-io/access-match";
 import {
   appendAlwaysAllow,
@@ -31,6 +31,9 @@ import {
   answeredOfFact,
   attachmentsOf,
   ATTEMPT_END_FACT,
+  BRIEF_FACT,
+  briefDue,
+  briefToCarry,
   attemptEndedOfFact,
   chatFacts,
   COMMAND_FACT,
@@ -94,7 +97,8 @@ async function syncChat(
   let costMissing = false;
   let tokens: UsageTokens | undefined;
   let tokensMissing = false;
-  for (const message of readChat(ctx.store, id).messages) {
+  const recorded = readChat(ctx.store, id);
+  for (const message of recorded.messages) {
     if (message.role !== "assistant") continue;
     if (message.model !== undefined) next.lastModel = message.model;
     if (message.costMicros === undefined) costMissing = true;
@@ -112,6 +116,25 @@ async function syncChat(
       };
     }
   }
+  // The call that built a brief for a new session is paid like a reply.
+  for (const fact of recorded.facts) {
+    if (fact.type !== BRIEF_FACT || fact.data.called !== true) continue;
+    const usage = usageOf(fact.data.usage);
+    if (usage.costMicros === undefined) costMissing = true;
+    else {
+      micros = (micros ?? 0) + usage.costMicros;
+      quality = worseQuality(quality, usage.costQuality);
+    }
+    if (usage.tokens === undefined) tokensMissing = true;
+    else {
+      tokens = {
+        input: (tokens?.input ?? 0) + usage.tokens.input,
+        output: (tokens?.output ?? 0) + usage.tokens.output,
+        cacheread: (tokens?.cacheread ?? 0) + usage.tokens.cacheread,
+        cachewrite: (tokens?.cachewrite ?? 0) + usage.tokens.cachewrite,
+      };
+    }
+  }
   if (micros !== undefined) {
     next.costMicros = micros;
     next.costQuality = costMissing ? worseQuality(quality, "incomplete") : quality;
@@ -122,6 +145,128 @@ async function syncChat(
   if (JSON.stringify(next) !== JSON.stringify(fresh.data)) {
     await ctx.store.put(CHAT_TYPE, id, next, "step:chat/reply");
   }
+}
+
+/** What the agent is asked when a new session needs a brief. */
+const BRIEF_PROMPT = [
+  "Write a short brief of this conversation for a new session that continues the work toward the goal below.",
+  "Cover: what was decided, the files touched, the open questions, and the goal.",
+  "Plain text, at most 300 words. Do not use any tool and do not start the work; answer with the brief only.",
+].join("\n");
+
+/**
+ * Builds the brief a `/new <goal>` left due: one agent call that resumes the old
+ * session and writes the brief, recorded with its cost like a reply's. A call
+ * that cannot be made, or fails, leaves a brief with the goal alone and the
+ * reason; the new session is never held back by it.
+ */
+async function makeBrief(
+  ctx: StepContext,
+  object: RunObject,
+  chat: ChatData,
+  runStep: NonNullable<StepContext["runStep"]>,
+  facts: readonly PluginFact[],
+): Promise<void> {
+  const due = briefDue(facts);
+  if (due === undefined) return;
+  const callId = `brief:${due.sequence}`;
+  const startedAt = Date.now();
+  let text = "";
+  let failedWhy: string | undefined;
+  let usage: ReturnType<typeof usageOf> = {};
+  const called = due.from !== undefined;
+  if (due.from !== undefined) {
+    try {
+      const live = await liveSettings(ctx, chat, object, runStep);
+      const use = `${chat.harness}/agent`;
+      if ("result" in live) failedWhy = failureOf(live).message;
+      else if (ctx.stepLoaded !== undefined && !ctx.stepLoaded(use)) {
+        failedWhy = `the agent "${chat.harness}" is not loaded`;
+      } else {
+        const efforts = ctx.harnessEfforts?.(chat.harness);
+        const asked = chosenEffort(chat);
+        const effort = asked !== undefined && efforts?.list.includes(asked) === true ? asked : undefined;
+        const effortFlag = efforts?.flag ?? (chat.harness === "pi" ? "--thinking" : "--effort");
+        const outcome = await runStep(
+          use,
+          {
+            prompt: `${BRIEF_PROMPT}\n\nGoal: ${due.goal}`,
+            cwd: live.cwd,
+            ...(chat.model === undefined && effort === undefined
+              ? {}
+              : {
+                  args: [
+                    ...(chat.model === undefined ? [] : ["--model", chat.model]),
+                    ...(effort === undefined ? [] : [effortFlag, effort]),
+                  ],
+                }),
+            ...(effort === undefined ? {} : { effort }),
+            operadTools: { home: ctx.home },
+            resumeSession: due.from,
+          },
+          {
+            // Its own log: the reply's tail and entries read the run's log.
+            runId: `${ctx.runId}.brief`,
+            cwd: live.cwd,
+            object,
+            params: ctx.params,
+            access: withAccessLevel(live.access, "plan"),
+            ...(ctx.trigger === undefined ? {} : { trigger: ctx.trigger }),
+            signal: ctx.signal,
+            asker: contextAsker(ctx),
+          },
+        );
+        const data = isRecord(outcome.data) ? outcome.data : {};
+        usage = usageOf(data.usage);
+        const said = typeof data.finalMessage === "string" ? data.finalMessage.trim() : "";
+        if (outcome.result === "done" && said.length > 0) text = maskSecrets(said, await secretValues(ctx));
+        else failedWhy = outcome.result === "done" ? "the agent gave no brief" : failureOf(outcome).message;
+      }
+    } catch (error) {
+      failedWhy = messageOf(error);
+    }
+  }
+  const secrets = await secretValues(ctx);
+  const reason = failedWhy === undefined ? undefined : replyFailureLine(failedWhy, secrets);
+  // One line in the chat, the same kind as a tool call: it opens to the brief.
+  const known = readChat(ctx.store, object.id).entries.some((entry) => entry.callId === callId);
+  if (!known) {
+    const data = await entryData(
+      ctx,
+      object.id,
+      ctx.runId,
+      {
+        kind: "tool",
+        callId,
+        toolName: "/new",
+        input: due.goal,
+        result: reason === undefined ? "done" : "failed",
+        at: startedAt,
+        durationMs: Date.now() - startedAt,
+        output: text.length === 0 ? null : text,
+        outputTruncated: false,
+        error: reason ?? null,
+      },
+      secrets,
+    );
+    await ctx.facts.append({ type: ENTRY_FACT, object: chatRef(object.id), data });
+  }
+  await ctx.facts.append({
+    type: BRIEF_FACT,
+    object: chatRef(object.id),
+    data: {
+      goal: maskSecrets(due.goal, secrets),
+      text,
+      called,
+      ...(reason === undefined ? {} : { failed: reason }),
+      usage: {
+        ...(usage.model === undefined ? {} : { model: usage.model }),
+        ...(usage.costMicros === undefined ? {} : { costMicros: usage.costMicros, costQuality: usage.costQuality ?? "estimated" }),
+        ...(usage.tokens === undefined ? {} : { tokens: { ...usage.tokens } }),
+      },
+    },
+  });
+  await syncChat(ctx, object.id, undefined);
 }
 
 /** The question a read-only chat asks when the call is not known. */
@@ -1341,7 +1486,13 @@ async function replyOnce(
   const stored = await ctx.store.get(CHAT_TYPE, object.id);
   if (stored === undefined) return failed("object", `there is no chat ${object.id}`);
   let chat = chatData(stored.data);
-  const read = readChat(ctx.store, object.id);
+  let read = readChat(ctx.store, object.id);
+  if (briefDue(read.facts) !== undefined) {
+    if (ctx.runStep === undefined) return failedReply(ctx, object.id, "host", "the agent could not be started", undefined);
+    await makeBrief(ctx, object, chat, ctx.runStep, read.facts);
+    chat = chatData((await ctx.store.get(CHAT_TYPE, object.id))?.data ?? stored.data);
+    read = readChat(ctx.store, object.id);
+  }
   let messages = read.messages;
   let pending = unanswered(messages, read.facts);
   const compactAsked = chat.harness === "pi" && compactRequested(read.facts);
@@ -1628,6 +1779,7 @@ async function replyOnce(
   const carried =
     live.notes === undefined ? [] : notesToAttach(noteContents, chat.noteHashes, session);
   const noteText = carried.length === 0 ? undefined : noteBlock(carried);
+  const briefText = briefToCarry(messages, (locked as ChatRead | undefined)?.facts ?? read.facts);
   const messagePrompt = promptFor(
     pending.map((message) => ({ ...message, text: skillMessage(message.text, skills, loadsSkills) })),
     new Set(images.map((image) => image.path)),
@@ -1636,7 +1788,7 @@ async function replyOnce(
   const pointer = startsAfterNew(read.facts, messages) ? earlierRecordPointer(object.id) : undefined;
   const prompt = compactOnly
     ? "compact"
-    : [context, noteText, pointer, messagePrompt]
+    : [context, noteText, pointer, briefText, messagePrompt]
         .filter((part): part is string => part !== undefined && part.length > 0)
         .join("\n\n");
   if (compactAsked) {

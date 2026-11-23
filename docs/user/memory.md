@@ -101,7 +101,7 @@ automatic run, it sends one line through the configured
 [`notify` command](notifications.md). The line names the bot, the files and
 lines it changed (or that memory did not change), the cost, and that only
 additions were kept when a rewrite dropped too much of the index. The bot's
-reply is not in the line; the full result stays on the memory tidy's page. A
+reply is not in the line; the full result stays on Dreaming's page. A
 failed tidy keeps one pending item, with Run and Skip, and one short line saying
 why it failed.
 

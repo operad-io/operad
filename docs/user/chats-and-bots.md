@@ -28,7 +28,7 @@ The plugins are deliberately cautious. A chat on a repository is read-only until
 4. While the agent works, the `transcript` section shows the messages, tool calls and the unfinished text of the current reply.
 5. Each tool call is checked against the chat's access profile with the chat's access level composed into it (see [Access](access.md) and [Access level](#access-level)). For a bot chat the profile is the default profile plus the bot's own `access` settings; the bot's settings are read again at every reply (see [Bots](#bots)).
 6. A chat on a repository starts in the main clone as read-only. A write, or a command that is not known to only read, becomes the worktree question, which offers Allow once, Always allow, Deny and opening a worktree; the worktree offer has `dev` open `work/chat-<id>`, ends the asking reply and answers the same message again there, so the agent continues with write access.
-7. When a bot proposes a skill, a settings change, an MCP server or a scheduled prompt (`operad bot skill`, `bot setting`, `bot mcp`, `bot schedule`), a `bot-proposal` object waits in Pending. `bot:approve` applies it and `bot:reject` drops it (see [Bot objects and proposals](#bot-objects-and-proposals)).
+7. When a bot proposes a skill, a settings change, an MCP server or a routine (`operad bot skill`, `bot setting`, `bot mcp`, `bot schedule`), a `bot-proposal` object waits in Pending. `bot:approve` applies it and `bot:reject` drops it (see [Bot objects and proposals](#bot-objects-and-proposals)).
 8. `chat:close` records `chat.closed`; the transcript stays readable and `chat:send` is refused.
 
 ## Chats
@@ -45,8 +45,8 @@ operad show C-0001 --section transcript
 `--agent` is left out): they can stop a tool call before it starts, which a
 read-only chat needs. `radian` is refused there as an agent and stays for bot
 chats. A repository chat starts at `plan`; a bot chat starts at the bot's
-`bot.bots.<name>.accessLevel` (`ask` unless set), except a chat a scheduled
-prompt opens, which starts at `full`. The
+`bot.bots.<name>.accessLevel` (`ask` unless set), except a run of a routine,
+which starts at `full`. The
 access level is changed in the chat with `/access <level>` (see [Access
 level](#access-level)). `bot:chat` offers every loaded agent; its default is
 the bot's `harness`,
@@ -78,7 +78,7 @@ each of them. A message a run has taken never changes, and both actions refuse
 it with a line naming the message.
 
 A line that starts with `/` and names one of the chat's actions runs that action
-instead of going to the agent: `/model sonnet`, `/effort high`, `/access edits`, `/stop`, `/new`, `/retry`,
+instead of going to the agent: `/model sonnet`, `/effort high`, `/access edits`, `/stop`, `/new`, `/new <what comes next>` (the new session starts with a short brief of the old one for that goal), `/retry`,
 `/status`, `/close`, `/help`. `chat:withdraw` and `chat:edit` are actions of the
 queued message, not chat commands.
 The rest of the line is the action's arguments, in the order its fields are
@@ -105,7 +105,7 @@ skills and the commands from one `GET /v1/objects/<id>` (or MCP `show`); each
 description comes from `SKILL.md`.
 
 A message is an event: source `ios`, `telegram`, `cli`, `tui` or `other`, key is
-the message id, object is the chat. A scheduled prompt's first message has the
+the message id, object is the chat. A routine's first message has the
 source `bot`, and the bot plugin's own rule starts `chat:reply` for it. The
 `chat` plugin's own rule starts `chat:reply` for the client sources
 automatically; a rule of yours in `triggers.json` with the same source and type
@@ -184,8 +184,8 @@ is recorded on the chat and every tool call from then on uses it, including a
 reply already being written, across restarts and clients. A question open when
 the level changes is checked again under the new level. A repository chat starts
 at `plan` (read-only) and a bot chat at the bot's `accessLevel` setting (`ask`
-unless set; one of `plan`, `ask`, `edits`, `full`), except a chat a scheduled
-prompt opens, which starts at `full`. A chat nobody ran `/access` on follows
+unless set; one of `plan`, `ask`, `edits`, `full`), except a run of a routine,
+which starts at `full`. A chat nobody ran `/access` on follows
 the setting at its next reply, so changing the setting moves it; a level a
 person chose stays. The row shows the level when it
 is not the chat's starting level. In a repository whose `workIn` is `branch` ("A
@@ -271,7 +271,7 @@ MCP servers.
 | `bot.bots.<name>.accessLevel` | string | `ask` | `plan`, `ask`, `edits`, `full` | The level a new chat on the bot starts at. Next reply of a chat that chose no level, and every new chat. Unlike `access`, it can loosen the profile: `full` asks nothing but the deny rules. A chat a scheduled prompt opens starts at `full`; a chat that chose a level with `/access` keeps it. See [Access level](#access-level). |
 | `bot.bots.<name>.writeWiki` | boolean | `true` for `default`, `false` for every other bot | `true`, `false` | At the next reply: `true` lets the bot write the shared wiki; read access is always there. See [Memory and the wiki](memory.md). |
 | `bot.bots.<name>.tidyTime` | string | `03:30` | `HH:MM` from `00:00` to `23:59`, in the machine's local time zone | The next nightly memory check of the bot. |
-| `bot.bots.<name>.runWithoutAsking` | boolean | `false` | `true`, `false` | The next nightly check: `true` runs the bot's memory tidy with no pending item; `false` waits for Run or Skip. |
+| `bot.bots.<name>.runWithoutAsking` | boolean | `false` | `true`, `false` | The next nightly check: `true` runs the bot's Dreaming (memory tidy) with no pending item; `false` waits for Run or Skip. |
 | `chat.speaker` | string | `"Operad Bot"` | Any non-empty string | Every reply of a chat that does not use a bot's `speaker`; editable with `operad settings set chat.speaker <value>`. |
 
 The default access profile denies credentials and secrets (`~/.ssh`, `~/.gnupg`,
@@ -308,7 +308,7 @@ proposal is one of:
 - a settings change (`bot setting`): the bot's settings before and after;
 - an MCP server (`bot mcp`): a new server, an upgrade, or a server whose tools
   changed;
-- a scheduled prompt (`bot schedule`): adding, changing or removing one entry,
+- a routine (`bot schedule`): adding, changing or removing one routine,
   shown with its name, schedule in words and as cron, prompt, model and effort.
 - Set up git here (`bot setup-git`, for the bot's agent): see
   [Set up git here](#set-up-git-here).
@@ -367,29 +367,43 @@ change. It cannot add or change `mcpServers`; that is what `bot mcp` is for. It
 prints `proposed settings for bot <bot>; review it in pending`.
 
 `operad bot schedule <bot> add|edit|remove <name>` proposes a change to the
-bot's scheduled prompts. `add` needs `--schedule <cron>`, `--words <schedule in
+bot's routines. `add` needs `--schedule <cron>`, `--words <schedule in
 words>` and `--prompt <text>`; `edit` needs at least one of `--schedule`,
 `--prompt`, `--model` and `--effort`, with `--words`; `remove` takes the name and
 `--words`. Optional `--model` and `--effort` set or clear those fields. It prints
-`proposed scheduled prompt "<name>" for bot <bot>; review it in pending`. A
+`proposed routine "<name>" for bot <bot>; review it in pending`. A
 chat's agent calls this command through operad's `command` tool; a schedule it
-writes is a proposal, never an immediate entry.
+writes is a proposal, never an immediate routine.
 
-### Scheduled prompts
+### Routines
 
-A bot can hold scheduled prompts. The user word is **Scheduled** (Chinese
-定时任务). An entry has a name, a five-field cron schedule in the machine's local
-time zone, the prompt, an optional model and effort, and whether it is paused.
-The bot page lists the entries with their next run and the last run's result and
-chat id.
+A bot can hold routines. The user word is **Routine** (Chinese 定时任务). A
+routine has a name, a five-field cron schedule in the machine's local time zone,
+the prompt, an optional model and effort, and whether it is paused. Routines are
+their own list, **Routines**: each row shows the routine's name, its bot's name,
+the next run and the last result (done, nothing to report or failed). A
+routine's page shows the prompt, the schedule and its runs as history; each run
+is a section with its process and result. The bot page lists its routines too.
+
+Each bot also has **Dreaming** (Chinese 梦境整理), a built-in routine for its
+nightly memory tidy (see [Memory](memory.md)). It is in the list with its next
+night, last result and runs, and it is not edited, paused or removed there: its
+time is the bot's `tidyTime`, and the setting `runWithoutAsking` chooses whether
+it first shows a pending card and waits for Run or Skip.
 
 To schedule something from a chat, say it in words ("every morning at 8, collect
 the day's news"). The bot writes a proposal with the name, the schedule in words
 and as a five-field cron expression, the prompt, and the model and effort. It
 waits in Pending: `bot:approve` adds it, `bot:reject` drops it, and until then no
-entry exists. Editing or removing an existing entry from a chat is a proposal
-too; a change made through the actions below is your own edit and applies at
-once.
+routine exists. Editing or removing an existing routine from a chat is a
+proposal too; a change made through the actions below is your own edit and
+applies at once.
+
+On a routine's own page the actions are `bot:edit` (optional `schedule`,
+`prompt`, `model`, `effort`), `bot:pause`, `bot:resume`, `bot:run-now` and
+`bot:remove`; they take no name. Add is on the bot. The command line, HTTP and
+MCP also keep the older bot actions, which take the routine's `name` and mean
+the same:
 
 ```sh
 operad bot:schedule-add default --name Morning --schedule "0 8 * * *" --prompt "Collect the day's news."
@@ -400,48 +414,53 @@ operad bot:schedule-run-now default --name Morning
 operad bot:schedule-remove default --name Morning
 ```
 
-| Action | Arguments | What it does |
+| Action on the bot | Arguments | What it does |
 |---|---|---|
-| `bot:schedule-add` | `name`, `schedule`, `prompt`, optional `model`, `effort`, `paused` | Adds an entry. The name is unique on that bot; the schedule is a five-field cron expression in local time. |
-| `bot:schedule-edit` | `name`, optional `schedule`, `prompt`, `model`, `effort` | Changes an entry. A changed schedule starts fresh, so no time missed under the old schedule is caught up. |
-| `bot:schedule-pause` | `name` | Stops it firing; a paused entry collects no missed times. |
-| `bot:schedule-resume` | `name` | Lets it fire again at its next planned time. |
-| `bot:schedule-run-now` | `name` | Runs it once now, as a timed firing would (clients label it "Run now", 立即运行): a new chat, the prompt with the recent results and the quiet-ending line, a notification unless it ends quietly. The next timed run is unchanged. An unknown name is refused. |
-| `bot:schedule-remove` | `name` | Deletes it. |
+| `bot:schedule-add` | `name`, `schedule`, `prompt`, optional `model`, `effort`, `paused` | Adds a routine. The name is unique on that bot; the schedule is a five-field cron expression in local time. |
+| `bot:schedule-edit` | `name`, optional `schedule`, `prompt`, `model`, `effort` | Changes a routine. A changed schedule starts fresh, so no time missed under the old schedule is caught up. |
+| `bot:schedule-pause` | `name` | Stops it running; a paused routine collects no missed times. |
+| `bot:schedule-resume` | `name` | Lets it run again at its next planned time. |
+| `bot:schedule-run-now` | `name` | Runs it once now, as a timed run would (clients label it "Run now", 立即运行): the prompt with the recent results and the quiet-ending line, a notification unless it ends quietly. The next timed run is unchanged. An unknown name is refused, and so is a routine whose previous run is still replying. |
+| `bot:schedule-remove` | `name` | Removes it. |
 
-When an entry fires, the bot opens a new chat under itself, titled with the
-entry's name and the date, and sends the prompt as the first message. The chat
-runs as the bot, with its skills, MCP servers and access profile, and starts at
-`full`: only the profile's deny rules, `readOnly` and a write under `readPaths`
-can stop a call; an ask rule and an outward write do not ask. A person may
-change the level with `/access` afterwards. Its first message has no person's
-source, so that reply is a background run: at a level below `full`, which `/access`
-can set, an outward write in it asks. You can keep talking in the new chat.
+When a routine runs, the bot starts a run under itself and sends the prompt as
+its first message. A run is not a chat: it has no chat id, is not in the chat
+list and cannot be continued; it is a section of the routine's history, with its
+process and result. It runs as the bot, with its skills, MCP servers and access
+profile, and starts at `full`: only the profile's deny rules, `readOnly` and a
+write under `readPaths` can stop a call; an ask rule and an outward write do not
+ask. Its first message has no person's source, so that reply is a background
+run: at a level below `full` an outward write in it asks. A routine keeps its
+runs for 30 days.
 
 After `serve` has been down or the machine has slept, the latest missed run in
-the last seven days fires once; older ones are skipped. A catch-up run adds one
+the last seven days runs once; older ones are skipped. A catch-up run adds one
 line to the prompt saying when it was planned and how late it runs.
 
-When the reply ends, the entry's last result is a short summary of it, and the
+When the reply ends, the routine's last result is a short summary of it, and the
 `notify` command runs with that summary as `OPERAD_REASON` (see
 [Notifications](notifications.md)). A failed reply records and notifies its
 failure line instead.
 
-Every scheduled prompt ends with a line telling the agent how to end quietly: a
+Every routine ends its prompt with a line telling the agent how to end quietly: a
 reply that is exactly `NOTHING_TO_REPORT` (surrounding blank space ignored)
-means there is nothing new. The `notify` command is not run for that firing; the
-entry's last result reads "Nothing to report." and the chat stays open. Any
-other reply, and every failure, notifies as above.
+means there is nothing new. The `notify` command is not run for that run; the
+routine's last result reads "Nothing to report.". Any other reply, and every
+failure, notifies as above.
 
-The prompt of each firing also carries the last three results of the same entry
+The prompt of each run also carries the last three results of the same routine
 (each cut to 120 characters, quiet ones included) and asks the agent not to
 repeat what the person has already seen.
+
+Routines from before this change are moved to routine objects the first time
+the server starts, and the chats those scheduled prompts and the memory tidy had
+opened are closed once.
 
 ### Follow-ups
 
 A **Follow-up** (Chinese 跟进) is a one-time deadline an agent sets for itself in
 a chat: "look at this again in two hours". It has a due time, one sentence of
-what to do, and the chat it was set in. A scheduled prompt is yours and
+what to do, and the chat it was set in. A routine is yours and
 recurs; a follow-up is the agent's own and happens once.
 
 The agent sets one with the `bot follow-up` command (`operad bot follow-up
