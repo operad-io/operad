@@ -46,7 +46,7 @@ function canonical(value: unknown): unknown {
  * they do not name the worker.
  */
 export function keepKeyOf(config: Readonly<Record<string, unknown>>): string {
-  const { prompt: _prompt, images: _images, resumeSession: _resume, ...rest } = config;
+  const { prompt: _prompt, images: _images, resumeSession: _resume, compact: _compact, ...rest } = config;
   const accessValue = rest["access"];
   const access =
     typeof accessValue === "object" && accessValue !== null

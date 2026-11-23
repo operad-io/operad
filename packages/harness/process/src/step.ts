@@ -5,7 +5,7 @@
  */
 
 import { directoryError } from "@operad-io/engine";
-import type { AgentResultData, CostQuality, PluginStepResult } from "@operad-io/engine";
+import type { AgentCompaction, AgentResultData, CostQuality, PluginStepResult } from "@operad-io/engine";
 import { MAX_SKIPPED_LINE_CHARS, type AgentRunOutcome } from "./process.ts";
 import { standardUsage, type RawCounts, type UsageSource } from "./usage.ts";
 import { isRecord } from "@operad-io/engine";
@@ -26,6 +26,8 @@ export interface AgentWorkerResult {
     readonly incomplete?: true;
   } | null;
   readonly finalMessage: string | null;
+  /** Set when this run compacted the session: tokens before and after, and whether a memory flush ran first. */
+  readonly compaction?: AgentCompaction | undefined;
   /** The model that did the work, when the worker reports it. */
   readonly model?: string | null;
   /** The context at the end of a finished reply, when the worker can tell. */
@@ -217,6 +219,20 @@ export function contextOf(value: unknown): { readonly used: number; readonly win
   return { used, ...(known === undefined ? {} : { window: known }) };
 }
 
+/** A worker's compaction note, when it has one in the shape the chat reads. */
+function compactionOf(value: unknown): AgentCompaction | undefined {
+  if (!isRecord(value)) return undefined;
+  const before = value.before;
+  const after = value.after;
+  if (typeof before !== "number" || !Number.isFinite(before)) return undefined;
+  return {
+    reason: value.reason === "manual" ? "manual" : "threshold",
+    before,
+    ...(typeof after === "number" && Number.isFinite(after) ? { after } : {}),
+    flushed: value.flushed === true,
+  };
+}
+
 export function agentData(
   who: UsageSource,
   outcome: AgentRunOutcome,
@@ -233,6 +249,7 @@ export function agentData(
           estimated: result.cost.quality === "estimated",
         };
   const context = contextOf(result?.context);
+  const compaction = compactionOf(result?.compaction);
   return {
     exitCode: outcome.exitCode,
     signal: outcome.signal,
@@ -241,6 +258,7 @@ export function agentData(
     ...(result?.message === undefined ? {} : { message: result.message }),
     usage: standardUsage(who, result?.usage, cost),
     ...(context === undefined ? {} : { context }),
+    ...(compaction === undefined ? {} : { compacted: true as const, compaction }),
     log,
     durationMs,
     stderr: outcome.stderrTail,

@@ -26,7 +26,7 @@ The command and its outcome are one `chat.command` fact: who typed it, the line 
 
 ### D4: `/help` lists the chat's commands
 
-`chat:help` is a command action. It lists every command this chat can run now, each under the name it is typed by, with the one-line description from the same action declaration. `/model`, `/effort`, `/close`, `/stop`, `/retry`, `/status`, `/pending` and `/help` are declared as commands; D11 adds `/new`. `/pending` is declared by the `telegram` plugin on a chat, not by `chat`: it sends the channel's own item messages with their buttons, and the chat plugin knows no channel (ADR 0026 D1).
+`chat:help` is a command action. It lists every command this chat can run now, each under the name it is typed by, with the one-line description from the same action declaration. `/model`, `/effort`, `/close`, `/stop`, `/retry`, `/status`, `/pending` and `/help` are declared as commands; D11 adds `/new` and D12 `/compact`. `/pending` is declared by the `telegram` plugin on a chat, not by `chat`: it sends the channel's own item messages with their buttons, and the chat plugin knows no channel (ADR 0026 D1).
 
 ### D5: `/stop` stops the reply being written
 
@@ -65,3 +65,12 @@ On a chat's page, `/` opens its input with the commands listed from the same act
 `/new <goal>` also starts the new session with a brief for that goal. The action records the goal and the old session's reference in the `chat.new` fact and starts a reply round, whose first work is the brief: one call to the chat's own agent, resuming the old session with a read-only profile and no tools, asked for at most 300 words on what was decided, the files touched, the open questions and the goal. The text is recorded as a `chat.brief` fact with the call's model, tokens and cost, and the chat's cost sums it like a reply's. The person sees one line in the chat, a call named `/new` with the goal as its input; opened, it holds the brief. The brief and the goal ride on the prompt of the new session's first reply, as the memory notes do, and on no other; `/new` starts no reply of its own, so the agent answers the next message. A call that cannot be made, or fails, leaves a brief that holds the goal and the reason, and never holds the session back. A chat with no earlier session makes no call. `/new` with no goal is unchanged and starts blank. It is refused while a reply is being written, goal or not. The command adds no label: the line reuses the command's own name.
 
 A new session means, per agent, a reply with no `resumeSession`: `pi` creates a new session file, `claude` starts without `resume`, `codex` starts a thread instead of resuming one, and `radian` runs without `--resume`.
+
+### D12: `/compact` compacts a pi chat's context now
+
+`chat:compact` is a command action offered on an open chat whose agent is `pi`; on another agent it is not offered, and `/help`, the TUI list and the Telegram menu, which read the declarations, do not list it. A person asks for what happens by itself when a pi context nears the window (ADR 0023 D12): one silent turn lets the bot write what it should remember to its memory, then pi compacts the session.
+
+It records a `chat.compact` request fact and starts a reply run when none is being written; when one is, the request is taken by the next round of that flow after the reply ends, so it never waits for another message. A run with no message waiting passes `only` and writes no reply; one with a message waiting answers it and compacts after it. The run marks the request taken before it starts, so a compaction that fails is not tried again by each following reply.
+
+The command's own line says `compacting the context`. When the run ends, a second line says the context was compacted (from about how many tokens to about how many, and whether the agent wrote to memory first), or that nothing was compacted. An automatic compaction leaves the same kind of line, named `compact (automatic)`, after the reply it followed. Both are `chat.command` facts, so no client changes; they are not messages and are never part of what the agent is given.
+
