@@ -6,7 +6,7 @@
  * reason and the others still load.
  */
 
-import { lstatSync, mkdirSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync } from "node:fs";
+import { lstatSync, mkdirSync, readdirSync, realpathSync, rmSync, symlinkSync } from "node:fs";
 import { basename, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadFlow } from "../flow/load.ts";
@@ -50,8 +50,8 @@ const ENGINE_DIRECTORY = realpathSync(fileURLToPath(new URL("../../", import.met
  * operad is made of, so a file imports the same code operad runs, from a
  * global install or from a source checkout alike. A link that points elsewhere
  * (the install moved or was upgraded) is renewed; a real directory the person
- * put there is left alone. The link is written under a temporary name and
- * renamed, so a process that starts at the same time never sees it missing.
+ * put there is left alone. A process that starts at the same time and wins the
+ * race to write the link leaves the same link, so the loser has nothing to do.
  */
 export function linkEngineIntoHome(home: string): void {
   const scope = join(home, "node_modules", "@operad-io");
@@ -63,10 +63,8 @@ export function linkEngineIntoHome(home: string): void {
   }
   try {
     mkdirSync(scope, { recursive: true });
-    const temporary = `${link}.${process.pid}.tmp`;
-    rmSync(temporary, { force: true });
-    symlinkSync(ENGINE_DIRECTORY, temporary, "dir");
-    renameSync(temporary, link);
+    rmSync(link, { force: true });
+    symlinkSync(ENGINE_DIRECTORY, link, "dir");
   } catch {
     // A home that cannot be written: the import then fails, and the refusal names the file.
   }
