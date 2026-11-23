@@ -173,8 +173,9 @@ cut at a line or sentence end when one is near and never inside a character,
 ending with `…`. Only when every reply is at that preview and the page is still
 over its share does a chat go below it, and then drop the oldest replies, so
 every older reply keeps the start of its answer for as long as possible and the
-newest reply, and a running one, stay whole the longest. Every text that was shortened carries `"cut": true` on its
-block or item (an input or answer message, a thinking or text item, a tool item
+newest reply, and a running one, stay whole the longest. Every text that was
+shortened carries `"cut": true` on its block or item (an input or answer
+message, a thinking or text item, a tool item
 for its `input`). To read a cut reply whole, read the same page again with
 `full=true` (same `cursor`, or none for the first page; a reply cut in an
 `after` read or a `tail` event is read whole by the page read with `full=true`

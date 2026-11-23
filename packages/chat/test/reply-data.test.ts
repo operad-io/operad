@@ -159,6 +159,14 @@ describe("replyData over its budget", () => {
     expect(out3[0]?.answer?.text).toBe(`${"a".repeat(194)}…`);
   });
 
+  test("a line end inside leading whitespace does not leave a bare ellipsis", () => {
+    const reply = { ...block(0, 10), answer: { id: "a", text: `${" ".repeat(190)}\n${"b".repeat(400)}`, at: 0 } };
+    const filler = Array.from({ length: 3 }, (_, index) => block(index + 1, 3_000));
+    const text = shown(replyData([reply, ...filler], 8_000))[0]?.answer?.text ?? "";
+    expect(text).toContain("b");
+    expect(text.trim()).not.toBe("…");
+  });
+
   test("the preview floor is broken only when nothing else is left", () => {
     const answer = "w".repeat(2_000);
     const replies = Array.from({ length: 5 }, (_, index) => ({ ...block(index, 300), answer: { id: `a${index}`, text: answer, at: index } }));
