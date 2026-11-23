@@ -252,10 +252,14 @@ a failure entry, it records `replySummary` as the entry's `result`, runs the
 marks `notified`. A firing whose reply ended before `serve` stopped is found the
 same way at the next start; a command that fails is logged and not retried.
 
-Actions: `schedule-add`, `schedule-edit`, `schedule-pause`, `schedule-resume`
-and `schedule-remove`, all on a bot. The adding and editing arguments are
+Actions: `schedule-add`, `schedule-edit`, `schedule-pause`, `schedule-resume`,
+`schedule-run-now` and `schedule-remove`, all on a bot. The adding and editing arguments are
 `name`, `schedule`, `prompt`, `model` and `effort`; the others take `name`.
-A name is unique on the bot. A changed schedule drops the old last time, so the
+`schedule-run-now` (argument `name`; an unknown name is refused) stores
+`runNow` on the entry; the source's next check clears it first and fires the
+entry once as a timed firing does, with `last.manual` set. `last.plannedAt` and
+`last.schedule` stay, so the next timed run is unchanged, and the lateness line
+is not added. A name is unique on the bot. A changed schedule drops the old last time, so the
 next run is calculated fresh.
 
 A schedule asked for in a chat goes through `bot schedule`, not through these

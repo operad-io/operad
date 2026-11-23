@@ -367,6 +367,7 @@ operad bot:schedule-add default --name Morning --schedule "0 8 * * *" --prompt "
 operad bot:schedule-edit default --name Morning --schedule "0 9 * * *"
 operad bot:schedule-pause default --name Morning
 operad bot:schedule-resume default --name Morning
+operad bot:schedule-run-now default --name Morning
 operad bot:schedule-remove default --name Morning
 ```
 
@@ -376,6 +377,7 @@ operad bot:schedule-remove default --name Morning
 | `bot:schedule-edit` | `name`, optional `schedule`, `prompt`, `model`, `effort` | Changes an entry. A changed schedule starts fresh, so no time missed under the old schedule is caught up. |
 | `bot:schedule-pause` | `name` | Stops it firing; a paused entry collects no missed times. |
 | `bot:schedule-resume` | `name` | Lets it fire again at its next planned time. |
+| `bot:schedule-run-now` | `name` | Runs it once now, as a timed firing would (clients label it "Run now", 立即运行): a new chat, the prompt with the recent results and the quiet-ending line, a notification unless it ends quietly. The next timed run is unchanged. An unknown name is refused. |
 | `bot:schedule-remove` | `name` | Deletes it. |
 
 When an entry fires, the bot opens a new chat under itself, titled with the
