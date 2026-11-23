@@ -380,6 +380,12 @@ const reverifyTaskAction: ActionTypeDefinition = {
           "the task has no work to verify yet; rework it instead",
         );
       }
+      if (latest.attempt.workDone === false) {
+        throw new DevError(
+          "reverify",
+          "the work did not finish, so there is nothing to verify again; rework it instead",
+        );
+      }
       return {
         ...latest,
         phase: "running",

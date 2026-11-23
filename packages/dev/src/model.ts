@@ -417,6 +417,8 @@ export type TaskAttempt = {
   readonly workerChanged?: string | null;
   /** Whether the work step consumed this attempt; a later worktree visit is new work. */
   readonly worked?: boolean;
+  /** Whether the work reported done; false when it failed, waited or never ran to its end. */
+  readonly workDone?: boolean;
   /** The file the worker's own log was written to. */
   readonly workLog?: string | null;
   /** The worker's last message of this attempt's work, in full, as the harness reported it. */

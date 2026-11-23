@@ -1668,3 +1668,11 @@ the row fields.
 | T-0750-M1 | packages/dev/src/views.ts | the Review section's fix level was read from the repository's current dev.json, not the one recorded with the round | `dev views > the Review section shows the latest round and reaches earlier ones, safe as Markdown (T-0747)` |
 | T-0750-M2 | packages/dev/src/views.ts | the Review section listed oldest round first (sort reversed) | `dev views > the Review section shows the latest round and reaches earlier ones, safe as Markdown (T-0747)` |
 | T-0750-M3 | packages/dev/src/views.ts | the Review section offered no pages or next cursor for several rounds, or showed for a task with no review | `dev views > the Review section shows the latest round and reaches earlier ones, safe as Markdown (T-0747)` |
+
+## T-0752 — an empty change after failed work does not pass
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0752-M1 | packages/dev/src/gate.ts | the review passed an empty diff even when the work never reported done (condition `workDone === false` removed) | `an empty diff after work that did not finish goes back to work, not to a pass (T-0752)` |
+| T-0752-M2 | packages/dev/src/actions.ts | `dev:reverify` accepted a task whose work did not finish | `reverify after work that did not finish refuses and says to rework (T-0752)` |
+| T-0752-M3 | packages/dev/src/steps.ts | the work step recorded `workDone` true for every result | `dev/work > a failed work and a new worktree visit in the same run count a new attempt` |

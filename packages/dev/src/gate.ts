@@ -2321,6 +2321,38 @@ export async function runReview(
   // review to ask a model for. A change made only of left-out files still runs
   // the reviewer: the list is what tells it those files exist.
   if (prepared.files.length === 0) {
+    // The work never reported done and the branch has no change: the empty
+    // diff is the failed work, not a finished task with nothing to add.
+    if (attempt.workDone === false) {
+      const findings: ReviewFinding[] = [
+        {
+          file: "(branch)",
+          line: 0,
+          severity: "major",
+          summary: "the branch has no change against main and the work did not finish",
+          trigger: "the work stopped before it committed anything; do the work again",
+        },
+      ];
+      const message = describeFindings(findings);
+      const record: ReviewRecord = {
+        result: "findings",
+        decision: "findings",
+        run: ctx.runId,
+        sha,
+        round,
+        runs: [],
+        findings,
+        verified: [],
+        reason: "findings",
+        message,
+      };
+      return finish(record, "fail", {
+        reason: "findings",
+        counted: 1,
+        message,
+        leftOut: prepared.leftOut.map(leftOutLine),
+      });
+    }
     // A main-checkout change fails even without a diff: no reviewer is asked,
     // and dev adds the major finding itself.
     const findings = mainCheckoutFindings(mainPaths, []);

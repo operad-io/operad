@@ -1768,6 +1768,7 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
       base,
       result: "failed",
       worked: true,
+      workDone: false,
     };
     const written = await saveTaskGuarded(
       ctx,
@@ -1805,6 +1806,7 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
         base,
         result: "failed",
         worked: true,
+        workDone: false,
       };
       const written = await saveTaskGuarded(
         ctx,
@@ -1888,6 +1890,7 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
       base,
       result: "failed",
       worked: true,
+      workDone: false,
     };
     const written = await saveTaskGuarded(
       ctx,
@@ -2227,6 +2230,9 @@ export async function runWork(ctx: StepContext, stepParams?: unknown): Promise<P
     nextAttempt = {
       ...nextAttempt,
       result,
+      // Whether the work reported done; reverify keeps it, so the gate can
+      // tell a branch whose work never finished from one that changed nothing.
+      workDone: result === "done",
       ...(mainLine === undefined
         ? {}
         : {
