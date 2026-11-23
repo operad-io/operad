@@ -483,4 +483,12 @@ changes for bots, in the order they were recorded. The root
 | T-0771-M2 | packages/bot/src/idle.ts | the idle limit was 1 day instead of 7 | `idle chats > a chat bound to no channel closes after 7 idle days; a bound chat, a young chat and a closed one are left` |
 | T-0771-M3 | packages/bot/src/schedule.ts | the cleanup kept runs older than 30 days | `routine history > runs older than 30 days are removed; the last results on the routine stay` |
 
+## T-0777 — Dreaming dates its facts
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0777-M1 | packages/bot/src/tidy.ts | a note's date was the tidy's date, not the file's | `dates in the tidy prompt > the work takes today from the injected clock and a note's date from its file` |
+| T-0777-M2 | packages/bot/src/tidy.ts | the prompt did not say what today is | `dates in the tidy prompt > the prompt names today, each note's date, and the rules for dating facts` |
+| T-0777-M3 | packages/bot/src/tidy.ts | the prompt let a replaced fact be deleted | `dates in the tidy prompt > the prompt names today, each note's date, and the rules for dating facts` |
+
 | T-0781-M4 | packages/bot/src/tidy.ts | the tidy launch did not make the instructions read-only | `Run and Skip > Run starts the tidy after no chat is replying and leaves no pending item when it finishes` |

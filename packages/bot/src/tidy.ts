@@ -127,6 +127,8 @@ export interface TidyData {
 export interface TidyNote {
   readonly path: string;
   readonly content: string;
+  /** The local date the note was last changed, `YYYY-MM-DD`. */
+  readonly date: string;
 }
 
 /** One chat in the period the tidy checks. */
@@ -154,6 +156,8 @@ export interface TidyWork {
   readonly indexOver: boolean;
   readonly indexBytes: number;
   readonly baseline: string | undefined;
+  /** The local date of this tidy, `YYYY-MM-DD`. */
+  readonly today: string;
 }
 
 function integer(value: unknown, fallback = 0): number {
@@ -317,17 +321,20 @@ export async function tidyWork(
   store: ObjectStore,
   bot: string,
   cwd: string,
-  options: { readonly home?: string | undefined } = {},
+  options: { readonly home?: string | undefined; readonly now?: number | undefined } = {},
 ): Promise<TidyWork> {
+  const now = options.now ?? Date.now();
   const memoryDir = join(cwd, "memory");
   ensureMemoryLayout(memoryDir);
   const memory = memoryTidyState(memoryDir, bot);
   const notes: TidyNote[] = [];
   for (const path of memory.notes) {
     try {
+      const file = Bun.file(join(memoryDir, ...path.split("/")));
       notes.push({
         path,
-        content: cut(await Bun.file(join(memoryDir, ...path.split("/"))).text(), 8_000),
+        content: cut(await file.text(), 8_000),
+        date: localDate(file.lastModified),
       });
     } catch {
       // A note that vanished between the check and this read is not work.
@@ -340,6 +347,7 @@ export async function tidyWork(
     indexOver: memory.indexOver,
     indexBytes: memory.indexBytes,
     baseline: memory.baseline,
+    today: localDate(now),
   };
 }
 
@@ -412,13 +420,16 @@ export function tidyPrompt(bot: string, work: TidyWork): string {
     "This is the nightly memory tidy. Work only from the notes and chat records below.",
     "Fix notes that are wrong or out of date: the newer fact replaces the older one, and the old note stays where it is, marked as replaced; do not delete it.",
     `Keep memory/index.md under 8,000 characters by moving detail into topic notes. It is ${work.indexBytes} bytes now.`,
+    `Today is ${work.today}. Each note below has the date it was last changed; read a time word in a note ("next week", "tomorrow", "this month") from that date, not from today.`,
+    'Rewrite a sentence that is relative to a time that has passed as a plain dated fact, using the note\'s date: "Going to Singapore next week" in a note dated 2026-07-03 becomes "Went to Singapore in July 2026". Leave a sentence whose time has not passed. Never guess a date the note does not give.',
+    'A fact that holds only for a while carries the date it stops holding, as "until YYYY-MM-DD"; once that date is before today, say it no longer holds. A newer fact supersedes an older one: keep the older text, marked as replaced with the date, and write the newer fact beside it; never delete it.',
     "Check only the period since the last tidy. Do not change instructions.md. End with a short summary of what changed.",
     "",
     `## Notes added or changed since the last tidy (${work.notes.length})`,
   ];
   if (work.notes.length === 0) out.push("None.");
   for (const note of work.notes) {
-    out.push("", `### ${note.path}`, "```markdown", note.content, "```");
+    out.push("", `### ${note.path} (changed ${note.date})`, "```markdown", note.content, "```");
   }
   out.push("", `## Chats in the period (${work.chats.length})`);
   if (work.chats.length === 0) out.push("None.");
@@ -794,7 +805,7 @@ export class BotTidySource {
 
   private workFor(bot: string, cwd: string): Promise<TidyWork> {
     if (this.ctx.work !== undefined) return this.ctx.work(this.ctx.store, bot, cwd);
-    return tidyWork(this.ctx.store, bot, cwd, { home: this.ctx.home });
+    return tidyWork(this.ctx.store, bot, cwd, { home: this.ctx.home, now: this.ctx.clock() });
   }
 
   /** A run that started but can no longer be watched is reported, not left running. */
