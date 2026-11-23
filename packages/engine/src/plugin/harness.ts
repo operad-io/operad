@@ -46,6 +46,17 @@ export interface AgentTimings {
 }
 
 /** What every harness `agent` step records as its facts. */
+/** What a compaction of a harness session did. */
+export interface AgentCompaction {
+  readonly reason: "threshold" | "manual";
+  /** The context before it, in tokens. */
+  readonly before: number;
+  /** The estimated context after it, when the harness could tell. */
+  readonly after?: number | undefined;
+  /** Whether a silent memory turn ran before it. */
+  readonly flushed: boolean;
+}
+
 export interface AgentResultData {
   readonly exitCode: number | null;
   readonly signal: string | null;
@@ -70,6 +81,9 @@ export interface AgentResultData {
         readonly window?: number | undefined;
       }
     | undefined;
+  /** True when the run compacted the harness session; `compaction` says how. */
+  readonly compacted?: true | undefined;
+  readonly compaction?: AgentCompaction | undefined;
   /** Set on `failed`: which limit or condition ended the run. */
   readonly reason?: string | undefined;
   readonly message?: string | undefined;

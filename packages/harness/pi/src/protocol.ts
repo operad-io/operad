@@ -64,6 +64,31 @@ export interface WorkerInput {
   readonly retry?: boolean | undefined;
   /** Set by a chat reply: the worker may serve the next reply and then end itself. */
   readonly keep?: WorkerKeep | undefined;
+  /** Set by a chat reply: compact the context when it nears the window (ADR 0023 D13). */
+  readonly compact?: WorkerCompact | undefined;
+}
+
+/** When and how a reply compacts the session's context. Without it pi never compacts. */
+export interface WorkerCompact {
+  /** The share of the model's window, above 0 and at most 1, at which the context is compacted after a turn. */
+  readonly at: number;
+  /** The one silent turn run before a compaction; absent means compact without one. */
+  readonly flush?: string | undefined;
+  /** Compact after this turn whatever the context size. */
+  readonly now?: boolean | undefined;
+  /** Run no prompt: only the flush turn and the compaction. */
+  readonly only?: boolean | undefined;
+}
+
+/** What a compaction did, on the result line. */
+export interface WorkerCompaction {
+  readonly reason: "threshold" | "manual";
+  /** The context before the compaction, in tokens. */
+  readonly before: number;
+  /** The estimated context after it, when pi could tell. */
+  readonly after?: number | undefined;
+  /** Whether the silent flush turn ran. */
+  readonly flushed: boolean;
 }
 
 export type FailureReason = "invalid_input" | "session_missing" | "model_missing" | "model_error";
@@ -77,6 +102,8 @@ export interface WorkerResult {
   /** The priced part of the run; `incomplete` when some message had no price. */
   readonly cost: { readonly micros: number; readonly incomplete?: true } | null;
   readonly finalMessage: string | null;
+  /** Set when this run compacted the session. */
+  readonly compaction?: WorkerCompaction | undefined;
   /** The context after the last model call, when one ran. */
   readonly context?: { readonly used: number; readonly window?: number } | undefined;
   readonly reason?: FailureReason;
@@ -96,6 +123,25 @@ export type WorkerLine =
   | SharedLine
   | { readonly type: "agent_settled"; readonly aborted: boolean }
   | WorkerResult;
+
+function readCompact(
+  value: Readonly<Record<string, unknown>>,
+): { readonly ok: true; readonly value: WorkerCompact | undefined } | { readonly ok: false; readonly message: string } {
+  const found = value["compact"];
+  if (found === undefined) return { ok: true, value: undefined };
+  if (!isRecord(found)) return { ok: false, message: "compact must be an object" };
+  const at = found["at"];
+  if (typeof at !== "number" || !Number.isFinite(at) || at <= 0 || at > 1) {
+    return { ok: false, message: "compact.at must be a number above 0 and at most 1" };
+  }
+  const flush = found["flush"];
+  if (flush !== undefined && typeof flush !== "string") return { ok: false, message: "compact.flush must be a string" };
+  const now = found["now"];
+  if (now !== undefined && typeof now !== "boolean") return { ok: false, message: "compact.now must be a boolean" };
+  const only = found["only"];
+  if (only !== undefined && typeof only !== "boolean") return { ok: false, message: "compact.only must be a boolean" };
+  return { ok: true, value: { at, flush: flush === "" ? undefined : flush, now, only } };
+}
 
 export type ParsedInput =
   | { readonly ok: true; readonly input: WorkerInput }
@@ -159,6 +205,9 @@ export function parseInput(value: unknown): ParsedInput {
   const keep = readKeep(value);
   if (!keep.ok) return keep;
 
+  const compact = readCompact(value);
+  if (!compact.ok) return compact;
+
   return {
     ok: true,
     input: {
@@ -182,6 +231,7 @@ export function parseInput(value: unknown): ParsedInput {
       useOwnSettings: useOwnSettings.value,
       retry: retry.value,
       keep: keep.value,
+      compact: compact.value,
     },
   };
 }

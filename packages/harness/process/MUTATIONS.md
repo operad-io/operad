@@ -278,3 +278,10 @@ and the row fields.
 | T-0709-M1 | packages/harness/process/src/process.ts | a complete line past the limit was handed to `onLine` instead of dropped | `an over-long output line > is dropped, reported with its length, and the lines around it are read` |
 | T-0709-M2 | packages/harness/process/src/process.ts | the length reported for a dropped line left out the part read in earlier chunks | `an over-long output line > is dropped, reported with its length, and the lines around it are read` |
 | T-0709-M3 | packages/harness/process/src/process.ts | a line that never ends was never stopped (no cap while skipping) | `an over-long output line > that never ends stops the run as a line too long` (timed out) |
+
+## T-0766 — pi compacts a long chat
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0766-M7 | packages/harness/process/src/keep.ts | the kept-worker key included `compact`, so a `/compact` run missed the chat's kept worker | `what a reply asks for in compact does not change which kept worker serves it` |
+| T-0766-M14 | packages/harness/process/src/step.ts | the result data dropped the worker's compaction note | `a worker's compaction becomes the result's compacted flag and compaction note` |

@@ -20,6 +20,9 @@ the same version.
   now Dreaming (梦境整理), a built-in routine. The `bot:schedule-*` actions and
   the `bot schedule` command keep their names. Existing routines move over once,
   and the chats the old scheduled prompts and tidies opened are closed once.
+- `operad` with no command returns to the default bot's main chat (its Telegram
+  chat, else its latest open chat) instead of starting a new one; with no open
+  chat it starts one as before. `bot:chat` is how to start another.
 
 ## [0.3.1] - 2026-11-23
 

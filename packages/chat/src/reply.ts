@@ -7,7 +7,7 @@
 
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { AskTimeoutError, attachmentDir, isRecord, messageOf, modelIds, safeFileName, type AskOutcome, type AskRecheck, type AskRequest, type ChoiceInfo, type CostQuality, type JsonValue, type PluginFact, type PluginStepResult, type RunObject, type StepAsker, type StepContext, type UsageTokens } from "@operad-io/engine";
+import { AskTimeoutError, type AgentCompaction, attachmentDir, isRecord, messageOf, modelIds, safeFileName, type AskOutcome, type AskRecheck, type AskRequest, type ChoiceInfo, type CostQuality, type JsonValue, type PluginFact, type PluginStepResult, type RunObject, type StepAsker, type StepContext, type UsageTokens } from "@operad-io/engine";
 import { isAccessLevel, match, MCP_TOOL, withAccessLevel, writeLiveAccess, type AccessLevel } from "@operad-io/access-match";
 import {
   appendAlwaysAllow,
@@ -36,6 +36,12 @@ import {
   briefToCarry,
   attemptEndedOfFact,
   chatFacts,
+  COMMAND_FACT,
+  COMPACT_AT,
+  COMPACT_FACT,
+  COMPACT_FLUSH,
+  compactRequested,
+  type CommandData,
   IMAGE_TYPES,
   chatData,
   chosenEffort,
@@ -1426,6 +1432,47 @@ export async function runReply(ctx: StepContext, params: unknown): Promise<Plugi
   }
 }
 
+/** What a compaction did, as the engine's data carries it. */
+function compactionOf(value: unknown): AgentCompaction | undefined {
+  if (!isRecord(value) || typeof value.before !== "number") return undefined;
+  return {
+    reason: value.reason === "manual" ? "manual" : "threshold",
+    before: value.before,
+    ...(typeof value.after === "number" ? { after: value.after } : {}),
+    flushed: value.flushed === true,
+  };
+}
+
+/** The tokens as a short figure: 90,000 is `90k`. */
+function tokenFigure(tokens: number): string {
+  return tokens >= 1000 ? `${Math.round(tokens / 1000)}k` : String(tokens);
+}
+
+/**
+ * The line in the chat that says the context was compacted, or that there was
+ * nothing to compact. It is a command-shaped entry so no client changes: never
+ * part of the agent's prompt and never answered.
+ */
+async function recordCompactionLine(
+  ctx: StepContext,
+  chat: string,
+  harness: string,
+  compaction: AgentCompaction | undefined,
+  manual: boolean,
+): Promise<void> {
+  const outcome =
+    compaction === undefined
+      ? "Nothing was compacted: the context is too small, or the compaction failed."
+      : `The context was compacted${compaction.after === undefined ? "" : ` from ${tokenFigure(compaction.before)} to about ${tokenFigure(compaction.after)} tokens`}${compaction.flushed ? ", after the agent wrote what to remember to memory" : ""}.`;
+  const data: CommandData = {
+    from: { via: harness, id: harness },
+    command: manual ? "compact" : "compact (automatic)",
+    outcome,
+    ok: compaction !== undefined,
+  };
+  await ctx.facts.append({ type: COMMAND_FACT, object: chatRef(chat), data });
+}
+
 /** One round of an answer, before the after step runs. */
 async function replyOnce(
   ctx: StepContext,
@@ -1448,7 +1495,8 @@ async function replyOnce(
   }
   let messages = read.messages;
   let pending = unanswered(messages, read.facts);
-  if (pending.length === 0) {
+  const compactAsked = chat.harness === "pi" && compactRequested(read.facts);
+  if (pending.length === 0 && !compactAsked) {
     // A run that stopped after recording a reply still owes the chat its model and cost.
     await syncChat(ctx, object.id, undefined);
     return { result: "done", data: { answered: 0 } };
@@ -1456,6 +1504,8 @@ async function replyOnce(
 
   const runStep = ctx.runStep;
   const oldest = pending[0]?.id;
+  // A `/compact` with nothing to answer is a run of its own: no prompt, no reply.
+  let compactOnly = pending.length === 0;
   if (runStep === undefined) return failedReply(ctx, object.id, "host", "the agent could not be started", oldest);
   const use = `${chat.harness}/agent`;
   if (ctx.stepLoaded !== undefined && !ctx.stepLoaded(use)) {
@@ -1712,7 +1762,8 @@ async function replyOnce(
     );
     return current;
   });
-  if (pending.length === 0) {
+  compactOnly = pending.length === 0;
+  if (pending.length === 0 && !compactAsked) {
     await closeMidRun();
     await syncChat(ctx, object.id, undefined);
     return { result: "done", data: { answered: 0 } };
@@ -1735,9 +1786,15 @@ async function replyOnce(
   );
   // The first message after `/new` says the earlier record exists and how to read it.
   const pointer = startsAfterNew(read.facts, messages) ? earlierRecordPointer(object.id) : undefined;
-  const prompt = [context, noteText, pointer, briefText, messagePrompt]
-    .filter((part): part is string => part !== undefined && part.length > 0)
-    .join("\n\n");
+  const prompt = compactOnly
+    ? "compact"
+    : [context, noteText, pointer, briefText, messagePrompt]
+        .filter((part): part is string => part !== undefined && part.length > 0)
+        .join("\n\n");
+  if (compactAsked) {
+    // The request is taken now, so a failed compaction is not tried again by each following reply.
+    await ctx.facts.append({ type: COMPACT_FACT, object: chatRef(object.id), data: { kind: "taken", runId: ctx.runId } });
+  }
   let outcome: PluginStepResult;
   try {
     outcome = await runStep(
@@ -1763,6 +1820,18 @@ async function replyOnce(
         // A chat retries a failed model request with pi's own bounded backoff;
         // a task keeps pi's retry off and uses dev's own waits and fallbacks.
         ...(chat.harness === "pi" ? { retry: true } : {}),
+        // pi compacts when the context nears the window, after a silent turn
+        // that lets a bot write to its memory first (ADR 0023 D13). A
+        // `/compact` asks for it now.
+        ...(chat.harness === "pi"
+          ? {
+              compact: {
+                at: COMPACT_AT,
+                ...(live.notes === undefined ? {} : { flush: COMPACT_FLUSH }),
+                ...(compactAsked ? (compactOnly ? { only: true } : { now: true }) : {}),
+              },
+            }
+          : {}),
         ...(Object.keys(live.mcpServers).length === 0 ? {} : { mcpServers: live.mcpServers }),
         ...(live.useOwnSettings ? { useOwnSettings: true } : {}),
         ...(session === undefined ? {} : { resumeSession: session }),
@@ -1832,6 +1901,16 @@ async function replyOnce(
     const why = failureOf(outcome);
     return failedReply(ctx, object.id, why.reason, why.message, oldest);
   }
+  const compaction = compactionOf(data.compaction);
+  if (compactOnly) {
+    // No reply: the chat says whether the context was compacted, and the next
+    // message carries the notes whole again, as after any compaction.
+    const sessionDone = typeof data.sessionId === "string" && data.sessionId.length > 0 ? data.sessionId : session;
+    await recordCompactionLine(ctx, object.id, chat.harness, compaction, true);
+    await ctx.facts.append({ type: COMPACT_FACT, object: chatRef(object.id), data: { kind: "done", runId: ctx.runId } });
+    await syncChat(ctx, object.id, sessionDone, undefined, compaction === undefined ? undefined : { ...(sessionDone === undefined ? {} : { session: sessionDone }), files: {} });
+    return { result: "done", data: { answered: 0, compacted: compaction !== undefined } };
+  }
   const said = typeof data.finalMessage === "string" ? data.finalMessage.trim() : "";
   const text = maskSecrets(said, await secretValues(ctx));
   if (text.length === 0) {
@@ -1877,6 +1956,8 @@ async function replyOnce(
     ...(timings === undefined ? {} : { timings }),
   };
   await ctx.facts.append({ type: MESSAGE_FACT, object: chatRef(object.id), data: reply });
+  // After the reply, one short line says the context was compacted.
+  if (compaction !== undefined) await recordCompactionLine(ctx, object.id, chat.harness, compaction, compactAsked);
 
   // The chat's own reference follows; read again, so a change made meanwhile stays.
   await syncChat(ctx, object.id, sessionId, live.context === undefined ? undefined : live.cwd);
@@ -1906,5 +1987,7 @@ async function replyOnce(
   const leftRead = readChat(ctx.store, object.id);
   const left = unanswered(leftRead.messages, leftRead.facts);
   const answered = pending.length + (midRun?.handed.length ?? 0);
-  return { result: left.length > 0 ? "more" : "done", data: { answered, left: left.length } };
+  // A `/compact` that came in during this reply is taken by the next round.
+  const askedMeanwhile = chat.harness === "pi" && compactRequested(chatFacts(ctx.store, object.id));
+  return { result: left.length > 0 || askedMeanwhile ? "more" : "done", data: { answered, left: left.length } };
 }
