@@ -1709,6 +1709,15 @@ describe("dev/work with workers", () => {
     gitOrThrow(tree, ["-c", "user.name=w", "-c", "user.email=w@example.com", "commit", "-qm", "old copy"]);
     // main moves on: the worktree keeps the old copy.
     rewrite(state, { workers: { fresh: fake("nothing") } });
+    // The attempt records the main clone's file when it starts (ADR 0039 D6);
+    // here it started after main moved on.
+    const stored = await taskDataOf(state);
+    await state.store.put(
+      "task",
+      state.taskKey,
+      { ...stored, attempt: { ...stored.attempt, settingsText: readFileSync(devJson(state), "utf8") } },
+      "test",
+    );
     const result = await runWork(state);
     expect(result.data).toMatchObject({ worker: "fresh" });
     expect(JSON.parse(readFileSync(stale, "utf8"))).toHaveProperty("workers.old");
