@@ -106,6 +106,14 @@ export async function serveStop(options: ServeStopOptions): Promise<void> {
   // is the only process that will start the next one.
   let supervisor = readSupervisor(options.home);
   if (supervisor !== undefined && !isAlive(supervisor)) supervisor = undefined;
+  // A record whose pid was reused by another process names no supervisor.
+  if (supervisor !== undefined) {
+    const supervisorCommand = (options.commandOf ?? processCommand)(supervisor);
+    if (supervisorCommand !== undefined && !isServeCommand(supervisorCommand)) {
+      rmSync(supervisorPath(options.home), { force: true });
+      supervisor = undefined;
+    }
+  }
   if (supervisor !== undefined && holder !== undefined && holder !== supervisor) {
     const parent = (options.parentOf ?? parentOf)(holder);
     if (parent !== undefined && parent !== supervisor) supervisor = undefined;

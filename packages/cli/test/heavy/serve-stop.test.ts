@@ -290,6 +290,25 @@ describe("operad serve stop", () => {
     }
   }, 30_000);
 
+  test("a supervisor record whose pid is now another process is dropped, not signalled", async () => {
+    const { home } = await makeStopHome();
+    writeFileSync(join(home, "serve-supervisor.json"), `${JSON.stringify({ pid: 4343 })}\n`);
+    const signalled: number[] = [];
+    const written: string[] = [];
+    await serveStop({
+      home,
+      timeoutSecs: 5,
+      write: (text) => written.push(text),
+      isAlive: () => true,
+      commandOf: () => "/usr/bin/vim notes.txt",
+      signal: (pid) => signalled.push(pid),
+      sleep: async () => {},
+    });
+    expect(signalled).toEqual([]);
+    expect(written.join("")).toContain("no operad serve runs");
+    expect(existsSync(join(home, "serve-supervisor.json"))).toBe(false);
+  });
+
   test("a ps that answers nothing for a live serve is asked again, then the serve is stopped", async () => {
     const { home, lock } = await makeStopHome();
     writeLock(lock, 4242);
