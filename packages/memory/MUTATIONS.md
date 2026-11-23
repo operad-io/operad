@@ -210,4 +210,4 @@ the row fields.
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| T-0778-M4 | packages/memory/src/commit.ts | the notes the wiki commit changed were left out of `wrote` | `a bot run is recorded in git > names the notes the run wrote with a one-line summary, and the one it removed` |
+| T-0778-M4 | packages/memory/src/commit.ts | the notes the wiki commit changed were left out of `wrote` | `a bot run is recorded in git > names the notes the run wrote with a one-line summary, and the one it removed, which has no summary` |
