@@ -1,5 +1,7 @@
 {
  "schemaKeys": {},
  "envVars": {},
- "cliEntries": {}
+ "cliEntries": {
+  "cron scheduled": "the old name of `operad routines`, kept as an alias so existing clients keep working; deliberately left out of the docs (T-0782)"
+ }
 }
