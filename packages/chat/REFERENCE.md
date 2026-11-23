@@ -320,6 +320,14 @@ the last finished reply's context; a new session leaves it out until the next
 reply. The chat's object view carries the same `context`. Every read also
 carries `data.queued` and `data.queuedCount`, the messages a run has not taken.
 
+Segments (ADR 0026 D19): each stretch that `/new` or a compaction starts is a
+segment. The Markdown puts `### Segment <n> · <date time, UTC> · <title>` before
+the first item of every segment but the first, and `data.segments` lists them
+(`number`, `at`, `kind`, `title`, `cursor`) once there are two or more. The
+cursor of a read may also be `segment:<n>`, `date:<YYYY-MM-DD>` or
+`message:<id>`; the page starts there and `next` continues. A title is the goal
+of `/new`, or one call after the segment's first exchange (`chat.segment_title`).
+
 ## The speaker
 
 The transcript labels the model's messages with a speaker name, read each time

@@ -202,3 +202,14 @@ the row fields.
 | T-0776-M7 | packages/memory/src/cases/propose.ts | the correction pattern matched `no` without a boundary, so "Nothing else" was a correction | `proposing cases from the chat record > a correction is found with its question and context; thanks is not one` |
 | T-0776-M8 | packages/memory/src/cases/score.ts | `programAnswerer` ignored the program's exit code | `running the set > a program that fails stops the run` |
 | T-0776-M9 | packages/memory/src/cases/propose.ts | approving an already approved proposal wrote the case again instead of refusing | `proposing cases from the chat record > approving with phrases writes a case the runner can load; the item leaves pending` |
+
+## T-0775 — Search inside one chat
+
+Each row was applied to the source, the two search test files were run, and the source was restored.
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0775-M1 | packages/memory/src/search/backend.ts | a search inside a chat kept one hit per document | `the full-text index > a search inside one chat returns every place in it with the message, and reaches no other chat` |
+| T-0775-M2 | packages/memory/src/search/backend.ts | the chat named was not the only document searched | `the full-text index > a search inside one chat returns every place in it with the message, and reaches no other chat` |
+| T-0775-M3 | packages/memory/src/search/command.ts | the JSON arguments of a bot's tool could name a chat | `the memory search commands > --chat searches inside one chat from any directory; the JSON arguments of a bot's tool cannot` |
+| T-0775-M4 | packages/memory/src/search/sources.ts | the line of a later message was attributed to the wrong message | `the full-text index > a search inside one chat returns every place in it with the message, and reaches no other chat` |

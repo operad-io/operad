@@ -23,6 +23,7 @@ import {
   type MessageInbox,
 } from "@operad-io/harness-process";
 import { readSkills, skillMessage } from "./skills.ts";
+import { SEGMENT_TITLE_FACT, titleDue, titleLine } from "./segments.ts";
 import {
   ACCESS_FACT,
   ACCESS_LEVEL_INFO,
@@ -118,7 +119,7 @@ async function syncChat(
   }
   // The call that built a brief for a new session is paid like a reply.
   for (const fact of recorded.facts) {
-    if (fact.type !== BRIEF_FACT || fact.data.called !== true) continue;
+    if ((fact.type !== BRIEF_FACT && fact.type !== SEGMENT_TITLE_FACT) || fact.data.called !== true) continue;
     const usage = usageOf(fact.data.usage);
     if (usage.costMicros === undefined) costMissing = true;
     else {
@@ -153,6 +154,88 @@ const BRIEF_PROMPT = [
   "Cover: what was decided, the files touched, the open questions, and the goal.",
   "Plain text, at most 300 words. Do not use any tool and do not start the work; answer with the brief only.",
 ].join("\n");
+
+/** What the agent is asked to name a segment. */
+const TITLE_PROMPT = [
+  "Give a title of at most six words for the conversation below. Plain text on one line, no quotes.",
+  "Do not use any tool; answer with the title only.",
+].join("\n");
+
+/** How much of each side of the first exchange the title call is shown. */
+const TITLE_SOURCE_CHARS = 1500;
+
+/**
+ * Names the segment whose first exchange has just ended, when it has no title:
+ * one cheap call with the first question and answer, on the agent's background
+ * model when it declares one. It never holds the reply back: a call that cannot
+ * be made, or fails, leaves the first words of the question as the title, so a
+ * segment is named once and the call is never repeated.
+ */
+async function nameSegment(
+  ctx: StepContext,
+  object: RunObject,
+  chat: ChatData,
+  runStep: StepContext["runStep"],
+  read: ChatRead,
+  title: string,
+): Promise<void> {
+  const due = titleDue(read.facts, read.messages, title);
+  if (due === undefined) return;
+  let text = "";
+  let called = false;
+  let usage: ReturnType<typeof usageOf> = {};
+  if (runStep !== undefined && chat.harness.length > 0 && ctx.stepLoaded?.(`${chat.harness}/agent`) !== false) {
+    try {
+      const live = await liveSettings(ctx, chat, object, runStep);
+      if (!("result" in live)) {
+        called = true;
+        const model = ctx.harnessCapabilities?.(chat.harness)?.backgroundModel ?? chat.model;
+        const outcome = await runStep(
+          `${chat.harness}/agent`,
+          {
+            prompt: `${TITLE_PROMPT}\n\nQuestion:\n${due.question.slice(0, TITLE_SOURCE_CHARS)}\n\nAnswer:\n${due.answer.slice(0, TITLE_SOURCE_CHARS)}`,
+            cwd: live.cwd,
+            ...(model === undefined ? {} : { args: ["--model", model] }),
+            operadTools: { home: ctx.home },
+          },
+          {
+            runId: `${ctx.runId}.title`,
+            cwd: live.cwd,
+            object,
+            params: ctx.params,
+            access: withAccessLevel(live.access, "plan"),
+            ...(ctx.trigger === undefined ? {} : { trigger: ctx.trigger }),
+            signal: ctx.signal,
+            asker: contextAsker(ctx),
+          },
+        );
+        const data = isRecord(outcome.data) ? outcome.data : {};
+        usage = usageOf(data.usage);
+        const said = typeof data.finalMessage === "string" ? data.finalMessage : "";
+        if (outcome.result === "done") text = titleLine(maskSecrets(said, await secretValues(ctx)));
+      }
+    } catch {
+      text = "";
+    }
+  }
+  // The words of the question are a title that costs nothing.
+  const first = titleLine(due.question.split("\n").find((line) => line.trim().length > 0) ?? "");
+  await ctx.facts.append({
+    type: SEGMENT_TITLE_FACT,
+    object: chatRef(object.id),
+    data: {
+      segment: due.segment,
+      text: text.length > 0 ? text : first.length > 0 ? first : "…",
+      called,
+      generated: text.length > 0,
+      usage: {
+        ...(usage.model === undefined ? {} : { model: usage.model }),
+        ...(usage.costMicros === undefined ? {} : { costMicros: usage.costMicros, costQuality: usage.costQuality ?? "estimated" }),
+        ...(usage.tokens === undefined ? {} : { tokens: { ...usage.tokens } }),
+      },
+    },
+  });
+}
 
 /**
  * Builds the brief a `/new <goal>` left due: one agent call that resumes the old
@@ -1985,6 +2068,7 @@ async function replyOnce(
   }
 
   const leftRead = readChat(ctx.store, object.id);
+  await nameSegment(ctx, object, chat, ctx.runStep, leftRead, chat.title);
   const left = unanswered(leftRead.messages, leftRead.facts);
   const answered = pending.length + (midRun?.handed.length ?? 0);
   // A `/compact` that came in during this reply is taken by the next round.

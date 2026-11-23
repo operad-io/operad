@@ -71,6 +71,10 @@ stdin, and both accept words on the command line (`memory search --scope wiki
 MCP server offers them to a bot as the `search` and `read` tools. A read prints
 text by default and JSON with `--json`; JSON input asks for JSON too.
 
+`memory search --chat <id> <words>` searches inside one chat (ADR 0038 D9): every
+matching place, each with the id of the message it is in. It is a command-line
+argument only; the bot's `search` tool cannot name a chat.
+
 ## The link table
 
 Beside the documents the index keeps a table of the links the notes write, in

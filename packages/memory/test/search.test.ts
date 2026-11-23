@@ -176,6 +176,27 @@ describe("the full-text index", () => {
     r.search.close();
   });
 
+  test("a search inside one chat returns every place in it with the message, and reaches no other chat", async () => {
+    const r = await rig();
+    await r.store.put("chat", "C-1", { parent: "bot:default", cwd: r.botA, title: "One" }, "test");
+    await r.store.put("chat", "C-2", { parent: "bot:default", cwd: r.botA, title: "Two" }, "test");
+    message(r.store, "C-1", "m1", "we talked about cardamom first");
+    message(r.store, "C-1", "m2", "an answer\nover\nseveral\nlines\nof\nfiller\nfiller\nfiller\nfiller\nfiller\nfiller\nfiller\nfiller\nfiller\nfiller\nfiller\nfiller\nfiller", "assistant");
+    message(r.store, "C-1", "m3", "much later cardamom came back");
+    message(r.store, "C-2", "n1", "cardamom in the other chat");
+    await r.search.refresh(r.store);
+
+    // The caller is not the bot: the chat is named, so the chat is reached.
+    const found = r.search.search({ text: "cardamom", cwd: r.root, chat: "C-1", store: r.store });
+    expect(found.scopes).toEqual(["chats"]);
+    expect(found.hits.every((hit) => hit.id === "chat:C-1")).toBe(true);
+    expect(found.hits.map((hit) => hit.message).sort()).toEqual(["m1", "m3"]);
+    // Without the chat, one document gives one hit.
+    expect(r.search.search({ text: "cardamom", cwd: r.botA, scopes: ["chats"] }).hits).toHaveLength(2);
+    expect(r.search.search({ text: "cardamom", cwd: r.root, chat: "C-9", store: r.store }).hits).toHaveLength(0);
+    r.search.close();
+  });
+
   test("a chat's owner is compared as a resolved path", async () => {
     const r = await rig();
     await r.store.put(

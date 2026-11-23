@@ -694,3 +694,18 @@ are append-only, so the old lines stay as history.
 | T-0769-M1 | packages/chat/src/model.ts | `mainChatOf` ignored a chat bound to a channel and took the newest | `the bot's main chat > a chat bound to Telegram is the main chat even when a newer one is open` (packages/bot/test/main-chat.test.ts) |
 | T-0769-M2 | packages/chat/src/model.ts | `mainChatOf` counted a closed chat | `the bot's main chat > the most recent open chat is the main chat, and closing it falls back to the one before` and the Telegram test |
 | T-0769-M3 | packages/chat/src/model.ts | `mainChatOf` counted a chat a scheduled prompt opened | `the bot's main chat > a chat a scheduled prompt opened is not the main chat` |
+
+## T-0775 — Segments of a long chat
+
+Each row was applied to the source, `bun test test/segments.test.ts` was run, and the source was restored.
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0775-M1 | packages/chat/src/segments.ts | a compaction line never started a segment | `segments of a long chat > a /new and a compaction each start a segment; the transcript marks it with its date and a generated title` |
+| T-0775-M2 | packages/chat/src/segments.ts | a stretch with no message counted as a segment | `segments of a long chat > a stretch with no message is not a segment, and a chat with one segment shows none` |
+| T-0775-M3 | packages/chat/src/segments.ts | the goal of `/new` was not the segment's title | `segments of a long chat > the goal of /new is the title and no call is made for it` |
+| T-0775-M4 | packages/chat/src/segments.ts | a segment that already had a title was named again | `segments of a long chat > a title call that fails leaves the first words of the question, once` |
+| T-0775-M5 | packages/chat/src/reply.ts | a failed title call recorded no title, so it was tried again by every reply | `segments of a long chat > a title call that fails leaves the first words of the question, once` |
+| T-0775-M6 | packages/chat/src/views.ts | a read after a mark marked a segment that began before the mark | `segments of a long chat > a read that comes after a mark carries the marker of a segment that began since` |
+| T-0775-M7 | packages/chat/src/views.ts | `date:` started a day late | `reading the transcript from a segment, a date or a message > date:YYYY-MM-DD starts at the first thing on or after that day` |
+| T-0775-M8 | packages/chat/src/views.ts | a page that started inside the chat gave no `next` | `reading the transcript from a segment, a date or a message > a page that starts inside the chat continues with next and never loops back` |
