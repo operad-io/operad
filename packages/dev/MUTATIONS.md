@@ -1676,3 +1676,4 @@ the row fields.
 | T-0752-M1 | packages/dev/src/gate.ts | the review passed an empty diff even when the work never reported done (condition `workDone === false` removed) | `an empty diff after work that did not finish goes back to work, not to a pass (T-0752)` |
 | T-0752-M2 | packages/dev/src/actions.ts | `dev:reverify` accepted a task whose work did not finish | `reverify after work that did not finish refuses and says to rework (T-0752)` |
 | T-0752-M3 | packages/dev/src/steps.ts | the work step recorded `workDone` true for every result | `dev/work > a failed work and a new worktree visit in the same run count a new attempt` |
+| T-0754-M1 | packages/dev/src/gate.ts | the empty-diff refusal fired only when `workDone === false`, so an attempt with no recorded `workDone` passed | `an empty diff with no record of the work finishing goes back to work (T-0754)` |
