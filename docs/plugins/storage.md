@@ -14,6 +14,7 @@ A worker that runs a step reopens the same store from `store.location`, so the s
 |---|---|---|
 | `put(type, id, data, cause)` | the stored object | Stores a new **version** of the object and appends the change as a fact. `data` is JSON-shaped; `cause` names what made the change (`notes/draft`, `action:notes/publish`). A change is never an update in place: `version` counts up. A put whose data changed nothing writes an empty change, `{ changed: {}, removed: [] }`, so its cause is still in the history |
 | `get(type, id)` | the object or `undefined` | `{ type, id, data, version, cause, at }` |
+| `remove(type, id)` | | Removes the object and its index entries; its facts stay in the history. Removing a missing object does nothing |
 | `list(type, { where?, cursor?, limit?, index? })` | `{ objects, next? }` | One page of objects of `type`, **ordered by id**, filtered by `where`. `next` is the cursor of the next page |
 | `facts(object, { cursor?, limit? })` | `{ facts, next? }` | One page of one object's facts in sequence order |
 | `facts()` | every fact | In append order, when the store keeps them in memory |

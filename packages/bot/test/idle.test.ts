@@ -2,6 +2,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { CHAT_TYPE } from "@operad-io/chat";
 import { createViews, type ClientApi } from "@operad-io/engine";
 import { CHAT_IDLE_DAYS, closeIdleChats, findRoutine, pruneRoutineRuns, ROUTINE_TYPE, scheduledPromptOf, ROUTINE_HISTORY_DAYS } from "../src/index.ts";
+import { syncDreaming, type TidyData } from "../src/tidy.ts";
 import { cleanupRoots, rig } from "./support.ts";
 
 afterAll(cleanupRoots);
@@ -36,6 +37,7 @@ describe("routine history", () => {
     const object = await findRoutine(r.store, "default", "Old");
     if (object === undefined) throw new Error("no routine");
     const now = Date.now();
+    for (const id of ["R-0001", "R-0002"]) await r.store.put(CHAT_TYPE, id, { run: true, title: "run" }, "test");
     await r.store.put(
       ROUTINE_TYPE,
       object.id,
@@ -54,6 +56,21 @@ describe("routine history", () => {
     const entry = after === undefined ? undefined : scheduledPromptOf(after.data);
     expect(entry?.runs?.map((run) => run.id)).toEqual(["R-0002"]);
     expect(entry?.last?.result).toBe("all good");
+    expect(await r.store.get(CHAT_TYPE, "R-0001")).toBeUndefined();
+    expect(await r.store.get(CHAT_TYPE, "R-0002")).toBeDefined();
     expect(await pruneRoutineRuns(r.store, now)).toBe(0);
+  });
+
+  test("a run that withRun drops has no record either; a newer one is untouched", async () => {
+    const r = await rig();
+    const now = Date.now();
+    const tidy: TidyData = { bot: "default", state: "idle", plannedAt: now, counts: { notes: 0, lines: 0 } } as unknown as TidyData;
+    for (const id of ["R-0001", "R-0002", "R-0003"]) await r.store.put(CHAT_TYPE, id, { run: true, title: "run" }, "test");
+    await syncDreaming(r.store, tidy, now - 40 * DAY, { run: { id: "R-0001", at: now - 40 * DAY, status: "done" } });
+    await syncDreaming(r.store, tidy, now - 2 * DAY, { run: { id: "R-0002", at: now - 2 * DAY, status: "done" } });
+    await syncDreaming(r.store, tidy, now, { run: { id: "R-0003", at: now, status: "running" } });
+    expect(await r.store.get(CHAT_TYPE, "R-0001")).toBeUndefined();
+    expect(await r.store.get(CHAT_TYPE, "R-0002")).toBeDefined();
+    expect(await r.store.get(CHAT_TYPE, "R-0003")).toBeDefined();
   });
 });

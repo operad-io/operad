@@ -722,6 +722,14 @@ are append-only, so the old lines stay as history.
 | T-0774-M2 | packages/chat/src/recap.ts | the recap left out the routine results | `a recap on return > one message lists the routine results and replies that came while the person was away` |
 | T-0774-M3 | packages/chat/src/recap.ts | a command did not count as the person being there | `a recap on return > a command counts as the person being there` |
 
+## T-0778 — A reply shows the memory it wrote and used
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0778-M1 | packages/chat/src/notes.ts | a tool call that failed counted as a read of the note it named | `a reply shows the memory it wrote and used > names the notes that rode on the message and those read through the memory tools` |
+| T-0778-M2 | packages/chat/src/reply.ts | the after step was not marked as run, so it ran again when the reply step ended | `a reply shows the memory it wrote and used > names the notes the run wrote, in the reply data and the markdown` |
+| T-0778-M3 | packages/chat/src/reply.ts | the after step ran in a round that left messages to answer | `the step a chat's refresh data names after a reply > runs once for a run that takes more than one round, not once per round` |
+
 ## T-0775 — Segments of a long chat
 
 Each row was applied to the source, `bun test test/segments.test.ts` was run, and the source was restored.

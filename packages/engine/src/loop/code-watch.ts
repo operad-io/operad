@@ -242,7 +242,12 @@ export function codeRoots(options: {
   readonly extra?: readonly CodeRoot[] | undefined;
   readonly plugins: readonly { readonly name: string; readonly module: string }[];
 }): CodeRoot[] {
-  const roots: CodeRoot[] = [ENGINE_CODE_ROOT, ...(options.extra ?? [])];
+  // The person's own flows are code every process loads.
+  const roots: CodeRoot[] = [
+    ENGINE_CODE_ROOT,
+    ...(options.extra ?? []),
+    { label: "home flows", path: join(options.home, "flows") },
+  ];
   const seen = new Set(roots.map((root) => root.path));
   const add = (label: string, path: string): void => {
     if (seen.has(path)) return;

@@ -21,7 +21,7 @@ import { secretValues } from "./reply.ts";
 import { readChatSkills, skillSummaries, type ObjectReader } from "./skills.ts";
 import { foldLogTail, agentLogPath } from "./tail.ts";
 import { segmentsOf, type Segment } from "./segments.ts";
-import { agentLine, answeredOfFact, attachmentsOf, CHAT_TYPE, deliveryHeader, deliveryOf, chatData, chatRef, COMMAND_FACT, commandOfFact, ENTRY_FACT, entryOfFact, factsOf, IMAGE_TYPES, lastReplyContext, latestRunOf, MESSAGE_CHANGE_FACT, MESSAGE_FACT, messageChangeOfFact, messageFactsInForce, modelAndCost, queuedData, queuedMessages, queuedOf, readChat, RUN_FACT, stopOfFact, timingsOf, unanswered, ANSWER_FACT, type Attachment, type ChatContext, type ChatRead, type Command, type Entry, type Message, type MessageChange, type ToolResult } from "./model.ts";
+import { agentLine, answeredOfFact, attachmentsOf, CHAT_TYPE, deliveryHeader, deliveryOf, chatData, chatRef, COMMAND_FACT, commandOfFact, ENTRY_FACT, entryOfFact, factsOf, IMAGE_TYPES, lastReplyContext, latestRunOf, MESSAGE_CHANGE_FACT, MESSAGE_FACT, memoryShownOf, memoryUsedLine, memoryWroteLine, messageChangeOfFact, messageFactsInForce, modelAndCost, queuedData, queuedMessages, queuedOf, readChat, RUN_FACT, stopOfFact, timingsOf, unanswered, ANSWER_FACT, type Attachment, type ChatContext, type ChatRead, type Command, type Entry, type Message, type MemoryShown, type MessageChange, type ToolResult } from "./model.ts";
 import type { TailRead } from "./tail.ts";
 
 /** How many messages of a chat one page of the transcript holds. */
@@ -108,7 +108,10 @@ export function messageMarkdown(message: Message, speaker: string = DEFAULT_SPEA
   const head = `**${who}**${via} · ${minute(message.at)}`;
   const used = message.role === "assistant" ? modelAndCost(message.model, message.costMicros, message.costQuality) : [];
   const under = used.length > 0 ? `*${used.join(" · ")}*` : "";
-  const body = [message.text, ...message.attachments.map((file) => attachmentMarkdown(file, home)), under].filter((part) => part.length > 0);
+  const memoryLines = message.role === "assistant"
+    ? [memoryWroteLine(message.memory), memoryUsedLine(message.memory)].flatMap((line) => (line === undefined ? [] : [`*${line}*`]))
+    : [];
+  const body = [message.text, ...message.attachments.map((file) => attachmentMarkdown(file, home)), under, ...memoryLines].filter((part) => part.length > 0);
   return [head, ...body].join("\n\n");
 }
 
@@ -150,6 +153,7 @@ function messageFrom(fact: {
   const from = isRecord(data.from) ? data.from : {};
   const source = typeof data.source === "object" && data.source !== null ? (data.source as Record<string, unknown>) : {};
   const timings = timingsOf(data.timings);
+  const memory = memoryShownOf(data.memory);
   return {
     id: data.id,
     role: data.role,
@@ -167,6 +171,7 @@ function messageFrom(fact: {
     ...(typeof data.runId === "string" && data.runId.length > 0 ? { runId: data.runId } : {}),
     ...(typeof data.model === "string" && data.model.length > 0 ? { model: data.model } : {}),
     ...(timings === undefined ? {} : { timings }),
+    ...(memory === undefined ? {} : { memory }),
     ...(typeof data.costMicros === "number" && Number.isFinite(data.costMicros) ? { costMicros: data.costMicros } : {}),
     ...(data.costQuality === "exact" || data.costQuality === "estimated" || data.costQuality === "incomplete"
       ? { costQuality: data.costQuality }
@@ -301,6 +306,8 @@ export interface ReplyBlock {
   readonly input: readonly ReplyMessage[];
   readonly process: readonly ReplyProcess[];
   readonly answer?: ReplyMessage | undefined;
+  /** The memory notes the reply wrote and used, when it did either. */
+  readonly memory?: MemoryShown | undefined;
   /** How long the reply took, when its harness reported the timings. */
   readonly durationMs?: number | undefined;
 }
@@ -554,6 +561,7 @@ function storedReplies(
         input: messagesInTime(input),
         process: processOf(chunk, home),
         answer: replyMessage(answer),
+        ...(answer.memory === undefined ? {} : { memory: answer.memory }),
         ...(answer.timings === undefined ? {} : { durationMs: answer.timings.totalMs }),
       },
       chunk,

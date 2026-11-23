@@ -213,6 +213,7 @@ export async function openHome(options: OpenHomeOptions): Promise<OpenedHome> {
       clock,
       kernelVerbs: options.kernelVerbs ?? KERNEL_VERBS,
       onLog: report,
+      onHomeFlowProblem: onLog,
       onAnswer: answer,
       onEvent: event,
       onCancelRun: cancel,
