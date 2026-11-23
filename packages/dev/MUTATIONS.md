@@ -1712,3 +1712,13 @@ the row fields.
 |---|---|---|---|
 | T-0731-M1 | packages/dev/src/chat.ts | `openChatWorktree` did not refuse a folder that is not ready, so the step and the access change went on to git | `a chat in a folder without git > a worktree is refused, by the step and by the access change, and the chat stays` |
 | T-0731-M2 | packages/dev/src/chat.ts | the chat context never said the folder has no git | `a chat in a folder without git > opens, and its context says there is no git and the chat may change files` |
+
+## T-0732 — creating a task needs git
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0732-M1 | packages/dev/src/service.ts | `addPlan` did not check that git is ready | `a task needs git > no repository: dev:plan and dev plan add refuse in plain words and leave nothing` |
+| T-0732-M2 | packages/dev/src/service.ts | `addTaskLocked` did not check that git is ready | `a task needs git > dev:task and task add refuse when git went away after the plan was made` |
+| T-0732-M3 | packages/dev/src/steps.ts | `prepareWorktree` did not refuse a folder without git | `a task needs git > the worktree step refuses with the same sentence` |
+| T-0732-M4 | packages/dev/src/git-state.ts | the no-commit state said the no-repository sentence | `a task needs git > no commit: the refusal asks for the first commit` |
+| T-0732-M5 | packages/dev/src/git-state.ts | the subfolder sentence did not name the root or the add command | `a task needs git > a subfolder names the root and the command` |

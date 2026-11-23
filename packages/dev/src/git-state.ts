@@ -15,6 +15,7 @@
 import { realpathSync, statSync } from "node:fs";
 import { findGit, realGitFinderHost, type GitFinderHost } from "@operad-io/engine/platform";
 import { git, type GitOptions } from "./git.ts";
+import { DevRefusal } from "./model.ts";
 
 /** The user name and email git would write into a commit, as the configuration holds them. */
 export interface GitIdentity {
@@ -85,6 +86,9 @@ function identityOf(folder: string, options: GitOptions): GitIdentity {
   return { name, email, set: name !== undefined && email !== undefined };
 }
 
+/** Test-only: the machine every state check looks for git on, when the caller gives none. */
+export const gitStateTestHooks: { finder?: GitFinderHost | undefined } = {};
+
 /** The state of `folder`, which must be an existing directory. */
 export function gitStateOf(folder: string, stateOptions: GitStateOptions = {}): GitState {
   if (statSync(folder, { throwIfNoEntry: false })?.isDirectory() !== true) {
@@ -93,7 +97,7 @@ export function gitStateOf(folder: string, stateOptions: GitStateOptions = {}): 
   const env = stateOptions.env ?? { ...process.env };
   const options: GitOptions = { env };
   // The finder runs nothing that could open the macOS install dialog.
-  if (findGit(stateOptions.finder ?? { ...realGitFinderHost(), env }) === undefined) return { state: "no program" };
+  if (findGit(stateOptions.finder ?? gitStateTestHooks.finder ?? { ...realGitFinderHost(), env }) === undefined) return { state: "no program" };
   const identity = identityOf(folder, options);
   // Git's messages are forced to English for this one question, so the words
   // that say "no repository" can be told from every other refusal.
@@ -113,4 +117,39 @@ export function gitStateOf(folder: string, stateOptions: GitStateOptions = {}): 
   const branch = branchResult.ok && branchResult.out !== "" ? branchResult.out : undefined;
   const head = git(folder, ["rev-parse", "--verify", "-q", "HEAD^{commit}"], options);
   return { state: head.ok ? "ready" : "no commit", branch, identity };
+}
+
+// Why a task cannot be created in `folder` now, in the line a person reads, or
+// `undefined` when git is ready there. The bot turns the line into the person's
+// language and starts the git setup; the line itself starts nothing.
+export function taskRefusalOf(folder: string, stateOptions: GitStateOptions = {}): string | undefined {
+  const state = gitStateOf(folder, stateOptions);
+  switch (state.state) {
+    case "ready":
+      return undefined;
+    case "no program":
+      return "Creating a task needs git, and git is not installed on this machine. Ask the bot to help you install it.";
+    case "no repository":
+      return "This folder is not under git yet, and a task needs it. Ask the bot to set up git here: it will show you a list of the files first.";
+    case "no commit":
+      return "Git is set up here but has no commit yet, and a task needs one. Ask the bot to make the first commit: it will show you a list of the files first.";
+    case "subfolder":
+      return `This folder is inside the git repository at ${state.root}. Add ${state.root} as the project instead (operad dev repo add ${state.root}), or keep chatting here.`;
+  }
+}
+
+// The same line as `taskRefusalOf`, for a folder git cannot judge too.
+export function taskGitRefusal(folder: string, stateOptions: GitStateOptions = {}): string | undefined {
+  try {
+    return taskRefusalOf(folder, stateOptions);
+  } catch (error) {
+    if (!(error instanceof GitStateError)) throw error;
+    return `Git cannot tell what this folder is, so a task cannot be created: ${error.reason}`;
+  }
+}
+
+// Throws a refusal when a task cannot be created in `folder`.
+export function assertCanCreateTask(folder: string, stateOptions: GitStateOptions = {}): void {
+  const line = taskGitRefusal(folder, stateOptions);
+  if (line !== undefined) throw new DevRefusal(line);
 }
