@@ -1,4 +1,4 @@
-import { listAll } from "../../src/model.ts";
+import { listAll, type TaskAttempt } from "../../src/model.ts";
 import type { ReviewSettingsUsed } from "../../src/rework.ts";
 import { chmodSync } from "node:fs";
 import { afterAll, afterEach, beforeEach, describe, expect, test } from "bun:test";
@@ -753,6 +753,21 @@ function deferredPlace(): { promise: Promise<void>; release: () => void } {
   return { promise, release };
 }
 
+async function setAttempt(
+  state: Fixture,
+  attempt: Partial<TaskAttempt>,
+): Promise<void> {
+  const object = await state.store.get("task", state.taskKey);
+  if (object === undefined) throw new Error("task disappeared");
+  const task = taskData(object.data);
+  await state.store.put(
+    "task",
+    state.taskKey,
+    { ...task, attempt: { ...task.attempt, ...attempt } },
+    "test:attempt",
+  );
+}
+
 describe("dev/verify", () => {
   test("a checks setting changed with operad settings set is used by the next verify", async () => {
     const home = await osTempRoot();
@@ -1363,9 +1378,19 @@ describe("dev/review", () => {
   test("an empty diff passes without starting a reviewer", async () => {
     const state = await fixture({ commit: false, reviewerArgs: ["none"] });
     await verify(state);
+    await setAttempt(state, { worked: true, workDone: true, result: "done" });
     const result = await review(state);
     expect(result.result).toBe("pass");
     expect(result.data?.reason).toBe("empty");
+    expect(state.reviewer.calls).toHaveLength(0);
+  });
+
+  test("an empty diff with no record of the work finishing goes back to work (T-0754)", async () => {
+    const state = await fixture({ commit: false, reviewerArgs: ["none"] });
+    await verify(state);
+    const result = await review(state);
+    expect(result.result).toBe("fail");
+    expect(result.data?.counted).toBe(1);
     expect(state.reviewer.calls).toHaveLength(0);
   });
 

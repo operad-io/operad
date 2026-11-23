@@ -2323,7 +2323,7 @@ export async function runReview(
   if (prepared.files.length === 0) {
     // The work never reported done and the branch has no change: the empty
     // diff is the failed work, not a finished task with nothing to add.
-    if (attempt.workDone === false) {
+    if (attempt.workDone !== true) {
       const findings: ReviewFinding[] = [
         {
           file: "(branch)",

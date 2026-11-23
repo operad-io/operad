@@ -1686,3 +1686,4 @@ the row fields.
 | T-0729-M3 | packages/dev/src/git-state.ts | identity counted as set with only a name | `gitStateOf > identity needs both the name and the email` |
 | T-0729-M4 | packages/dev/src/git-state.ts | an empty `user.email` counted as a value | `gitStateOf > a repository's own configuration wins and an empty value is unset` |
 | T-0729-M5 | packages/dev/src/git-state.ts | the branch was read without `--short`, giving `refs/heads/<name>` | `gitStateOf > ready, with the current branch` |
+| T-0754-M1 | packages/dev/src/gate.ts | the empty-diff refusal fired only when `workDone === false`, so an attempt with no recorded `workDone` passed | `an empty diff with no record of the work finishing goes back to work (T-0754)` |
