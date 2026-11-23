@@ -658,3 +658,12 @@ are append-only, so the old lines stay as history.
 | T-0765-M1 | packages/chat/src/model.ts | `currentSession` ignored the latest `chat.new` and resumed the session of an earlier reply | `/new > the next reply starts a session with no resume, the transcript stays, and the line is recorded` |
 | T-0765-M2 | packages/chat/src/model.ts | `lastReplyContext` ignored `chat.new`, so an agent with no session id kept showing the old context | `/new > an agent that reports no session id still shows no context after /new` |
 | T-0765-M3 | packages/chat/src/index.ts | `/new` ran while a reply was being written | `/new > it is refused while a reply is running and changes nothing` |
+
+## T-0773 — `/new <goal>` brief
+
+| id | file | mutation | caught by |
+|---|---|---|---|
+| T-0773-M1 | packages/chat/src/model.ts | the brief rode on every later prompt, not only the first reply of the new session | `/new > with a goal > one call builds the brief from the old session; the new session starts with it; the cost is recorded` |
+| T-0773-M2 | packages/chat/src/reply.ts | the brief call's cost was left out of the chat's cost | the same test |
+| T-0773-M3 | packages/chat/src/reply.ts | the brief call did not resume the old session | the same test |
+| T-0773-M4 | packages/chat/src/model.ts | a recorded brief never cleared the due brief, so every round called again | the same test and `a message sent before the round gets the brief in the same round, once` |
