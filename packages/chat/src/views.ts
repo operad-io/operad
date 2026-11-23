@@ -701,7 +701,10 @@ function shorten(text: string, capBytes: number): string {
   const head = text.slice(0, end);
   const floor = Math.floor(end * 0.75);
   const newline = head.lastIndexOf("\n");
-  if (newline > 0 && newline >= floor) return `${head.slice(0, newline).trimEnd()}…`;
+  if (newline > 0 && newline >= floor) {
+    const line = head.slice(0, newline).trimEnd();
+    if (line !== "") return `${line}…`;
+  }
   const sentence = /[.!?。！？](?=\s|$)/g;
   let stop = -1;
   for (let found = sentence.exec(head); found !== null; found = sentence.exec(head)) stop = found.index + 1;
