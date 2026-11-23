@@ -1,5 +1,5 @@
 import pkg from "../package.json" with { type: "json" };
-import { definePlugin } from "@operad-io/engine";
+import { definePlugin, type ActionTypeDefinition } from "@operad-io/engine";
 import {
   cronMinutesBetween,
   latestCronMinute,
@@ -13,7 +13,7 @@ import type {
   TriggerRule,
 } from "@operad-io/engine";
 import { readCronState, ruleStateKey, writeCronState, type CronState } from "./state.ts";
-import { scheduledCommand, scheduledId } from "./schedules.ts";
+import { routineToFlow, scheduledCommand, scheduledId } from "./schedules.ts";
 
 export * from "./schedules.ts";
 
@@ -270,11 +270,41 @@ export class CronSource {
   }
 }
 
+/**
+ * Turns a routine that runs one command into a flow file the person can edit.
+ * It targets no object: the routine is named by its id, as `routines list`
+ * shows it, so a bot or client offers it when the person asks for more than one command.
+ */
+const toFlowAction: ActionTypeDefinition = {
+  name: "to-flow",
+  args: {
+    type: "object",
+    properties: {
+      routine: { type: "string", minLength: 1, description: "The id of the routine, from the routines list." },
+      name: {
+        type: "string",
+        minLength: 1,
+        description: "The flow's file name, `<name>.flow.ts` in the home's flows; `routine-<id>` when left out.",
+      },
+    },
+    required: ["routine"],
+    additionalProperties: false,
+  },
+  when() {
+    return true;
+  },
+  run(ctx, args) {
+    const input = args as { readonly routine: string; readonly name?: string | undefined };
+    return routineToFlow(ctx.home, input.routine, input.name, Date.now());
+  },
+};
+
 export default definePlugin({
   name: "cron",
   kind: "source",
   version: pkg.version,
   commands: [scheduledCommand()],
+  actions: [toFlowAction],
   start(ctx) {
     const source = new CronSource(ctx);
     void source.poll();

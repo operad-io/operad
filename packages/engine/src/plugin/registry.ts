@@ -1,5 +1,6 @@
 import type { ClientApi } from "../views/presentation.ts";
 import { join } from "node:path";
+import { DRAIN_TIMEOUT_MS, InFlight } from "./in-flight.ts";
 import type { FlowDefinition, StepType } from "../flow/types.ts";
 import { loadFlow as loadFlowFile } from "../flow/load.ts";
 import { FlowError, validateFlow } from "../flow/validate.ts";
@@ -258,6 +259,7 @@ export class PluginRegistry {
   private readonly cwd: string;
   /** Runs whose missing object was already logged, so a poll does not repeat it. */
   private readonly reportedMissing = new Set<string>();
+  private readonly inFlight = new InFlight();
   private readonly kernelVerbs: ReadonlySet<string>;
   private shortCommands: ReadonlyMap<
     string,
@@ -1771,6 +1773,26 @@ export class PluginRegistry {
    * logged and shows nothing, so one plugin cannot hide the others.
    */
   async standing(runs?: RunLookup): Promise<readonly StandingEntry[]> {
+    // Once the registry is drained its store is about to close: no new work
+    // starts, and an item missing until the next tick is not a wrong one.
+    if (this.inFlight.draining) return [];
+    return await this.inFlight.track(() => this.standingNow(runs));
+  }
+
+  /**
+   * Stops starting standing work and waits, a bounded time, for the work that
+   * runs. Called before the store of this registry is closed.
+   */
+  async drain(timeoutMs: number = DRAIN_TIMEOUT_MS): Promise<void> {
+    await this.inFlight.drain(timeoutMs);
+  }
+
+  /** True once `drain` was called. */
+  get draining(): boolean {
+    return this.inFlight.draining;
+  }
+
+  private async standingNow(runs?: RunLookup): Promise<readonly StandingEntry[]> {
     const items: StandingEntry[] = [];
     for (const plugin of this.plugins) {
       if (plugin.standing === undefined) continue;
@@ -1812,6 +1834,8 @@ export class PluginRegistry {
           });
         }
       } catch (error) {
+        // Work that ends after the drain belongs to a store that is closing.
+        if (this.inFlight.draining) return [];
         this.log(`plugin "${plugin.name}": standing failed: ${messageOf(error)}`);
       }
     }

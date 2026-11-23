@@ -31,6 +31,8 @@ import {
   type HttpToken,
 } from "./token.ts";
 import { isRecord } from "../util.ts";
+import { StoreClosedError } from "../log/errors.ts";
+import { InFlight } from "../plugin/in-flight.ts";
 
 /** How long an idle event stream waits before a keep-alive comment. */
 export const DEFAULT_KEEP_ALIVE_MS = 15_000;
@@ -1089,6 +1091,11 @@ function createHandler(
         );
       }
       if (error instanceof ViewError) return viewErrorResponse(error);
+      // A request that outlives its store is over because the server is
+      // going away: answer it, and do not log it as a failure.
+      if (error instanceof StoreClosedError) {
+        return errorResponse(503, "unavailable", "the server is stopping");
+      }
       onLog(`http: ${messageOf(error)}`);
       return errorResponse(500, "internal", "the request failed");
     }
@@ -1122,7 +1129,14 @@ export async function startHttpServer(
     void uploads.sweep().catch(() => undefined);
   }, options.uploadSweepMs ?? DEFAULT_UPLOAD_SWEEP_MS);
   (uploadSweep as { unref?: () => void }).unref?.();
-  const handler = createHandler(options, uploads, hub, streams, onLog);
+  const handle = createHandler(options, uploads, hub, streams, onLog);
+  // Requests in flight are waited for (bounded) by `stop`, so the store they
+  // read is not closed under them.
+  const requests = new InFlight();
+  const handler = async (request: Request): Promise<Response> =>
+    requests.draining
+      ? errorResponse(503, "unavailable", "the server is stopping")
+      : await requests.track(() => handle(request));
   const servers: { readonly address: string; readonly server: ReturnType<typeof Bun.serve> }[] = [];
   const listener = options.listener ?? Bun.serve;
   const stopTimeoutMs = options.stopTimeoutMs ?? DEFAULT_STOP_TIMEOUT_MS;
@@ -1208,6 +1222,7 @@ export async function startHttpServer(
       hub.stop();
       streams.closeAll();
       const unreleased = await stopAll();
+      await requests.drain(stopTimeoutMs);
       if (unreleased.length > 0) throw new HttpStopError(unreleased);
     },
   };
