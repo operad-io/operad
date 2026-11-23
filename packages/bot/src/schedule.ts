@@ -58,6 +58,8 @@ export interface ScheduledLast {
   readonly firedAt?: number | undefined;
   /** The schedule this planned time belongs to. */
   readonly schedule: string;
+  /** True when the firing caught up after earlier planned minutes were skipped. */
+  readonly skippedEarlier?: boolean | undefined;
   /** The chat the firing opened. */
   readonly chatId?: string | undefined;
   /** A short summary of the reply, or why it could not start. */
@@ -117,6 +119,7 @@ function lastOf(value: unknown): ScheduledLast | undefined {
       ? { firedAt: value.firedAt }
       : {}),
     schedule: value.schedule,
+    ...(value.skippedEarlier === true ? { skippedEarlier: true } : {}),
     ...(text(value.chatId) === undefined ? {} : { chatId: value.chatId as string }),
     ...(text(value.result) === undefined ? {} : { result: value.result as string }),
     ...(value.notified === true ? { notified: true } : {}),
@@ -267,7 +270,8 @@ export function scheduledInstruction(entry: ScheduledPrompt): string {
   // `last` is recorded when the firing starts, so it says what was planned and when it ran.
   const last = entry.last;
   const late =
-    last?.firedAt !== undefined && last.plannedAt < minuteStart(last.firedAt)
+    last?.firedAt !== undefined &&
+    (last.plannedAt < minuteStart(last.firedAt) || last.skippedEarlier === true)
       ? { scheduledAt: last.plannedAt, lateSecs: Math.floor((last.firedAt - last.plannedAt) / 1_000) }
       : undefined;
   const parts: string[] = [];
@@ -927,6 +931,7 @@ export class BotScheduleSource {
       plannedAt: minute,
       firedAt: now,
       schedule: entry.schedule,
+      ...(skipped.length > 0 ? { skippedEarlier: true } : {}),
     });
     const title = `${entry.name} (${localDate(minute)})`.slice(0, 120);
     let chatId: string | undefined;
