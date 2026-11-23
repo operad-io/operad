@@ -205,3 +205,9 @@ the row fields.
 
 | T-0781-M2 | packages/memory/src/search/service.ts | a run record was indexed as a chat | `the full-text index > the record of a routine's run is not a chat hit` |
 | T-0781-M3 | packages/memory/src/commit.ts | a tidy run's commit did not put the instructions back | `a tidy run never changes the instructions > an edit, a rewrite after a mode change and a delete are all put back before the commit` |
+
+## T-0778 — A reply shows the memory it wrote
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0778-M4 | packages/memory/src/commit.ts | the notes the wiki commit changed were left out of `wrote` | `a bot run is recorded in git > names the notes the run wrote with a one-line summary, and the one it removed, which has no summary` |

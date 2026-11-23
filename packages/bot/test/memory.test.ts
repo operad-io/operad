@@ -153,7 +153,8 @@ describe("the memory notes a bot chat carries", () => {
     expect(prompt).toContain("[memory/index.md]\nINDEX FOR THE FIRST REPLY");
     expect(prompt).toContain("[memory/instructions.md]\nTHE PERSON'S RULES");
     // The message the person sent stays as it was; the notes are not in it.
-    expect(JSON.stringify(r.store.facts())).not.toContain("INDEX FOR THE FIRST REPLY");
+    const said = r.store.facts().flatMap((fact) => (fact.type === "chat.message" ? [String(fact.data.text)] : []));
+    expect(said.join("\n")).not.toContain("INDEX FOR THE FIRST REPLY");
   });
 
   test("a change made elsewhere is sent whole on the next reply, once", async () => {
