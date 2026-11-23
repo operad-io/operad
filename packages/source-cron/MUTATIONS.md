@@ -82,3 +82,9 @@ the row fields.
 | T-0790-M3 | packages/source-cron/src/schedules.ts | `routines add` accepted `--cwd` without `--command` | `command routines > --cwd without --command, and --command with --flow or --params, are refused and write nothing` |
 | T-0790-M4 | packages/source-cron/src/schedules.ts | `to-flow` took a name with a path in it | `command routines > to-flow refuses a bad name, a routine that runs no command and a routine that runs no command` |
 | T-0790-M5 | packages/source-cron/src/schedules.ts | `to-flow` left its file when the rules could not be written | `command routines > to-flow leaves no file behind when the rules cannot be written, so a retry works` |
+
+The rows above reused ids that other packages hold for T-0790 (T-0790-M3, T-0790-M4, T-0790-M5); they are renumbered below as T-0790-M7, T-0790-M8, T-0790-M9 (the lines above stay, rows are append-only).
+
+| T-0790-M7 | packages/source-cron/src/schedules.ts | `routines add` accepted `--cwd` without `--command` | `command routines > --cwd without --command, and --command with --flow or --params, are refused and write nothing` |
+| T-0790-M8 | packages/source-cron/src/schedules.ts | `to-flow` took a name with a path in it | `command routines > to-flow refuses a bad name, a routine that runs no command and a routine that runs no command` |
+| T-0790-M9 | packages/source-cron/src/schedules.ts | `to-flow` left its file when the rules could not be written | `command routines > to-flow leaves no file behind when the rules cannot be written, so a retry works` |
