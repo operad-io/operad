@@ -10,6 +10,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { findGit, GIT_NOT_INSTALLED, realGitFinderHost } from "@operad-io/engine/platform";
 import { configPath, isRecord, prepareSettings, type ActionArgsSchema, type JsonValue } from "@operad-io/engine";
 
 /** The plugin name. */
@@ -116,12 +117,15 @@ export interface GitResult {
 
 /** Runs git without a shell; output is trimmed. */
 export function memoryGit(cwd: string, args: readonly string[]): GitResult {
+  const env = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
+  const program = findGit({ ...realGitFinderHost(), env });
+  if (program === undefined) return { ok: false, out: "", err: GIT_NOT_INSTALLED };
   const result = Bun.spawnSync({
-    cmd: ["git", "-C", cwd, ...args],
+    cmd: [program, "-C", cwd, ...args],
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
-    env: { ...process.env, GIT_TERMINAL_PROMPT: "0" },
+    env,
     timeout: 20_000,
     killSignal: "SIGKILL",
   });
