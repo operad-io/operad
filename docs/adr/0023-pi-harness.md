@@ -114,3 +114,18 @@ A compaction runs only in the run of the reply that made the context big, straig
 
 Claude's SDK keeps its own automatic compaction on (`packages/harness/claude/REFERENCE.md`), and codex's app server compacts under its own configuration, which operad does not change; radian's agent has no compaction operad sets. Nothing here is built for them.
 
+
+### D13: Old tool results are pruned from what the model is sent, after the prompt cache has expired
+
+pi puts a built-in tool's output into the model context cut, not whole: 2,000 lines or 50 KB (about 12,500 tokens), whichever comes first. The tools operad adds (`operad_*`) are not cut by pi. So the context grows by many results of up to 50 KB each, and a long chat carries the ones from hours ago.
+
+The worker prunes them in operad's inline extension, through pi's own `context` hook. pi gives that hook a deep copy of the transcript without the system messages and sends what it returns, so the session file and what a person sees stay whole; the prompt and tool declarations are pi's and the hook cannot drop them. operad has no context hook of its own to use. Compaction (D12) is separate and unchanged.
+
+A prune rewrites the cached prefix of the prompt, so two rules say when it is worth it:
+
+- **Time.** Nothing is pruned while the provider's prompt cache is alive. The lifetime is the model's own `promptCache` entry for the retention tier in force (`short`, or `long` when `PI_CACHE_RETENTION=long`), else 5 minutes, the short tier of Anthropic's cache. It is measured from the last model call this process made, or, in a new process on a resumed session, from the timestamp of the session's last assistant message. (pi's cache warming, on by default, can keep a cache alive past this lifetime while a kept worker idles; the prune then pays one rewrite it could have spared.)
+- **Size.** Nothing is pruned unless it frees at least 20,000 characters of tool output (about 5,000 tokens), the `clear_at_least` value Anthropic's context editing uses in its example. Gemini CLI's 30,000-token floor is larger than any single built-in result. Below it, the results stay even after the cache has expired.
+
+When both hold, every tool result older than the last 3 assistant turns (OpenClaw's number) whose text is longer than its placeholder is replaced, in the copy the model gets, by `[<tool> result removed from the context to save space]`; its call id, tool name and error flag stay so the call still pairs with it. The worker logs `pruned <n> old tool results, <m> characters` on stderr. A run's input may override the three numbers with `prune: { cacheSecs?, keepTurns?, minChars? }`; absent, the defaults above apply, to a chat reply and a task alike. No user-visible word is added.
+
+Only `pi` prunes. Claude's SDK and codex manage their own context.
