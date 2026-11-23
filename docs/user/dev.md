@@ -17,7 +17,7 @@ plan -> tasks (draft) -> confirm -> ready -> code -> test -> review -> you merge
 ```
 
 1. **Plan and tasks.** A plan is one request (`operad dev plan add`). Each task in it has a brief, the instructions for the worker (`operad dev task add`). A task may wait for another with `--after`. `operad dev:confirm <plan>` moves the plan's draft tasks to ready; a confirmed plan is what `operad serve` schedules. A new plan's auto level is `off` (`autoDefault`), which waits for you to start its tasks: run `operad dev:auto <plan> --level run` after confirming and `serve` starts them.
-2. **Start.** `serve` starts ready tasks, up to the repository's `concurrency` and each pool's cap. Each task gets its own git worktree and branch, so tasks never touch each other or your checkout.
+2. **Start.** `serve` starts ready tasks, up to the repository's `concurrency` and each pool's cap. With the default `workIn` of `worktree`, each task gets its own git worktree and branch, so tasks never touch each other or your checkout; with `branch` it gets a branch in your folder (see [where a task works](#where-a-task-works)).
 3. **Code.** A worker, chosen from `workers` through a pool, runs in the task's worktree with the brief and commits there. A worker whose model is unavailable can hand the work to its `fallback`.
 4. **Test.** The commands in `gate.commands` run against the commit. A failing test is run again on its own first, so a flaky test is told apart from a real failure.
 5. **Review.** The reviewer reads the change and writes a report. Findings that reach `reviewer.fixLevel` (default `major`) fail the review. An attempt whose work left the line `changed the main checkout: <files>` gets a major finding from dev itself, on each named file, whether or not the reviewer reports one.
@@ -28,6 +28,28 @@ plan -> tasks (draft) -> confirm -> ready -> code -> test -> review -> you merge
 Every step is recorded: `operad history <task>` shows what ran, what a test or review found, and what you chose. A run whose process died starts again from its last recorded step. A plan can go further without you: `operad dev:auto <plan> --level merge` merges reviewed work after the test passes, `--level run` starts the plan's tasks without you and still stops each one for you at the merge, and `--level off` waits for you at every start and merge. `autoDefault` sets the level for new plans.
 
 The keys for each part are in the sections below: [the repository and its workers](#the-repository-and-its-workers), [the gate and its checks](#the-gate-and-its-checks), [work, review, integration and cleanup](#work-review-integration-and-cleanup) and [flows and their stages](#flows-and-their-stages).
+
+## Where a task works
+
+`workIn` ("Work in") in `.operad/dev.json` sets where work happens. The two values are `branch` ("A branch in this folder") and `worktree` ("A separate worktree", the default). Together with `concurrency` they make four steps; you move up one at a time, and the check commands in `dev.json` stay the same.
+
+| Step | `workIn` | `concurrency` | What you do |
+|---|---|---|---|
+| 1 | `branch` | 1 | Only chat: a chat on the repository works in your folder, on the branch that is checked out, and opens no `work/chat-<id>` branch. |
+| 2 | `branch` | 1 | Start tasks. Each task gets a new branch in your folder; the flow runs there, one task at a time. |
+| 3 | `worktree` | 1 | Set `workIn` to `worktree`. Each task gets its own folder, one at a time. |
+| 4 | `worktree` | 2 or more | Raise `concurrency`: several tasks at once, as in the rest of this page. |
+
+With `branch`:
+
+- A task refuses to start when your folder has uncommitted changes, and names the files. Commit or set them aside first.
+- The task's branch is made in your folder and the worker's changes are committed on it. The checks and the review still run in a separate gate folder against that commit, and the review report is written there, not in your folder. Whether a review happens depends only on whether the flow has a review stage. A failed check leaves no commit on the branch you started from; a merge brings the commit onto it and switches your folder back.
+- `dev.json` is read once when an attempt starts and that reading is kept for the attempt, because the folder is on the task's branch meanwhile.
+- A task that waits for you, is ready to merge or is paused keeps your folder until it is merged, cancelled or rejected, so no second task starts. A rejected or cancelled task puts your folder back on the branch you started from and keeps the task's branch.
+- While a task holds your folder, a chat on the repository replies read-only and says why. Avoid editing the folder yourself while a task works: it is one shared folder, and nothing tells your changes from the agent's.
+- `concurrency` above 1 is refused with `branch`; the message says which to change.
+
+To move up from `branch` to `worktree`, wait until no task is running or holding the folder, then change `workIn`. To move back, wait until no task is running and no task's folder is left, then set `branch` again. `Setup Dev` asks which way you want to work and writes `workIn` for you; when unsure it chooses `branch`. The `pool` plugin stays on in both.
 
 ## Creating a plan or a task
 
