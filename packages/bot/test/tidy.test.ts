@@ -260,7 +260,7 @@ describe("the nightly memory check", () => {
       await s.r.act(TIDY_TYPE, "default", "bot/run");
       await s.source.poll();
       expect((await tidy(s.r))?.state).toBe("failed");
-      expect((await s.r.registry.standing())[0]?.prompt).toContain("opened no chat");
+      expect((await s.r.registry.standing())[0]?.prompt).toContain("started no run");
     } finally {
       s.views.close();
     }
@@ -416,6 +416,17 @@ describe("Run and Skip", () => {
       expect(s.notices[0]?.summary).toContain("default:");
       expect(s.notices[0]?.summary).toContain("cost unknown");
       expect(s.notices[0]?.summary).not.toContain("ok");
+      // The run is not a chat; Dreaming is a routine with the run in its history.
+      expect(id.startsWith("R-")).toBe(true);
+      expect(s.notices[0]).toMatchObject({ routineId: "dreaming-default", runId: id, title: "Dreaming" });
+      const row = (await s.views.list("bot-routine")).rows.find((item) => item.id === "dreaming-default");
+      expect(row).toMatchObject({ title: "Dreaming", parent: "bot:default", state: "open" });
+      expect(row?.data).toMatchObject({ builtin: true, bot: "default", schedule: "30 3 * * *", lastResult: "done" });
+      const detail = await s.views.get("bot-routine:dreaming-default");
+      expect(detail.sections.map((section) => section.id)).toEqual(["routine", `run-${id}`, "history"]);
+      expect((await s.views.section("bot-routine:dreaming-default", "routine", undefined, { full: true })).markdown).toContain("Run or Skip");
+      // It is built in: no action edits or removes it.
+      expect(detail.actions.map((action) => action.name)).not.toContain("bot:remove");
     } finally {
       s.views.close();
     }
@@ -693,7 +704,7 @@ describe("Run and Skip", () => {
 
       expect((await tidy(s.r))?.state).toBe("failed");
       const card = (await s.r.registry.standing())[0];
-      expect(card?.prompt).toBe("Memory tidy for bot default failed: The reply failed: quota.");
+      expect(card?.prompt).toBe("Dreaming for bot default failed: The reply failed: quota.");
       expect(card?.prompt).not.toContain("\n");
       expect(card?.actions).toEqual([
         { plugin: "bot", action: "run" },

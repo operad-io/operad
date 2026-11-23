@@ -132,7 +132,7 @@ result against `bot.schema.json` before the proposal exists.
 
 `bot schedule <bot> add|edit|remove <name> [--words <text>] [--schedule <cron>]
 [--prompt <text>] [--model <model>] [--effort <effort>]` proposes adding,
-changing or removing a scheduled prompt. `add` needs the cron expression, the
+changing or removing a routine. `add` needs the cron expression, the
 same schedule in words and the prompt; `edit` needs a field to change and the
 schedule in words; `remove` takes the name and the schedule in words. An empty
 `--model ""` or `--effort ""` clears that field. The proposal shows the name,
@@ -226,41 +226,59 @@ not proposed.
   permission like any other call. `radian` cannot ask, so it refuses a tool that
   is not listed.
 
-## Scheduled prompts
+## Routines
 
-The `bot` plugin is also its own source for scheduled prompts. Each entry is
-stored on its bot object (`scheduled`), so the source and the actions read and
-write the same place without a `serve` reload. An entry is `name`, `schedule`
-(a five-field cron expression in local time), `prompt`, optional `model` and
-`effort`, `paused`, and the last firing (`plannedAt`, `firedAt`, `schedule`,
-`chatId`, `result`, `notified`).
+The `bot` plugin is also its own source for routines (ADR 0030 D10). A routine is
+an object of type `bot-routine` (`ROUTINE_TYPE`; id `RT-<n>`, or
+`dreaming-<bot>` for the built-in one), with `bot` as its parent, so the source
+and the actions read and write the same place without a `serve` reload. It is
+`bot`, `name`, `schedule` (a five-field cron expression in local time), `prompt`,
+optional `model` and `effort`, `paused`, the last firing (`plannedAt`, `firedAt`,
+`schedule`, `runId`, `result`, `failed`, `notified`), the last three results
+(`recent`) and `runs`: the runs of the last 30 days (`id`, `at`, `status` of
+`running`, `done`, `quiet` or `failed`, `result`, `manual`). A removed routine
+keeps its object with `removed: true`. A bot object that still has a `scheduled`
+field has its entries moved to routine objects by `syncBots`.
 
 The source checks once a second, fires the latest planned minute at or before
 now, and catches up the latest missed minute in the last seven days after
 `serve` starts or the machine wakes. A firing calls `bot:chat` with the actor
-`{ via: "bot", id: <entry name> }`: the new chat starts at the access level
-`full`, so only the profile's deny rules, `readOnly` and a write under
-`readPaths` can stop a call; a person may change the level with `/access`
-afterwards. The new chat's first message has the event source `bot`, which the
-bot's own rule sends to `chat:reply` as a background run, and the chat's data
-records `scheduled: { bot, entry }`. At `full` the background flag adds no
-outward question. A catch-up firing appends `latenessLine` to the prompt.
+`{ via: "bot", id: <routine name> }`. That actor makes the action create a run,
+not a chat: `createChat` with `run: true`, which gives the record an `R-` id of
+its own (the chat numbers are untouched), the row state `run` (in neither chat
+filter), `scheduled: { bot, entry }` and the access level `full`, so only the
+profile's deny rules, `readOnly` and a write under `readPaths` can stop a call.
+Its first message has the event source `bot`, which the bot's own rule sends to
+`chat:reply` as a background run; the settings step gives a run no schedule or
+follow-up instruction. At `full` the background flag adds no outward question. A
+catch-up firing appends `latenessLine` to the prompt.
 
-The source watches the new chat's facts. On the first assistant message, or on
-a failure entry, it records `replySummary` as the entry's `result`, runs the
-`notify` command from `config.json` with the summary as `OPERAD_REASON`, and
-marks `notified`. A firing whose reply ended before `serve` stopped is found the
-same way at the next start; a command that fails is logged and not retried.
+The source watches the run's facts. On the first assistant message, or on a
+failure entry, it records `replySummary` as the routine's `result`, updates the
+run in `runs` (pruning those older than `ROUTINE_HISTORY_DAYS`), runs the
+`notify` command from `config.json` with the summary as `OPERAD_REASON` and the
+routine's id and link as `OPERAD_ID` and `OPERAD_LINK`, and marks `notified`. A
+firing whose reply ended before `serve` stopped is found the same way at the next
+start; a command that fails is logged and not retried. When the plugin starts,
+`closeOldScheduledChats` closes once the chats that earlier scheduled prompts and
+memory tidies opened.
 
-Actions: `schedule-add`, `schedule-edit`, `schedule-pause`, `schedule-resume`,
-`schedule-run-now` and `schedule-remove`, all on a bot. The adding and editing arguments are
+`routineViews` gives the row (`title` the name, `note` the bot, `parent`
+`bot:<bot>`, `data` with `schedule`, `nextRun`, `lastResult`, `lastSummary`,
+`paused`, `builtin`, `timeZone`, and for a routine a person made `prompt`,
+`model`, `effort`), the `routine` section and one `run-<id>` section per run,
+which renders the run record's transcript. Actions on a routine: `edit`,
+`pause`, `resume`, `run-now`, `remove` (none on the built-in one). Actions on a
+bot, kept under their old names because the command line, MCP and the clients
+call them: `schedule-add`, `schedule-edit`, `schedule-pause`, `schedule-resume`,
+`schedule-run-now` and `schedule-remove`; the adding and editing arguments are
 `name`, `schedule`, `prompt`, `model` and `effort`; the others take `name`.
-`schedule-run-now` (argument `name`; an unknown name is refused) stores
-`runNow` on the entry; the source's next check clears it first and fires the
-entry once as a timed firing does, with `last.manual` set. `last.plannedAt` and
-`last.schedule` stay, so the next timed run is unchanged, and the lateness line
-is not added. A name is unique on the bot. A changed schedule drops the old last time, so the
-next run is calculated fresh.
+`run-now` (an unknown name is refused) stores `runNow` on the routine; the
+source's next check clears it first and fires the routine once as a timed firing
+does, with `last.manual` set. `last.plannedAt` and `last.schedule` stay, so the
+next timed run is unchanged, and the lateness line is not added. A name is unique
+on the bot. A changed schedule drops the old last time, so the next run is
+calculated fresh.
 
 A schedule asked for in a chat goes through `bot schedule`, not through these
 actions: the chat's agent turns the words into a five-field cron expression and
@@ -268,7 +286,13 @@ the proposal waits in Pending until a person approves it. `bot/settings` returns
 the line a bot chat starts with, saying that a schedule is proposed this way.
 
 
-## The nightly memory tidy
+## The nightly memory tidy (Dreaming)
+
+The user-visible word is Dreaming (Chinese 梦境整理); code names stay `tidy`.
+`syncDreaming` keeps one built-in `bot-routine` per bot (`dreaming-<bot>`,
+`builtin: "tidy"`) in step with the tidy state: the schedule from `tidyTime`, the
+last result, and each tidy as a run in its history. The routine's page offers
+no action; the card below is the way to ask first.
 
 `BotTidySource` is the bot's second source. It creates one `bot-tidy` object per
 bot (`TIDY_TYPE`, id the bot name) with the last planned check and the card's
@@ -285,13 +309,13 @@ With work and `runWithoutAsking` off, the object becomes a pending card. Its
 actions are `run` and `skip`, offered by the plugin on `TIDY_TYPE`; `tidyItems`
 turns the pending and failed states into the bot's pending items, because a card
 is only for a decision. `run` only marks the card requested, because an action
-has no client to open a chat; the source starts the chat on its next poll, and
+has no client to start a run; the source starts the run on its next poll, and
 waits while any chat of the bot is writing a reply. The model is
 `backgroundModel`, else the harness's declared `capabilities.backgroundModel`,
 else the bot's model.
 
-The tidy chat is opened through `bot:chat` with the actor
-`{ via: "bot", id: TIDY_ORIGIN }`, so its chat data records the tidy origin and
+The tidy run is started through `bot:chat` with the actor
+`{ via: "bot", id: TIDY_ORIGIN }`, so its run record records the tidy origin and
 the memory plugin commits it as `tidy:`. The prompt carries the changed notes,
 the period's chat records and, when there is link work, the wiki's and the bot
 memory's broken links with their source lines, orphans, targets three or more
@@ -304,11 +328,11 @@ commit to the tidy commit. A run started from the card leaves no pending item
 when it succeeds; it calls `notify` with one line naming the bot, the change or
 `no memory change`, the cost and, when the rewrite was voided, that only
 additions were kept. The line never carries the agent's reply; the diff summary,
-cost and reply stay in the tidy object's section. A failed run leaves a failed
+cost and reply stay in the tidy object's section and the run's section of Dreaming. A failed run leaves a failed
 card whose `run` and `skip` actions are the decision it needs, with one short
 line giving the reason. An automatic run returns to idle and calls `notify` when
 the run changed something or the run failed. A card left running without a
-chat, such as after a crash between starting the chat and recording it, becomes
+run, such as after a crash between starting the run and recording it, becomes
 a failed card on the next start.
 
 ## Follow-ups

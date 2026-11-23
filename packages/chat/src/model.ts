@@ -36,6 +36,12 @@ export const STOP_FACT = "chat.stop";
 /** The fact type of a `/new`: the session in force ends here and the next reply starts a fresh one. */
 export const NEW_FACT = "chat.new";
 
+/**
+ * The fact type of the brief a `/new <goal>` gives the new session: one model
+ * call's text, or why there is none, with the call's model and cost.
+ */
+export const BRIEF_FACT = "chat.brief";
+
 /** The fact type of messages an attempt took, when no reply message can name them. */
 export const ANSWER_FACT = "chat.answered";
 
@@ -213,6 +219,11 @@ export interface ChatData {
   readonly tokensIncomplete?: true | undefined;
   /** The scheduled prompt that opened this chat; absent for every other chat. */
   readonly scheduled?: ScheduledChat | undefined;
+  /**
+   * True for the record of one run of a routine: it keeps the reply and its
+   * process like a chat, takes an `R-` id, and is not in the chat list.
+   */
+  readonly run?: true | undefined;
 }
 
 /** What a plugin gives to create a chat. */
@@ -240,6 +251,8 @@ export interface NewChat {
   readonly accessAction?: string | undefined;
   /** See {@link ChatData.scheduled}. */
   readonly scheduled?: ScheduledChat | undefined;
+  /** See {@link ChatData.run}. */
+  readonly run?: boolean | undefined;
 }
 
 /** One file attached to a message: where it is stored, and what a client shows of it. */
@@ -801,6 +814,7 @@ export function chatData(data: Readonly<Record<string, unknown>>): ChatData {
     ...(tokens === undefined ? {} : { tokens }),
     ...(data.tokensIncomplete === true ? { tokensIncomplete: true as const } : {}),
     ...(scheduled === undefined ? {} : { scheduled }),
+    ...(data.run === true ? { run: true as const } : {}),
   };
 }
 
@@ -956,18 +970,18 @@ export function chatRef(id: string): ObjectRef {
 }
 
 /** The next free chat id, `C-0001` upward. */
-async function nextChatId(store: ObjectStore): Promise<string> {
+async function nextChatId(store: ObjectStore, prefix: "C" | "R" = "C"): Promise<string> {
   let highest = 0;
   let cursor: string | undefined;
   do {
     const page = await store.list(CHAT_TYPE, { ...(cursor === undefined ? {} : { cursor }) });
     for (const object of page.objects) {
-      const match = /^C-(\d+)$/.exec(object.id);
-      if (match !== null) highest = Math.max(highest, Number(match[1]));
+      const match = /^([CR])-(\d+)$/.exec(object.id);
+      if (match !== null && match[1] === prefix) highest = Math.max(highest, Number(match[2]));
     }
     cursor = page.next;
   } while (cursor !== undefined);
-  return `C-${String(highest + 1).padStart(4, "0")}`;
+  return `${prefix}-${String(highest + 1).padStart(4, "0")}`;
 }
 
 /** Creates a chat for a plugin that has every field; returns its id. */
@@ -1002,11 +1016,13 @@ export async function createChat(
     ...(input.refresh === undefined ? {} : { refresh: input.refresh }),
     ...(input.accessAction === undefined ? {} : { accessAction: input.accessAction }),
     ...(input.scheduled === undefined ? {} : { scheduled: input.scheduled }),
+    ...(input.run === true ? { run: true as const } : {}),
   };
+  const prefix = input.run === true ? "R" : "C";
   // The id counts up; a taken one (two chats made at once) moves on to the next.
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const base = await nextChatId(store);
-    const id = `C-${String(Number(base.slice(2)) + attempt).padStart(4, "0")}`;
+    const base = await nextChatId(store, prefix);
+    const id = `${prefix}-${String(Number(base.slice(2)) + attempt).padStart(4, "0")}`;
     if ((await store.get(CHAT_TYPE, id)) !== undefined) continue;
     await store.put(CHAT_TYPE, id, data, cause);
     return id;
@@ -1314,6 +1330,47 @@ export function newSessionAt(facts: readonly PluginFact[]): number {
   let at = -1;
   for (const fact of facts) if (fact.type === NEW_FACT && fact.sequence > at) at = fact.sequence;
   return at;
+}
+
+/** The goal of the latest `/new`, when it had one and no brief has been recorded for it yet. */
+export function briefDue(
+  facts: readonly PluginFact[],
+): { readonly goal: string; readonly from: string | undefined; readonly sequence: number } | undefined {
+  let due: { readonly goal: string; readonly from: string | undefined; readonly sequence: number } | undefined;
+  for (const fact of facts) {
+    if (fact.type === NEW_FACT) {
+      const goal = typeof fact.data.goal === "string" ? fact.data.goal.trim() : "";
+      const from = typeof fact.data.from === "string" && fact.data.from.length > 0 ? fact.data.from : undefined;
+      due = goal.length === 0 ? undefined : { goal, from, sequence: fact.sequence };
+    } else if (fact.type === BRIEF_FACT) {
+      due = undefined;
+    }
+  }
+  return due;
+}
+
+/**
+ * The text the new session starts with: the brief of the latest `/new`, until
+ * a reply has been written after it. Undefined when the latest `/new` had no goal.
+ */
+export function briefToCarry(messages: readonly Message[], facts: readonly PluginFact[]): string | undefined {
+  let found: PluginFact | undefined;
+  for (const fact of facts) {
+    if (fact.type === NEW_FACT) found = undefined;
+    else if (fact.type === BRIEF_FACT) found = fact;
+  }
+  if (found === undefined) return undefined;
+  const at = found.sequence;
+  if (messages.some((message) => message.role === "assistant" && message.sequence > at)) return undefined;
+  const text = typeof found.data.text === "string" ? found.data.text.trim() : "";
+  const goal = typeof found.data.goal === "string" ? found.data.goal.trim() : "";
+  const failed = typeof found.data.failed === "string" ? found.data.failed : undefined;
+  const lead = "This is a new session of an existing chat.";
+  const body =
+    text.length > 0
+      ? `${lead} Brief of the earlier session:\n\n${text}`
+      : `${lead} A brief of the earlier session could not be made${failed === undefined ? "" : ` (${failed})`}.`;
+  return goal.length === 0 ? body : `${body}\n\nGoal for this session: ${goal}`;
 }
 
 /**
