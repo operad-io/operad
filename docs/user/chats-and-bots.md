@@ -388,7 +388,7 @@ is a section with its process and result. The bot page lists its routines too.
 Each bot also has **Dreaming** (Chinese 梦境整理), a built-in routine for its
 nightly memory tidy (see [Memory](memory.md)). It is in the list with its next
 night, last result and runs, and it is not edited, paused or removed there: its
-time is the bot's `tidyTime`, and the setting `runWithoutAsking` decides whether
+time is the bot's `tidyTime`, and the setting `runWithoutAsking` chooses whether
 it first shows a pending card and waits for Run or Skip.
 
 To schedule something from a chat, say it in words ("every morning at 8, collect
