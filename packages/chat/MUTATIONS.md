@@ -758,3 +758,19 @@ Each row was applied to the source, `bun test test/segments.test.ts` was run, an
 | T-0775-M15 | packages/chat/src/views.ts | a `date:` after the last item was not refused | `reading the transcript from a segment, a date or a message > date:YYYY-MM-DD starts at the first thing on or after that day` |
 | T-0775-M16 | packages/chat/src/reply.ts | the chat's cost was not brought up to date after the title call | `segments of a long chat > the title call is paid like a reply: the chat's cost counts it as soon as it is made` |
 | T-0775-M21 | packages/chat/src/views.ts | the divider showed `Segment <n> · <title>` with no date instead of the title and the date | `segments of a long chat > a /new and a compaction each start a segment; the transcript marks it with its date and a generated title` |
+| T-0790-M1 | packages/chat/src/deliver.ts | a delivery's message data left out `routineId` | `a delivered result > the transcript's data names the routine and the run of a delivery, and the header stays` |
+| T-0790-M2 | packages/chat/src/model.ts | reading a stored delivery dropped its `routineId` | `a delivered result > the transcript's data names the routine and the run of a delivery, and the header stays` |
+
+The rows above reused ids that other packages hold for T-0790 (T-0790-M1, T-0790-M2); they are renumbered below as T-0790-M3, T-0790-M4 (the lines above stay, rows are append-only).
+
+| T-0790-M3 | packages/chat/src/deliver.ts | a delivery's message data left out `routineId` | `a delivered result > the transcript's data names the routine and the run of a delivery, and the header stays` |
+| T-0790-M4 | packages/chat/src/model.ts | reading a stored delivery dropped its `routineId` | `a delivered result > the transcript's data names the routine and the run of a delivery, and the header stays` |
+
+| T-0779-M1 | packages/chat/src/reply.ts | the reply's profile did not deny writes to the bot's memory during a stretch | `/private > the reply's profile leaves the bot's memory readable and not writable, only while it is on` |
+| T-0779-M2 | packages/chat/src/reply.ts | the memory flush was still given after a stretch ended, while the session held it | `the memory flush before a compaction > is given to a session with no stretch, skipped while it is on, and skipped after it until /new` |
+| T-0779-M3 | packages/chat/src/index.ts | a message sent during a stretch was not marked | `/private > messages and their answers are marked; those before and after the stretch are not` |
+| T-0779-M8 | packages/chat/src/views.ts | the chat row did not show the standing status while a stretch was on | `/private > the row and every page show the standing status while it is on, and only then` |
+| T-0779-M9 | packages/chat/src/views.ts | the transcript page did not show the standing status while a stretch was on | `/private > the row and every page show the standing status while it is on, and only then` |
+| T-0779-M10 | packages/chat/src/index.ts | `/private` was not refused on a chat that is not a bot's | `/private > a chat that is not a bot's has no memory and refuses it` |
+| T-0779-M11 | packages/chat/src/index.ts | `/private` was not refused while a reply was being written | `/private > it is refused while a reply is being written` |
+| T-0779-M12 | packages/chat/src/model.ts | the line that ends a stretch no longer suggested `/new` | `/private > a bot chat turns the stretch on and off with the same command, and says what it is and is not` |

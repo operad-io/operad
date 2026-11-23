@@ -2,6 +2,12 @@
  * Work that reads a store and must be over before the store is closed. After
  * `drain` no new work starts, and work still running at the end of the wait is
  * dropped quietly by its caller (`draining` tells it so).
+ *
+ * Nothing pending is lost or wrong in the window: a drained registry belongs
+ * to a context that is ending, its answers are read again from the next
+ * context's registry, and work that was in flight when the wait began either
+ * finishes with the right items or is dropped whole, never half-read: a late
+ * failure keeps only the items already complete.
  */
 export class InFlight {
   private readonly running = new Set<Promise<unknown>>();

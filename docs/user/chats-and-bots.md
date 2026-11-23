@@ -78,7 +78,7 @@ each of them. A message a run has taken never changes, and both actions refuse
 it with a line naming the message.
 
 A line that starts with `/` and names one of the chat's actions runs that action
-instead of going to the agent: `/model sonnet`, `/effort high`, `/access edits`, `/stop`, `/new`, `/new <what comes next>` (the new session starts with a short brief of the old one for that goal), `/retry`,
+instead of going to the agent: `/model sonnet`, `/effort high`, `/access edits`, `/stop`, `/new`, `/new <what comes next>` (the new session starts with a short brief of the old one for that goal), `/private` (a bot chat only; see below), `/retry`,
 `/status`, `/close`, `/help`. `chat:withdraw` and `chat:edit` are actions of the
 queued message, not chat commands.
 The rest of the line is the action's arguments, in the order its fields are
@@ -147,6 +147,22 @@ A `pi` chat compacts its context after a reply when it reaches three quarters of
 the model's window. If the compacted context still fills that much, the chat does
 not compact again and again: your next message fails with a line saying the chat
 is too full to continue. Send `/new` to start a fresh one.
+
+## A stretch that is not remembered
+
+In a chat of a bot, `/private` starts a stretch the bot does not remember, and
+`/private` again ends it. While it is on the chat shows
+"Not remembered / 不记入记忆". The messages stay in the chat and you still see
+them; this is not deletion and not a separate chat. They do not enter the bot's
+memory: the bot cannot write a note during the stretch (it can still read its
+notes), the memory flush before a compaction is skipped, Dreaming leaves the
+messages out, and they are not in the search index, so the bot cannot find them
+again. Telegram shows a line when the stretch starts and when it ends. The
+command is refused while a reply is being written.
+
+The stretch is still in the agent's own session. A compaction could carry it
+into later context, so when you end the stretch the chat suggests `/new`; until
+then the memory flush is skipped for that session.
 
 A chat's filters are `open` (the default) and `closed`; the kernel adds `all`,
 so `operad list chat --filter all` still shows closed chats. A chat on a
@@ -273,7 +289,7 @@ MCP servers.
 | `bot.bots.<name>.access.askCommands` | array of strings | `[]` | Command patterns | Appended to the default ask list; a match asks before it runs. |
 | `bot.bots.<name>.access.askPaths` | array of strings | `[]` | Paths | Appended to the default ask list. |
 | `bot.bots.<name>.access.readOnly` | boolean | `false` | `true`, `false` | Every reply: `true` refuses every write and every command that is not known to only read. |
-| `bot.bots.<name>.accessLevel` | string | `ask` | `plan`, `ask`, `edits`, `full` | The level a new chat on the bot starts at. Next reply of a chat that chose no level, and every new chat. Unlike `access`, it can loosen the profile: `full` asks nothing but the deny rules. A chat a scheduled prompt opens starts at `full`; a chat that chose a level with `/access` keeps it. See [Access level](#access-level). |
+| `bot.bots.<name>.accessLevel` | string | `ask` | `plan`, `ask`, `edits`, `full` | The level a new chat on the bot starts at. Next reply of a chat that chose no level, and every new chat. Unlike `access`, it can loosen the profile: `full` asks nothing but the deny rules. A chat a routine run opens starts at `full`; a chat that chose a level with `/access` keeps it. See [Access level](#access-level). |
 | `bot.bots.<name>.writeWiki` | boolean | `true` for `default`, `false` for every other bot | `true`, `false` | At the next reply: `true` lets the bot write the shared wiki; read access is always there. See [Memory and the wiki](memory.md). |
 | `bot.bots.<name>.tidyTime` | string | `03:30` | `HH:MM` from `00:00` to `23:59`, in the machine's local time zone | The next nightly memory check of the bot. |
 | `bot.bots.<name>.runWithoutAsking` | boolean | `false` | `true`, `false` | The next nightly check: `true` runs the bot's Dreaming (memory tidy) with no pending item; `false` waits for Run or Skip. |

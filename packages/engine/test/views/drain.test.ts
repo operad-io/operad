@@ -108,6 +108,39 @@ describe("a reload or a stop waits for work on the old store (T-0787)", () => {
     expect(logs).toEqual([]);
   });
 
+  test("a late failure keeps the items earlier plugins already gave", async () => {
+    const root = await tempRoot();
+    const release = gate();
+    const started = gate();
+    const first = definePlugin({
+      name: "first",
+      kind: "domain",
+      version: "0.0.1",
+      standing: () => [{ id: "a", prompt: "a" }],
+    });
+    const second = definePlugin({
+      name: "second",
+      kind: "domain",
+      version: "0.0.1",
+      standing: async () => {
+        started.open();
+        await release.wait;
+        throw new Error(CLOSED);
+      },
+    });
+    const logs: string[] = [];
+    const registry = new PluginRegistry([first, second], {
+      store: new MemoryPluginStore({ root: join(root, "plugins") }),
+      onLog: (message) => logs.push(message),
+    });
+    const late = registry.standing();
+    await started.wait;
+    await registry.drain(10);
+    release.open();
+    expect(await late).toMatchObject([{ plugin: "first", id: "a" }]);
+    expect(logs).toEqual([]);
+  });
+
   test("a resolve in flight is waited for, and a late one is dropped without a log line", async () => {
     const root = await tempRoot();
     const release = gate();

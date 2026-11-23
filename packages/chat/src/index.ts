@@ -34,6 +34,9 @@ import {
   MODEL_FACT,
   NEW_FACT,
   newMessageId,
+  PRIVATE_FACT,
+  PRIVATE_OFF_LINE,
+  PRIVATE_ON_LINE,
   readChat,
   STOP_FACT,
   stoppedRunAfter,
@@ -191,9 +194,13 @@ export async function sendMessage(
   const known = CHAT_SOURCES.find((name) => name === via);
   const source = ctx.source ?? known ?? OTHER_SOURCE;
   const id = newMessageId();
+  // A message of a stretch that is not remembered is marked when it is recorded.
+  const privateNow =
+    ctx.store !== undefined && chatData((await ctx.store.get(CHAT_TYPE, chatId))?.data ?? {}).private === true;
   const message: MessageData = {
     id,
     role: "user",
+    ...(privateNow ? { private: true as const } : {}),
     from: { via: ctx.actor.via, id: ctx.actor.id },
     text: note,
     attachments: files.map((path) => attachmentOf(path)),
@@ -717,6 +724,47 @@ const newAction: ActionTypeDefinition = {
   },
 };
 
+/** Why `chat:private` is not offered; absent when it is. Only a bot chat has a memory to keep a stretch out of. */
+function privateRefusal(chat: ChatData, id: string): string | undefined {
+  if (chat.closed) return `${id} is closed; it has no stretch to keep out of memory`;
+  if (chat.parent === undefined || !chat.parent.startsWith("bot:")) {
+    return "only a chat of a bot has a memory to keep a stretch out of";
+  }
+  return undefined;
+}
+
+const privateAction: ActionTypeDefinition = {
+  name: "private",
+  on: CHAT_TYPE,
+  command:
+    "Start or end a stretch that is not remembered: messages stay in the chat but do not enter the bot's memory.",
+  when: (state) => privateRefusal(chatData(state), "") === undefined,
+  why: (object) => privateRefusal(chatData(object.data), object.id),
+  async run(ctx) {
+    const stored = await openChat(ctx, "it has no stretch to keep out of memory");
+    const refused = privateRefusal(chatData(stored.data), ctx.object.id);
+    if (refused !== undefined) throw new Error(refused);
+    const read = readChat(ctx.store, ctx.object.id);
+    // The reply being written keeps the access profile it started with, so the
+    // stretch changes only between replies, as `/new` does.
+    if ((await writingReplyNow(read.facts, read.messages, read.entries, ctx.runs)) !== undefined) {
+      throw new Error(`chat ${ctx.object.id} is writing a reply; send /private once it ends or /stop it`);
+    }
+    const on = chatData(stored.data).private !== true;
+    await ctx.facts.append({
+      type: PRIVATE_FACT,
+      object: chatRef(ctx.object.id),
+      data: { on, by: { via: ctx.actor.via, id: ctx.actor.id } },
+    });
+    // The field is there only while the stretch is on.
+    await changeChat(ctx, "action:chat/private", (data) => {
+      const kept = Object.fromEntries(Object.entries(data).filter(([key]) => key !== "private"));
+      return on ? { ...kept, private: true } : kept;
+    });
+    return on ? PRIVATE_ON_LINE : PRIVATE_OFF_LINE;
+  },
+};
+
 const stopAction: ActionTypeDefinition = {
   name: "stop",
   on: CHAT_TYPE,
@@ -1033,7 +1081,7 @@ export function createChatPlugin() {
         mode: "auto" as const,
       },
     ],
-    actions: [sendAction, withdrawAction, editAction, modelAction, effortAction, accessAction, stopAction, newAction, retryAction, compactAction, statusAction, closeAction, helpAction],
+    actions: [sendAction, withdrawAction, editAction, modelAction, effortAction, accessAction, stopAction, newAction, privateAction, retryAction, compactAction, statusAction, closeAction, helpAction],
     views: { [CHAT_TYPE]: chatViews },
   });
 }

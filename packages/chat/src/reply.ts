@@ -61,6 +61,7 @@ import {
   ENTRY_FACT,
   latestRunOf,
   MESSAGE_FACT,
+  sessionHoldsPrivate,
   RUN_FACT,
   newMessageId,
   promptFor,
@@ -884,6 +885,8 @@ interface Live {
   readonly worktreeOffer?: boolean | undefined;
   /** A plugin step to call after the round ends, when the chat's refresh step names one. */
   readonly after?: string | undefined;
+  /** The directories that are the bot's memory; a stretch that is not remembered reads them and writes none. */
+  readonly memoryPaths?: readonly string[] | undefined;
 }
 
 function sessionContextOf(value: unknown): SessionContext | undefined {
@@ -949,7 +952,11 @@ async function liveSettings(
   const notes = noteFilesOf(data.notes);
   const after = typeof data.after === "string" && data.after.length > 0 ? data.after : undefined;
   const accessDefault = isAccessLevel(data.accessDefault) ? data.accessDefault : undefined;
+  const memoryPaths = Array.isArray(data.memoryPaths)
+    ? data.memoryPaths.filter((item): item is string => typeof item === "string" && item.length > 0)
+    : undefined;
   return {
+    ...(memoryPaths === undefined || memoryPaths.length === 0 ? {} : { memoryPaths }),
     ...(accessDefault === undefined ? {} : { accessDefault }),
     ...(data.worktreeOffer === false ? { worktreeOffer: false } : {}),
     cwd: data.cwd,
@@ -974,6 +981,27 @@ export function withAttachmentReads(
 ): Readonly<Record<string, JsonValue>> {
   const own = Array.isArray(access.readPaths) ? access.readPaths : [];
   return { ...access, readPaths: [...own, directory] };
+}
+
+/**
+ * The profile with the bot's memory directories read-only: denied for writing,
+ * with a read path through the deny, as a wiki the bot may not write is. It is
+ * what keeps a stretch that is not remembered from writing a note, whatever
+ * the model is asked (ADR 0026 D23).
+ */
+export function withMemoryReadOnly(
+  access: Readonly<Record<string, JsonValue>>,
+  directories: readonly string[],
+): Readonly<Record<string, JsonValue>> {
+  const strings = (value: JsonValue | undefined): string[] =>
+    Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+  const denied = strings(access.denyPaths);
+  const readable = strings(access.readPaths);
+  return {
+    ...access,
+    denyPaths: [...denied, ...directories.filter((path) => !denied.includes(path))],
+    readPaths: [...readable, ...directories.filter((path) => !readable.includes(path))],
+  };
 }
 
 /**
@@ -1802,9 +1830,14 @@ async function replyOnce(
   // them, every file as a path, and the chat's own attachment directory open to reads.
   const directory = attachmentDir(ctx.home, CHAT_TYPE, object.id);
   const levelPath = accessLevelPath(ctx.home, object.id);
-  const withReads = messages.some((message) => message.attachments.length > 0)
+  const withAttachments = messages.some((message) => message.attachments.length > 0)
     ? withAttachmentReads(live.access, directory)
     : live.access;
+  // A stretch that is not remembered leaves the bot's memory read-only for this reply.
+  const withReads =
+    chat.private === true && live.memoryPaths !== undefined
+      ? withMemoryReadOnly(withAttachments, live.memoryPaths)
+      : withAttachments;
   const baseAccess = withLevelFileDeny(withReads, levelPath);
   recheckBase = baseAccess;
   const base = withAccessLevel(baseAccess, level);
@@ -1934,13 +1967,17 @@ async function replyOnce(
         // a task keeps pi's retry off and uses dev's own waits and fallbacks.
         ...(chat.harness === "pi" ? { retry: true } : {}),
         // pi compacts when the context nears the window, after a silent turn
-        // that lets a bot write to its memory first (ADR 0023 D13). A
+        // that lets a bot write to its memory first (ADR 0023 D12). A
         // `/compact` asks for it now.
         ...(chat.harness === "pi"
           ? {
               compact: {
                 at: COMPACT_AT,
-                ...(live.notes === undefined ? {} : { flush: COMPACT_FLUSH }),
+                // The flush writes what the whole session holds to memory, so a session
+                // that holds a stretch that is not remembered gets none.
+                ...(live.notes === undefined || chat.private === true || sessionHoldsPrivate(messages, read.facts)
+                  ? {}
+                  : { flush: COMPACT_FLUSH }),
                 ...(compactAsked ? (compactOnly ? { only: true } : { now: true }) : {}),
               },
             }
@@ -2083,6 +2120,8 @@ async function replyOnce(
     attachments: [],
     source: { kind: chat.harness, ref: null },
     replyTo: [...pending.map((message) => message.id), ...(midRun?.handed ?? [])],
+    // The answer to a message of the stretch is part of it.
+    ...(chat.private === true || pending.some((message) => message.private === true) ? { private: true as const } : {}),
     runId: ctx.runId,
     ...(sessionId === undefined ? {} : { session: sessionId }),
     ...usage,

@@ -21,7 +21,7 @@ import { secretValues } from "./reply.ts";
 import { readChatSkills, skillSummaries, type ObjectReader } from "./skills.ts";
 import { foldLogTail, agentLogPath } from "./tail.ts";
 import { segmentsOf, type Segment } from "./segments.ts";
-import { agentLine, answeredOfFact, attachmentsOf, CHAT_TYPE, deliveryHeader, deliveryOf, chatData, chatRef, COMMAND_FACT, commandOfFact, ENTRY_FACT, entryOfFact, factsOf, IMAGE_TYPES, lastReplyContext, latestRunOf, MESSAGE_CHANGE_FACT, MESSAGE_FACT, memoryShownOf, memoryUsedLine, memoryWroteLine, messageChangeOfFact, messageFactsInForce, modelAndCost, queuedData, queuedMessages, queuedOf, readChat, RUN_FACT, stopOfFact, timingsOf, unanswered, ANSWER_FACT, type Attachment, type ChatContext, type ChatRead, type Command, type Entry, type Message, type MemoryShown, type MessageChange, type ToolResult } from "./model.ts";
+import { PRIVATE_STATUS, agentLine, answeredOfFact, attachmentsOf, CHAT_TYPE, deliveryHeader, deliveryOf, chatData, chatRef, COMMAND_FACT, commandOfFact, ENTRY_FACT, entryOfFact, factsOf, IMAGE_TYPES, lastReplyContext, latestRunOf, MESSAGE_CHANGE_FACT, MESSAGE_FACT, memoryShownOf, memoryUsedLine, memoryWroteLine, messageChangeOfFact, messageFactsInForce, modelAndCost, queuedData, queuedMessages, queuedOf, readChat, RUN_FACT, stopOfFact, timingsOf, unanswered, ANSWER_FACT, type Attachment, type ChatContext, type ChatRead, type Command, type Entry, type Message, type MemoryShown, type MessageChange, type ToolResult } from "./model.ts";
 import type { TailRead } from "./tail.ts";
 
 /** How many messages of a chat one page of the transcript holds. */
@@ -38,6 +38,7 @@ function row(object: StoredObject): ObjectRow {
   const note = [
     ...(chat.harness.length > 0 ? [agentLine(chat)] : []),
     ...(chat.accessLevel !== chat.accessDefault ? [chat.accessLevel ?? ""] : []),
+    ...(chat.private === true ? [PRIVATE_STATUS] : []),
   ].filter((part) => part.length > 0);
   const queued = queuedOf(object.data.queued);
   const data: Record<string, JsonValue> = {
@@ -1654,9 +1655,11 @@ async function load(
   const blocks = (selected?.chunks ?? []).flatMap((chunk) => chunkBlocks(chunk, starts, speaker, ctx.home, chat.harness));
   const body = blocks.length === 0 && options.cursor === undefined ? "No messages yet." : blocks.join("\n\n---\n\n");
   // Every page says which agent answers, as the row does.
-  const markdown = chat.harness.length > 0
+  const agentMarkdown = chat.harness.length > 0
     ? `Agent: ${agentLine(chat)}\n\n${body}`
     : body;
+  // A stretch that is not remembered stands as a status at the top of every page.
+  const markdown = chat.private === true ? `**${PRIVATE_STATUS}**\n\n${agentMarkdown}` : agentMarkdown;
   const nextCursor =
     free === undefined
       ? index < 0

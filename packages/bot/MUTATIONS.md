@@ -509,3 +509,8 @@ changes for bots, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0788-M2 | packages/bot/src/delivery.ts | the delivery did not carry the routine's object id | `a routine's result reaches the bot's main chat > a result with content is one message in the main chat, headed with the routine, and starts no reply` |
+| T-0790-M1 | packages/bot/src/idle.ts | an idle run chat was closed like any other chat | `idle chats left alone > a run chat and a chat of a parent that is not a bot stay open however long they idle` |
+| T-0790-M2 | packages/bot/src/schedule.ts | prune dropped a run still marked running when it was old | `routine history > a run still marked running is kept however old` |
+
+| T-0779-M4 | packages/bot/src/tidy.ts | Dreaming read the marked messages | `Dreaming and a stretch that is not remembered > the chats the check reads leave out marked messages, and a chat that holds only those is not read` |
+| T-0779-M5 | packages/bot/src/index.ts | the bot's settings did not name its memory directories | `the directories a stretch that is not remembered keeps read-only > the bot's settings name its memory directory and the wiki` |

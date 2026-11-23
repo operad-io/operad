@@ -64,7 +64,7 @@ export interface WorkerInput {
   readonly retry?: boolean | undefined;
   /** Set by a chat reply: the worker may serve the next reply and then end itself. */
   readonly keep?: WorkerKeep | undefined;
-  /** Set by a chat reply: compact the context when it nears the window (ADR 0023 D13). */
+  /** Set by a chat reply: compact the context when it nears the window (ADR 0023 D12). */
   readonly compact?: WorkerCompact | undefined;
   /** Overrides of the defaults for pruning old tool results (T-0767); pruning is on without it. */
   readonly prune?: WorkerPrune | undefined;

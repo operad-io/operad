@@ -10,6 +10,7 @@ import {
   MESSAGE_FACT,
   chatRef,
   deliverResult,
+  PRIVATE_FACT,
 } from "@operad-io/chat";
 import { Secret, type ClientApi, type SourceContext, type ViewEvent } from "@operad-io/engine";
 import {
@@ -321,6 +322,21 @@ describe("sending a reply", () => {
     await sender(w, api).sweepAll();
     await sender(w, api).sweepChat(chat);
     expect(api.sent.map((request) => request.text)).toEqual(["While you were away (6 h):\n• Routine results: Morning news"]);
+    await w.close();
+  });
+
+  test("a stretch that is not remembered sends a line when another client starts and ends it, and none for Telegram's own command", async () => {
+    const { w, chat } = await bound();
+    const api = new FakeApi();
+    await w.ctx.facts.append({ type: PRIVATE_FACT, object: chatRef(chat), data: { on: true, by: { via: "tui", id: "me" } } });
+    await w.ctx.facts.append({ type: PRIVATE_FACT, object: chatRef(chat), data: { on: false, by: { via: "tui", id: "me" } } });
+    await w.ctx.facts.append({ type: PRIVATE_FACT, object: chatRef(chat), data: { on: true, by: { via: "telegram", id: "42" } } });
+    await sender(w, api).sweepChat(chat);
+    await sender(w, api).sweepChat(chat);
+    expect(api.sent).toHaveLength(2);
+    expect(api.sent[0]?.text).toContain("Not remembered");
+    expect(api.sent[0]?.text).toContain(": on.");
+    expect(api.sent[1]?.text).toContain(": off.");
     await w.close();
   });
 
