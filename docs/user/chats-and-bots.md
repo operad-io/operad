@@ -78,7 +78,7 @@ each of them. A message a run has taken never changes, and both actions refuse
 it with a line naming the message.
 
 A line that starts with `/` and names one of the chat's actions runs that action
-instead of going to the agent: `/model sonnet`, `/effort high`, `/access edits`, `/stop`, `/new`, `/retry`,
+instead of going to the agent: `/model sonnet`, `/effort high`, `/access edits`, `/stop`, `/new`, `/new <what comes next>` (the new session starts with a short brief of the old one for that goal), `/retry`,
 `/status`, `/close`, `/help`. `chat:withdraw` and `chat:edit` are actions of the
 queued message, not chat commands.
 The rest of the line is the action's arguments, in the order its fields are

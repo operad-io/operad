@@ -36,6 +36,12 @@ export const STOP_FACT = "chat.stop";
 /** The fact type of a `/new`: the session in force ends here and the next reply starts a fresh one. */
 export const NEW_FACT = "chat.new";
 
+/**
+ * The fact type of the brief a `/new <goal>` gives the new session: one model
+ * call's text, or why there is none, with the call's model and cost.
+ */
+export const BRIEF_FACT = "chat.brief";
+
 /** The fact type of messages an attempt took, when no reply message can name them. */
 export const ANSWER_FACT = "chat.answered";
 
@@ -1324,6 +1330,47 @@ export function newSessionAt(facts: readonly PluginFact[]): number {
   let at = -1;
   for (const fact of facts) if (fact.type === NEW_FACT && fact.sequence > at) at = fact.sequence;
   return at;
+}
+
+/** The goal of the latest `/new`, when it had one and no brief has been recorded for it yet. */
+export function briefDue(
+  facts: readonly PluginFact[],
+): { readonly goal: string; readonly from: string | undefined; readonly sequence: number } | undefined {
+  let due: { readonly goal: string; readonly from: string | undefined; readonly sequence: number } | undefined;
+  for (const fact of facts) {
+    if (fact.type === NEW_FACT) {
+      const goal = typeof fact.data.goal === "string" ? fact.data.goal.trim() : "";
+      const from = typeof fact.data.from === "string" && fact.data.from.length > 0 ? fact.data.from : undefined;
+      due = goal.length === 0 ? undefined : { goal, from, sequence: fact.sequence };
+    } else if (fact.type === BRIEF_FACT) {
+      due = undefined;
+    }
+  }
+  return due;
+}
+
+/**
+ * The text the new session starts with: the brief of the latest `/new`, until
+ * a reply has been written after it. Undefined when the latest `/new` had no goal.
+ */
+export function briefToCarry(messages: readonly Message[], facts: readonly PluginFact[]): string | undefined {
+  let found: PluginFact | undefined;
+  for (const fact of facts) {
+    if (fact.type === NEW_FACT) found = undefined;
+    else if (fact.type === BRIEF_FACT) found = fact;
+  }
+  if (found === undefined) return undefined;
+  const at = found.sequence;
+  if (messages.some((message) => message.role === "assistant" && message.sequence > at)) return undefined;
+  const text = typeof found.data.text === "string" ? found.data.text.trim() : "";
+  const goal = typeof found.data.goal === "string" ? found.data.goal.trim() : "";
+  const failed = typeof found.data.failed === "string" ? found.data.failed : undefined;
+  const lead = "This is a new session of an existing chat.";
+  const body =
+    text.length > 0
+      ? `${lead} Brief of the earlier session:\n\n${text}`
+      : `${lead} A brief of the earlier session could not be made${failed === undefined ? "" : ` (${failed})`}.`;
+  return goal.length === 0 ? body : `${body}\n\nGoal for this session: ${goal}`;
 }
 
 /**

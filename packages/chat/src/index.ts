@@ -20,6 +20,7 @@ import {
   CLOSED_FACT,
   COMMAND_FACT,
   costText,
+  currentSession,
   effectiveEffort,
   EFFORT_FACT,
   firstOutputMs,
@@ -637,25 +638,56 @@ const closeAction: ActionTypeDefinition = {
 const newAction: ActionTypeDefinition = {
   name: "new",
   on: CHAT_TYPE,
-  command: "Start a new agent session in this chat; the transcript stays.",
+  command: "Start a new agent session in this chat; the transcript stays. With a goal, the new session starts with a short brief of this one.",
+  args: {
+    type: "object",
+    properties: {
+      goal: {
+        type: "string",
+        description: "What comes next. The new session starts with a brief of this one for that goal.",
+      },
+    },
+    additionalProperties: false,
+  },
   when: (state) => !chatData(state).closed,
   why: (object) =>
     chatData(object.data).closed ? `${object.id} is closed; it has no session to start` : undefined,
-  async run(ctx) {
+  async run(ctx, args) {
     const stored = await openChat(ctx, "it has no session to start");
     const chat = chatData(stored.data);
     const read = readChat(ctx.store, ctx.object.id);
+    const asked = (args as { readonly goal?: unknown } | undefined)?.goal;
+    const goal = typeof asked === "string" ? asked.trim() : "";
+    if (goal.length > 0 && ctx.emit === undefined) {
+      throw new Error("the brief cannot be made here; operad serve is not running");
+    }
+    const from = currentSession(chat, read.messages, read.facts);
     if ((await writingReplyNow(read.facts, read.messages, read.entries, ctx.runs)) !== undefined) {
       throw new Error(`chat ${ctx.object.id} is writing a reply; send /new once it ends or /stop it`);
     }
     await ctx.facts.append({
       type: NEW_FACT,
       object: chatRef(ctx.object.id),
-      data: { by: { via: ctx.actor.via, id: ctx.actor.id } },
+      data: {
+        by: { via: ctx.actor.via, id: ctx.actor.id },
+        ...(goal.length === 0 ? {} : { goal }),
+        ...(goal.length === 0 || from === undefined ? {} : { from }),
+      },
     });
     await changeChat(ctx, "action:chat/new", (data) => ({ ...data, session: null }));
     // A kept worker holds the old session in memory; the next reply starts its own.
     await endKeptWorker(ctx.home, chat, ctx.object.id);
+    if (goal.length > 0 && ctx.emit !== undefined) {
+      // A reply round builds the brief from the old session before anything else, so the
+      // brief is made even when no message follows.
+      await ctx.emit({
+        source: CHAT_SOURCES.find((name) => name === ctx.actor.via) ?? OTHER_SOURCE,
+        type: MESSAGE_EVENT,
+        key: `new:${newMessageId()}`,
+        object: `${CHAT_TYPE}:${ctx.object.id}`,
+      });
+      return "started a new session; a brief of this one for that goal is being made, and the next message goes to an agent that has the brief";
+    }
     return "started a new session; the transcript stays and the next message goes to an agent with no earlier context";
   },
 };
