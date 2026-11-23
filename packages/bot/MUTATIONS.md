@@ -440,3 +440,10 @@ changes for bots, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0746-M1 | packages/bot/src/schedule.ts | the lateness condition dropped `last.skippedEarlier === true`, so a firing in its own minute after skipped minutes had no lateness line (run: 1 fail, 32 pass) | `scheduledInstruction > a firing in its own minute after skipped minutes still says it is a catch-up` |
+
+## T-0753 — Run now while a firing is replying
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0753-M1 | packages/bot/src/schedule.ts | `isReplying` always returned false, so run now overwrote the replying firing's `last` | `run now is refused while the previous firing's chat is still replying, and keeps that firing's result` |
+| T-0753-M2 | packages/bot/src/schedule.ts | the restart path watched a manual run under `plannedAt` instead of `firedAt` | `a manual run's watch resumes after a restart under the run's own time` |

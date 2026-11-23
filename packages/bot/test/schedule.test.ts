@@ -636,6 +636,90 @@ describe("scheduled prompts", () => {
     }
   });
 
+  async function answerChat(
+    r: Awaited<ReturnType<typeof rig>>,
+    source: BotScheduleSource,
+    id: string,
+    text: string,
+    n: number,
+  ): Promise<void> {
+    const first = allMessages(r.store, id)[0];
+    if (first === undefined) throw new Error("no message");
+    await r.store.append({ type: RUN_FACT, object: chatRef(id), cause: "test", data: { runId: `run-r${n}` } });
+    await r.store.append({
+      type: "chat.message",
+      object: chatRef(id),
+      cause: "test",
+      data: {
+        id: `a-r${n}`,
+        role: "assistant",
+        from: { via: "claude", id: "claude" },
+        text,
+        attachments: [],
+        source: { kind: "claude", ref: null },
+        replyTo: [first.id],
+        runId: `run-r${n}`,
+      },
+    });
+    await source.settled();
+  }
+
+  test("run now is refused while the previous firing's chat is still replying, and keeps that firing's result", async () => {
+    const r = await rig();
+    const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });
+    const notices: ScheduleNotice[] = [];
+    const clock = { value: Date.parse("2026-01-01T07:59:10Z") };
+    const source = sourceFor(r, views as unknown as ClientApi, clock, notices);
+    try {
+      await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "At eight." });
+      await source.begin();
+      clock.value = Date.parse("2026-01-01T08:00:10Z");
+      await source.poll();
+      const [timedChat] = await chats(r);
+      if (timedChat === undefined) throw new Error("no timed chat");
+      await expect(r.act("bot", "default", "bot/schedule-run-now", { name: "Morning" })).rejects.toThrow(
+        "still replying to its previous firing",
+      );
+      await source.poll();
+      expect(await chats(r)).toHaveLength(1);
+      await answerChat(r, source, timedChat, "Timed result.", 1);
+      expect(notices.map((notice) => notice.summary)).toEqual(["Timed result."]);
+      // Once the reply ended, run now is accepted.
+      await r.act("bot", "default", "bot/schedule-run-now", { name: "Morning" });
+      await source.poll();
+      expect(await chats(r)).toHaveLength(2);
+    } finally {
+      views.close();
+    }
+  });
+
+  test("a manual run's watch resumes after a restart under the run's own time", async () => {
+    const r = await rig();
+    const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });
+    const notices: ScheduleNotice[] = [];
+    const clock = { value: Date.parse("2026-01-01T07:00:10Z") };
+    const source = sourceFor(r, views as unknown as ClientApi, clock, notices);
+    try {
+      await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "At eight." });
+      await source.begin();
+      await r.act("bot", "default", "bot/schedule-run-now", { name: "Morning" });
+      clock.value = Date.parse("2026-01-01T07:10:10Z");
+      await source.poll();
+      const [chat] = await chats(r);
+      if (chat === undefined) throw new Error("no chat");
+      const restarted = sourceFor(r, views as unknown as ClientApi, clock, notices);
+      await restarted.begin();
+      await answerChat(r, restarted, chat, "After restart.", 1);
+      const entry = scheduledPrompts((await r.store.get("bot", "default"))?.data ?? {})[0];
+      expect(entry?.last).toMatchObject({ manual: true, result: "After restart." });
+      expect(entry?.recent).toEqual([{ plannedAt: Date.parse("2026-01-01T07:10:10Z"), result: "After restart." }]);
+      // The first source is still alive in this test, so it may notify too.
+      expect(notices.map((notice) => notice.summary)).toContain("After restart.");
+    } finally {
+      views.close();
+    }
+  });
+
   test("a catch-up firing adds the planned time and how late it is to the prompt", async () => {
     const r = await rig();
     const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });
@@ -704,6 +788,7 @@ describe("scheduled prompts", () => {
   test("a bot row carries the server's IANA time zone", async () => {
     const r = await rig();
     const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });
+    const priorTz = process.env.TZ;
     try {
       await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "Digest." });
       process.env.TZ = "America/Toronto";
@@ -711,7 +796,8 @@ describe("scheduled prompts", () => {
       expect((row?.data as { readonly timeZone?: string } | undefined)?.timeZone).toBe("America/Toronto");
       expect((await views.get("bot:default")).row.data).toEqual(row?.data);
     } finally {
-      process.env.TZ = "UTC";
+      if (priorTz === undefined) delete process.env.TZ;
+      else process.env.TZ = priorTz;
       views.close();
     }
   });
