@@ -633,3 +633,9 @@ are append-only, so the old lines stay as history.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0758-M3 | packages/chat/src/views.ts | the running total added a cut reply's new size without subtracting its old size | `replyData over its budget > the incremental total equals the real size: the result is the first fit, within one reply of the budget` (also the cut-mark and linear tests, in `reply-data.test.ts`) |
+
+## T-0759 — reply-cut follow-ups
+
+| id | file | mutation | caught by |
+|---|---|---|---|
+| T-0759-M1 | packages/chat/src/views.ts | a shortened tool input was not marked `cut` | `replyData over its budget > a cut reply marks its thinking, text, tool input and input message, and the newest stays whole` (and the older tool-input test) |

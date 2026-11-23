@@ -67,6 +67,36 @@ describe("replyData over its budget", () => {
     expect(max - size).toBeLessThan(bytes(block(0, 1_000)));
   });
 
+  test("the running total is exact: the real size is a fit, and one byte less changes the result", () => {
+    const replies = Array.from({ length: 10 }, (_, index) => block(index, 1_000));
+    const base = { queuedCount: 0 };
+    const first = replyData(replies, Math.floor(bytes({ ...base, replies }) * 0.6), base);
+    const exact = bytes(first);
+    expect(replyData(replies, exact, base)).toEqual(first);
+    const tighter = replyData(replies, exact - 1, base);
+    expect(tighter).not.toEqual(first);
+    expect(bytes(tighter)).toBeLessThanOrEqual(exact - 1);
+  });
+
+  test("a cut reply marks its thinking, text, tool input and input message, and the newest stays whole", () => {
+    const replies = Array.from({ length: 6 }, (_, index) => block(index, 2_000));
+    const out = shown(replyData(replies, 20_000));
+    const oldest = out[0];
+    const items = oldest?.process[0]?.items ?? [];
+    const thinking = items.find((item) => item.kind === "thinking");
+    const text = items.find((item) => item.kind === "text");
+    const tool = items.find((item): item is ReplyToolItem => item.kind === "tool");
+    for (const part of [thinking, text, tool]) expect(part?.cut).toBe(true);
+    expect(thinking?.kind === "thinking" ? thinking.text.length : 2_000).toBeLessThan(2_000);
+    expect(text?.kind === "text" ? text.text.length : 2_000).toBeLessThan(2_000);
+    expect(oldest?.input[0]?.cut).toBe(true);
+    expect(oldest?.input[0]?.text.length ?? 2_000).toBeLessThan(2_000);
+    const newest = out.at(-1);
+    expect(newest?.input[0]?.cut).toBeUndefined();
+    expect(newest?.input[0]?.text).toBe("q".repeat(2_000));
+    for (const item of newest?.process[0]?.items ?? []) expect(item.cut).toBeUndefined();
+  });
+
   test("the work is linear: 200 replies over budget measure a bounded number of bytes", () => {
     const replies = Array.from({ length: 200 }, (_, index) => block(index, 1_200));
     const wholeSize = bytes({ replies });
