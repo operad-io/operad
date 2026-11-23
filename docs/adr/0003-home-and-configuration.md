@@ -18,4 +18,4 @@ Configuration files (the home's `config.json`, a repository's `.operad/dev.json`
 
 ### D3: The home holds the person's own flows
 
-`<home>/flows/<name>.flow.ts`, whose default export is a `defineFlow` value, is a flow named `home:<name>` (ADR 0002 D5). It may call the steps of every loaded plugin, is listed by `flows` and can be started by a routine. A file that does not load is refused with its reason, which names the file; the other files and `serve` are not affected.
+`<home>/flows/<name>.flow.ts`, whose default export is a `defineFlow` value, is a flow named `home:<name>` (ADR 0002 D5). It may call the steps of every loaded plugin, is listed by `flows` and can be started by a routine. A file that does not load is refused with its reason, which names the file; the other files and `serve` are not affected. A file imports `@operad-io/engine` and gets the engine the running operad is made of: the kernel keeps `<home>/node_modules/@operad-io/engine` as a link to it, renewed when it points elsewhere, and leaves a real directory there alone. A home with no flow files is not written to.
