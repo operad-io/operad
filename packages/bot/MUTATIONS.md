@@ -514,3 +514,6 @@ changes for bots, in the order they were recorded. The root
 
 | T-0779-M4 | packages/bot/src/tidy.ts | Dreaming read the marked messages | `Dreaming and a stretch that is not remembered > the chats the check reads leave out marked messages, and a chat that holds only those is not read` |
 | T-0779-M5 | packages/bot/src/index.ts | the bot's settings did not name its memory directories | `the directories a stretch that is not remembered keeps read-only > the bot's settings name its memory directory and the wiki` |
+| T-0792-M1 | packages/bot/src/tidy.ts | a cancelled run with no commit left the instructions read-only | `the instructions after a tidy run > a cancelled run, with no commit, makes the file writable again` |
+| T-0792-M2 | packages/bot/src/tidy.ts | a failed run with no commit left the instructions read-only | `the instructions after a tidy run > a failed run, with no commit, makes the file writable again` |
+| T-0792-M3 | packages/bot/src/tidy.ts | serve start did not make the instructions writable when no run was going | `the instructions after a tidy run > serve start makes the file writable when no tidy run is going` |
