@@ -68,8 +68,7 @@ remove are its `routines` command, because scheduling is plugin work and the
 kernel only reads, validates and routes the rules. The command reads and writes
 the same `triggers.json`; there is no second store. It refuses an unknown flow
 and a bad cron expression with the reason. The command line reaches it as
-`operad routines ...` (the old name `operad scheduled ...` is the same command
-and is not listed in `--help` or the docs), HTTP as `POST /v1/commands` and MCP through its
+`operad routines ...` (the old name `scheduled` is gone, with no alias), HTTP as `POST /v1/commands` and MCP through its
 `command` tool. Listing a routine gives its flow, schedule, parameters, next
 run and the last run's result and run id; the run's own history and the usual
 run-ended notification are unchanged. A routine's id comes from the fields that decide what it starts (flow, params, object, mode and schedule), so editing any of them gives it a new id: the last run shown and any id a client holds are lost, and the client reads the new id from the list. An edit that would make a rule identical to another routine is refused.
