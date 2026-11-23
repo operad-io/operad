@@ -187,6 +187,11 @@ export class ReplySender {
         outgoing.push({ id: message.id, at: message.at, sequence: message.sequence, text: `**${deliveryHeader(message.delivery)}**\n\n${message.text}` });
         continue;
       }
+      if (message.role === "recap") {
+        // The recap on return goes as one message of its own.
+        outgoing.push({ id: message.id, at: message.at, sequence: message.sequence, text: message.text });
+        continue;
+      }
       if (message.role !== "assistant") continue;
       outgoing.push({ id: message.id, at: message.at, sequence: message.sequence, text: message.text });
     }

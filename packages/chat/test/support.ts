@@ -18,6 +18,9 @@ import { chatRef, createChat, MESSAGE_FACT, newMessageId, createChatPlugin, sync
 
 const roots: string[] = [];
 
+/** The time the test store stamps facts with; a test moves it instead of waiting. */
+export const clock = { now: (): number => Date.now() };
+
 export async function cleanupRoots(): Promise<void> {
   for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true });
 }
@@ -124,7 +127,7 @@ export async function rig(
   roots.push(root);
   const calls: Call[] = [];
   const events: TriggerEvent[] = [];
-  const store = new MemoryPluginStore({ root: join(root, "store") });
+  const store = new MemoryPluginStore({ root: join(root, "store"), clock: () => clock.now() });
   /** The round a stop can cancel, with the signal its step waits on. */
   let active: { readonly runId: string; readonly controller: AbortController } | undefined;
   const registry = new PluginRegistry([createChatPlugin(), fakeHarness(name, script, calls, models, efforts, capabilities, modelsReady), ...extraPlugins], {
