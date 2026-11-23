@@ -61,6 +61,8 @@ import {
   routinesOf,
   startScheduled,
 } from "./schedule.ts";
+import { closeIdleChats } from "./idle.ts";
+import { pruneRoutineRuns } from "./schedule.ts";
 import { closeOldScheduledChats, routineActions, routineMarkdown, routineViews, ROUTINE_FILTERS } from "./routine.ts";
 import { followUpActions, followUpData, followUpMarkdown, followUps, runFollowUpCommand, runFollowUpsCommand } from "./follow-up.ts";
 import {
@@ -899,8 +901,21 @@ export function createBotPlugin() {
       await closeOldScheduledChats(ctx.store, ctx.client);
       const scheduled = await startScheduled(ctx);
       const tidy = await startTidy(ctx);
+      // Idle chats close and old routine runs leave, at start and then hourly (injected clock).
+      const sweep = async (): Promise<void> => {
+        try {
+          await closeIdleChats(ctx.store, ctx.client, ctx.clock());
+          await pruneRoutineRuns(ctx.store, ctx.clock());
+        } catch (error) {
+          await ctx.logger.write(`cleanup: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      };
+      await sweep();
+      const sweeper = setInterval(() => void sweep(), 60 * 60_000);
+      if (typeof sweeper === "object" && "unref" in sweeper) sweeper.unref();
       return {
         stop: async () => {
+          clearInterval(sweeper);
           await scheduled.stop();
           await tidy.stop();
         },
@@ -920,6 +935,7 @@ export * from "./setup-dev.ts";
 export * from "./setup-git.ts";
 export * from "./setup.ts";
 export * from "./schedule.ts";
+export * from "./idle.ts";
 export * from "./routine.ts";
 export * from "./follow-up.ts";
 export * from "./tidy.ts";
