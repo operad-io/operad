@@ -1,18 +1,18 @@
 /**
  * Runs the memory regression set against the memory as it is now and records a
- * score. A case is scored by exact facts, not by a model judge:
+ * score. A case is scored by exact phrases, not by a model judge:
  *
  * - The score then moves only when the memory, the compaction window or the
  *   answerer moves. A judge model adds its own drift to a number whose job is
  *   to show the memory's drift, and a fixed rubric does not remove it.
  * - It costs nothing to run, so it can run after every change to the memory.
- * - The facts are short phrases the person approved when the case was made
+ * - The phrases are short phrases the person approved when the case was made
  *   (a name, a date, a number), which is the kind of answer a memory misses.
  *
  * The default answerer needs no model. It builds what the bot would have in
  * front of it for the question (the messages a compaction would keep, the
  * memory index cut at its limit, and what a memory search of the question
- * returns) and scores that: a fact the bot is never shown cannot be answered.
+ * returns) and scores that: a phrase the bot is never shown cannot be answered.
  * A program may stand in for the answerer to score a real bot's answer.
  */
 
@@ -64,7 +64,7 @@ export function programAnswerer(command: readonly string[], timeoutMs = 120_000)
   };
 }
 
-/** Text as facts are compared: lowercase, with spaces and punctuation removed. */
+/** Text as phrases are compared: lowercase, with spaces and punctuation removed. */
 export function normalised(text: string): string {
   return text.normalize("NFKC").toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
 }
@@ -86,7 +86,7 @@ export function scoreAnswer(answer: string, found: MemoryCase): CaseScore {
     const wanted = normalised(phrase);
     return wanted.length > 0 && text.includes(wanted);
   };
-  const missing = found.answer.facts.filter((fact) => !states(fact));
+  const missing = found.answer.include.filter((phrase) => !states(phrase));
   const repeated = found.answer.avoid.filter((phrase) => states(phrase));
   return { id: found.id, passed: missing.length === 0 && repeated.length === 0, missing, repeated };
 }

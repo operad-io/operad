@@ -1,7 +1,7 @@
 /**
  * Turns the chat record into proposed cases. A person's correction of a bot's
  * reply is a miss: the message before the reply is the question, the messages
- * before that are the context. The facts of the right answer are the person's
+ * before that are the context. The phrases of the right answer are the person's
  * to write, so a proposal is a pending item the person approves with them; it
  * writes a case file only on approval, and nothing is extracted on its own.
  */
@@ -164,8 +164,8 @@ export async function proposeCases(store: ObjectStore, options: ProposeOptions):
   return made;
 }
 
-/** The case an approval writes: the person's facts, and what the bot got wrong when they say so. */
-export function caseOfProposal(id: string, data: CaseProposalData, facts: string, avoid: string): MemoryCase {
+/** The case an approval writes: the person's phrases, and what the bot got wrong when they say so. */
+export function caseOfProposal(id: string, data: CaseProposalData, include: string, avoid: string): MemoryCase {
   const lines = (text: string): string[] =>
     text
       .split("\n")
@@ -177,25 +177,25 @@ export function caseOfProposal(id: string, data: CaseProposalData, facts: string
       kind: "correction",
       context: data.context,
       question: data.question,
-      answer: { facts: lines(facts), avoid: lines(avoid) },
+      answer: { include: lines(include), avoid: lines(avoid) },
     },
     `${id}.json`,
   );
 }
 
-/** Approves a proposal: writes the case file with the facts the person gave. */
+/** Approves a proposal: writes the case file with the phrases the person gave. */
 export async function approveCaseProposal(
   store: ObjectStore,
   home: string,
   id: string,
-  facts: string,
+  include: string,
   avoid: string,
 ): Promise<string> {
   const object = await store.get(CASE_PROPOSAL_TYPE, id);
   const data = object === undefined ? undefined : dataOf(object);
   if (data === undefined) throw new CaseError(`there is no proposed case "${id}"`);
   if (data.state !== "pending") return `proposed case ${id} is already ${data.state}; nothing to approve`;
-  const made = caseOfProposal(id, data, facts, avoid);
+  const made = caseOfProposal(id, data, include, avoid);
   const directory = join(home, CASES_DIRECTORY);
   mkdirSync(directory, { recursive: true });
   writeFileSync(join(directory, `${id}.json`), `${JSON.stringify(made, null, 2)}\n`);
@@ -232,7 +232,7 @@ export const caseProposalActions: readonly ActionTypeDefinition[] = [
     args: {
       type: "object",
       properties: {
-        facts: {
+        include: {
           type: "string",
           role: "note",
           minLength: 1,
@@ -244,12 +244,12 @@ export const caseProposalActions: readonly ActionTypeDefinition[] = [
           description: "Phrases of the wrong answer, one per line; an answer that states one fails. May be empty.",
         },
       },
-      required: ["facts"],
+      required: ["include"],
       additionalProperties: false,
     },
     async run(ctx, args) {
-      const input = args as { readonly facts: string; readonly avoid?: string | undefined };
-      return approveCaseProposal(ctx.store, ctx.home, ctx.object.id, input.facts, input.avoid ?? "");
+      const input = args as { readonly include: string; readonly avoid?: string | undefined };
+      return approveCaseProposal(ctx.store, ctx.home, ctx.object.id, input.include, input.avoid ?? "");
     },
   },
   {
@@ -276,7 +276,7 @@ function reviewText(data: CaseProposalData): string {
     "The correction:",
     quote(data.correction),
     "",
-    "Approve with the facts a right answer states, one short phrase per line.",
+    "Approve with the phrases a right answer states, one short phrase per line.",
   ].join("\n");
 }
 

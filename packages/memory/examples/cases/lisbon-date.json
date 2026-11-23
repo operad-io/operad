@@ -5,5 +5,5 @@
     { "role": "user", "text": "I am planning a spring trip." }
   ],
   "question": "When does the Lisbon trip start?",
-  "answer": { "facts": ["14 March"], "avoid": ["March 4th"] }
+  "answer": { "include": ["14 March"], "avoid": ["March 4th"] }
 }

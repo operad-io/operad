@@ -3,5 +3,5 @@
   "kind": "miss",
   "context": [],
   "question": "What is my cat called and when is the vet visit?",
-  "answer": { "facts": ["Miso", "second Tuesday"] }
+  "answer": { "include": ["Miso", "second Tuesday"] }
 }

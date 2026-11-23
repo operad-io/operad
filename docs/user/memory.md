@@ -231,3 +231,26 @@ mark stays as it is.
 No capture or review flow yet. Vector search is not built; the index is built so
 another search engine can replace it without changing the tools. The wiki, the
 memory layout and the nightly tidy are usable now.
+
+## The regression set
+
+A case is an exchange where the bot got something wrong or you corrected it (a
+correction counts as a miss). Each case is one file, `~/.operad/memory-cases/<id>.json`;
+the cases hold your chat text, so they stay in your home. `memory propose` turns
+the corrections it finds in your chats into pending items; approving one with the
+phrases a right answer states adds the case. `memory score` runs the set against the
+bot's current memory and appends the score to `memory-scores.jsonl` in the home.
+A case passes when every phrase is stated (ignoring case, spaces and punctuation)
+and no `avoid` phrase is.
+
+| Key | Type | Default | Allowed values | When it takes effect | Wrong value |
+|---|---|---|---|---|---|
+| `id` | string | none, required | lowercase letters, digits, `-` and `_`, up to 64; the file is named `<id>.json` | At the next `memory score` | Refused with the file name |
+| `kind` | string | none, required | `miss` or `correction` | At the next `memory score` | Refused with the file name |
+| `context` | list | none | earlier messages, oldest first | At the next `memory score` | Refused with the file name |
+| `context.role` | string | none, required in a message | `user` or `assistant` | At the next `memory score` | Refused with the file name |
+| `context.text` | string | none, required in a message | any text | At the next `memory score` | Refused with the file name |
+| `question` | string | none, required | non-empty text | At the next `memory score` | Refused with the file name |
+| `answer` | object | none, required | `include` and optionally `avoid` | At the next `memory score` | Refused with the file name |
+| `answer.include` | list | none, required | one or more short phrases a right answer states | At the next `memory score` | Refused with the file name |
+| `answer.avoid` | list | none | phrases of the wrong answer; an answer that states one fails | At the next `memory score` | Refused with the file name |

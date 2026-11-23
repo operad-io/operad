@@ -3,5 +3,5 @@
   "kind": "miss",
   "context": [],
   "question": "What is the passport number?",
-  "answer": { "facts": ["X1234567"] }
+  "answer": { "include": ["X1234567"] }
 }

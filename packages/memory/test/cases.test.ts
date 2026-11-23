@@ -64,10 +64,10 @@ describe("the case format", () => {
     expect(cases.map((entry) => entry.id)).toEqual(["cat-name", "lisbon-date", "not-in-memory", "old-hotel"]);
   });
 
-  test("a case without facts, with a bad kind or a bad id is refused", () => {
-    const good = { id: "a", kind: "miss", question: "q", answer: { facts: ["x"] } };
+  test("a case without phrases, with a bad kind or a bad id is refused", () => {
+    const good = { id: "a", kind: "miss", question: "q", answer: { include: ["x"] } };
     expect(parseCase(good, "a.json").context).toEqual([]);
-    expect(() => parseCase({ ...good, answer: { facts: [] } }, "a.json")).toThrow(CaseError);
+    expect(() => parseCase({ ...good, answer: { include: [] } }, "a.json")).toThrow(CaseError);
     expect(() => parseCase({ ...good, kind: "other" }, "a.json")).toThrow("kind");
     expect(() => parseCase({ ...good, id: "A b" }, "a.json")).toThrow("id");
     expect(() => parseCase({ ...good, context: [{ role: "bot", text: "x" }] }, "a.json")).toThrow("context");
@@ -75,7 +75,7 @@ describe("the case format", () => {
 
   test("a case file whose id differs from its name is refused", () => {
     const dir = scratch();
-    writeFileSync(join(dir, "b.json"), JSON.stringify({ id: "a", kind: "miss", question: "q", answer: { facts: ["x"] } }));
+    writeFileSync(join(dir, "b.json"), JSON.stringify({ id: "a", kind: "miss", question: "q", answer: { include: ["x"] } }));
     expect(() => loadCases(dir)).toThrow("must match the file name");
   });
 
@@ -87,9 +87,9 @@ describe("the case format", () => {
   });
 });
 
-describe("scoring by exact facts", () => {
+describe("scoring by exact phrases", () => {
   const found: MemoryCase = parseCase(
-    { id: "a", kind: "miss", question: "q", answer: { facts: ["14 March", "Gate B12"], avoid: ["March 4th"] } },
+    { id: "a", kind: "miss", question: "q", answer: { include: ["14 March", "Gate B12"], avoid: ["March 4th"] } },
     "a.json",
   );
 
@@ -110,8 +110,8 @@ describe("scoring by exact facts", () => {
     expect(score.repeated).toEqual(["March 4th"]);
   });
 
-  test("Chinese facts match without spaces", () => {
-    const zh = parseCase({ id: "z", kind: "miss", question: "q", answer: { facts: ["星期二 下午"] } }, "z.json");
+  test("Chinese phrases match without spaces", () => {
+    const zh = parseCase({ id: "z", kind: "miss", question: "q", answer: { include: ["星期二 下午"] } }, "z.json");
     expect(scoreAnswer("兽医在星期二下午", zh).passed).toBe(true);
   });
 });
@@ -144,7 +144,7 @@ describe("running the set", () => {
         kind: "miss",
         context: [{ role: "user", text: "The locker code is 4417." }, { role: "assistant", text: "ok" }],
         question: "zzz qqq",
-        answer: { facts: ["4417"] },
+        answer: { include: ["4417"] },
       }),
     );
     expect((await runScore({ ...base, casesDir: dir, window: 2 })).record.passed).toBe(1);
@@ -159,7 +159,7 @@ describe("running the set", () => {
     mkdirSync(join(dir, "cases"));
     writeFileSync(
       join(dir, "cases", "cut.json"),
-      JSON.stringify({ id: "cut", kind: "miss", question: "zzz", answer: { facts: ["tulip"] } }),
+      JSON.stringify({ id: "cut", kind: "miss", question: "zzz", answer: { include: ["tulip"] } }),
     );
     const run = await runScore({ ...base, casesDir: join(dir, "cases"), memory });
     expect(run.record.passed).toBe(0);
@@ -197,7 +197,7 @@ describe("running the set", () => {
     const dir = scratch();
     writeFileSync(
       join(dir, "p.json"),
-      JSON.stringify({ id: "p", kind: "miss", question: "What is the code?", answer: { facts: ["blue heron"] } }),
+      JSON.stringify({ id: "p", kind: "miss", question: "What is the code?", answer: { include: ["blue heron"] } }),
     );
     const run = await runScore({
       ...base,
@@ -284,11 +284,11 @@ describe("proposing cases from the chat record", () => {
     expect(items.map((item) => item.object?.id)).toEqual([...made]);
   });
 
-  test("approving with facts writes a case the runner can load; the item leaves pending", async () => {
+  test("approving with phrases writes a case the runner can load; the item leaves pending", async () => {
     const { home, store } = await chatRig();
     const [id] = await proposeCases(store, { home, now: () => 5 });
     if (id === undefined) throw new Error("nothing proposed");
-    await expect(approveCaseProposal(store, home, id, "  \n", "")).rejects.toThrow("answer.facts");
+    await expect(approveCaseProposal(store, home, id, "  \n", "")).rejects.toThrow("answer.include");
     expect(existsSync(join(home, CASES_DIRECTORY))).toBe(false);
     await approveCaseProposal(store, home, id, "Casa Azul", "Hotel Sol");
     const [made] = loadCases(join(home, CASES_DIRECTORY));
@@ -296,7 +296,7 @@ describe("proposing cases from the chat record", () => {
       id,
       kind: "correction",
       question: "What is the hotel called?",
-      answer: { facts: ["Casa Azul"], avoid: ["Hotel Sol"] },
+      answer: { include: ["Casa Azul"], avoid: ["Hotel Sol"] },
     });
     expect(await caseProposalItems(store)).toEqual([]);
     expect(await approveCaseProposal(store, home, id, "x", "")).toContain("already approved");

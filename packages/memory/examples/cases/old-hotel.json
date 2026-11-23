@@ -8,5 +8,5 @@
     { "role": "assistant", "text": "Done." }
   ],
   "question": "Which hotel did I say in Porto?",
-  "answer": { "facts": ["Hotel Aurora"] }
+  "answer": { "include": ["Hotel Aurora"] }
 }

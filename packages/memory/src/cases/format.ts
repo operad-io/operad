@@ -28,9 +28,9 @@ export interface CaseMessage {
   readonly text: string;
 }
 
-/** The right answer: facts an answer must state, and wrong facts it must not repeat. */
+/** The right answer: phrases an answer must state, and wrong phrases it must not repeat. */
 export interface CaseAnswer {
-  readonly facts: readonly string[];
+  readonly include: readonly string[];
   readonly avoid: readonly string[];
 }
 
@@ -83,14 +83,14 @@ export function parseCase(value: unknown, file: string): MemoryCase {
     return { role: entry["role"], text: entry["text"] };
   });
   const answer = value["answer"];
-  if (!isRecord(answer)) throw new CaseError(`${file}: answer is { facts, avoid? }`);
+  if (!isRecord(answer)) throw new CaseError(`${file}: answer is { include, avoid? }`);
   return {
     id,
     kind,
     context,
     question,
     answer: {
-      facts: textList(answer["facts"], "answer.facts", file, true),
+      include: textList(answer["include"], "answer.include", file, true),
       avoid: textList(answer["avoid"], "answer.avoid", file, false),
     },
   };

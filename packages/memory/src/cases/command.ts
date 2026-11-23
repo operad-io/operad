@@ -59,5 +59,5 @@ export async function runMemoryPropose(ctx: CommandContext, argv: readonly strin
   const made = await proposeCases(ctx.store, { home: ctx.home, ...(chat === undefined ? {} : { chat }), now: () => Date.now() });
   return made.length === 0
     ? "no new corrections to propose\n"
-    : `proposed ${made.length} test case${made.length === 1 ? "" : "s"}; they wait in pending for your facts\n`;
+    : `proposed ${made.length} test case${made.length === 1 ? "" : "s"}; they wait in pending for the phrases a right answer states\n`;
 }
