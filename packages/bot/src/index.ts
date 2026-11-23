@@ -14,7 +14,7 @@ import pkg from "../package.json" with { type: "json" };
 import { mkdirSync } from "node:fs";
 import { basename, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { CHAT_TYPE, MESSAGE_EVENT, levelRefusal, agentConditionals, type AgentChoices, type ScheduledChat, chatData, createChat, sendMessage, startingEffort, startingModel, titleFromMessage } from "@operad-io/chat";
+import { CHAT_TYPE, MESSAGE_EVENT, mainChatOf, levelRefusal, agentConditionals, type AgentChoices, type ScheduledChat, chatData, createChat, sendMessage, startingEffort, startingModel, titleFromMessage } from "@operad-io/chat";
 import { definePlugin, isRecord, modelIds, type ActionArgSchema, type ActionArgsSchema, type ActionTypeDefinition, type HarnessCapabilities, type HarnessModelInfo, type HarnessModels, type JsonValue, type ObjectRow, type ObjectStore, type ObjectViews, type PluginStepResult, type SectionContent, type StepContext, type StoredObject } from "@operad-io/engine";
 import {
   BOT_SETTINGS,
@@ -61,6 +61,8 @@ import {
   routinesOf,
   startScheduled,
 } from "./schedule.ts";
+import { closeIdleChats } from "./idle.ts";
+import { pruneRoutineRuns } from "./schedule.ts";
 import { closeOldScheduledChats, routineActions, routineMarkdown, routineViews, ROUTINE_FILTERS } from "./routine.ts";
 import { followUpActions, followUpData, followUpMarkdown, followUps, runFollowUpCommand, runFollowUpsCommand } from "./follow-up.ts";
 import {
@@ -775,7 +777,14 @@ export const botViews: ObjectViews = {
     },
   }),
   sections: () => [{ id: "bot", title: "Bot" }],
-  load: async (ctx, object): Promise<SectionContent> => ({ markdown: await botMarkdown(ctx.store, object) }),
+  // The bot's main chat rides on its page, so a client that opens the bot can go on to it.
+  load: async (ctx, object): Promise<SectionContent> => {
+    const main = object.data.removed === true ? undefined : await mainChatOf(ctx.store, `${BOT_TYPE}:${object.id}`);
+    return {
+      markdown: await botMarkdown(ctx.store, object),
+      data: { mainChat: main === undefined ? null : `${CHAT_TYPE}:${main}` },
+    };
+  },
 };
 
 /** Builds the bot plugin. */
@@ -899,8 +908,21 @@ export function createBotPlugin() {
       await closeOldScheduledChats(ctx.store, ctx.client);
       const scheduled = await startScheduled(ctx);
       const tidy = await startTidy(ctx);
+      // Idle chats close and old routine runs leave, at start and then hourly (injected clock).
+      const sweep = async (): Promise<void> => {
+        try {
+          await closeIdleChats(ctx.store, ctx.client, ctx.clock());
+          await pruneRoutineRuns(ctx.store, ctx.clock());
+        } catch (error) {
+          await ctx.logger.write(`cleanup: ${error instanceof Error ? error.message : String(error)}`);
+        }
+      };
+      await sweep();
+      const sweeper = setInterval(() => void sweep(), 60 * 60_000);
+      if (typeof sweeper === "object" && "unref" in sweeper) sweeper.unref();
       return {
         stop: async () => {
+          clearInterval(sweeper);
           await scheduled.stop();
           await tidy.stop();
         },
@@ -920,6 +942,7 @@ export * from "./setup-dev.ts";
 export * from "./setup-git.ts";
 export * from "./setup.ts";
 export * from "./schedule.ts";
+export * from "./idle.ts";
 export * from "./routine.ts";
 export * from "./follow-up.ts";
 export * from "./tidy.ts";

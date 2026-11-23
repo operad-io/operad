@@ -17,7 +17,7 @@ those directories. With `useOwnSettings` on, pi's own settings manager and
 resource loader read the owner's pi directory (`getAgentDir()`, so
 `PI_CODING_AGENT_DIR` is respected) for settings, context files, user skills,
 prompt templates and extensions; the project's `.pi` resources stay untrusted.
-Session files remain under the input's `sessionDir`; compaction stays off. Pi's
+Session files remain under the input's `sessionDir`; pi's own automatic compaction stays off (operad calls `session.compact()` itself when the input's `compact` asks, ADR 0023 D12). Pi's
 automatic retry is off unless the input sets `retry`, and a chat reply sets it
 with pi's own attempt count and backoff. Every prompt goes to `session.prompt` with
 `expandPromptTemplates: false`, both the first and one the host sends mid-run,
@@ -69,6 +69,7 @@ this table.
 | `skills` | array of strings | no | skill directories to load, each with a `SKILL.md`; with `useOwnSettings` off nothing else is discovered. A directory whose `SKILL.md` cannot be read or has no name is skipped with one `log` line, not a failed run. Absent: no skills |
 | `useOwnSettings` | boolean | no | load the owner's own pi settings and resources (ADR 0023 D3); absent or false keeps the explicit, in-memory child |
 | `retry` | boolean | no | retry a failed model request with pi's own bounded backoff; absent or false keeps it off. A chat reply sets it; a task does not |
+| `compact` | `{at, flush?, now?, only?}` | no | compact the context after the turn when it reaches the share `at` (above 0, at most 1) of the model's window, after one silent `flush` turn; `now` compacts whatever the size and `only` runs no prompt. Absent means pi never compacts. A chat reply sets it (ADR 0023 D12) |
 | `keep` | object `{ socket, meta, token, scope, key, timeoutMs }` | no | the step sets this for a chat reply whose worker may stay: where it listens, its record, its token, the chat and the configuration hash, and how long it stays. A worker without it runs one reply and exits |
 | `access` | object | no | the access profile; `denyPaths` and `denyCommands` (arrays of strings) are enforced in the `tool_call` hook by `@operad-io/access-match`, other fields are ignored; absent means nothing is denied |
 
@@ -117,6 +118,7 @@ when the run stops, what is still held is written before the Result.
 | `sessionId` | string or null | yes | the session file path; null when no session was opened |
 | `usage` | `{input?, output?, cache_read?, cache_write?}` | yes | sums over every `message_end` (`cacheRead` becomes `cache_read`, `cacheWrite` becomes `cache_write`) |
 | `context` | `{used, window?}` | no | the last `message_end`'s input plus cache read and cache write, and the selected model's `contextWindow` when pi gives one |
+| `compaction` | `{reason, before, after?, flushed}` | no | set when this run compacted the session; `context.used` is then the size after it |
 | `cost` | `{micros}` or null | yes | `round(sum of cost.total × 1e6)`; null when any `message_end` had no price, or there was none |
 | `finalMessage` | string or null | yes | `getLastAssistantText()` |
 | `reason` | string | on `failed` | a short condition name: `invalid_input`, `session_missing`, `model_missing`, `model_error` (also used for an unexpected error) |

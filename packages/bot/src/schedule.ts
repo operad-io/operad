@@ -338,6 +338,27 @@ export function withRun(runs: readonly RoutineRun[] | undefined, run: RoutineRun
   return [...(runs ?? []).filter((item) => item.id !== run.id && item.at >= oldest), run];
 }
 
+/** Drops, from every routine, the runs older than the history keeps; the last results on the routine stay. Returns how many routines changed. */
+export async function pruneRoutineRuns(store: ObjectStore, now: number): Promise<number> {
+  const oldest = now - ROUTINE_HISTORY_DAYS * DAY_MS;
+  let changed = 0;
+  for (const object of await allRoutines(store)) {
+    const entry = scheduledPromptOf(object.data);
+    if (entry === undefined || entry.runs === undefined) continue;
+    const kept = entry.runs.filter((run) => run.at >= oldest || run.status === "running");
+    if (kept.length === entry.runs.length) continue;
+    const { runs: _dropped, ...rest } = object.data;
+    await store.put(
+      ROUTINE_TYPE,
+      object.id,
+      kept.length === 0 ? rest : { ...rest, runs: kept as unknown as JsonValue },
+      "cleanup:bot/routine-history",
+    );
+    changed += 1;
+  }
+  return changed;
+}
+
 /** The name a client uses to choose an entry; unique within one bot. */
 export function checkPromptName(name: string): string {
   const trimmed = name.trim();

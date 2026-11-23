@@ -19,6 +19,8 @@
     "src",
     "skills",
     "memory.schema.json",
+    "memory-case.schema.json",
+    "examples",
     "README.md",
     "LICENSE"
   ]

@@ -2094,3 +2094,109 @@ test("parseInput refuses an image that is not a path with an image media type", 
   expect(parseInput({ ...base, images: [{ path: "/a.png", mediaType: "image/png" }] }).ok).toBe(true);
   expect(parseInput({ ...base, images: [{ path: "/a.pdf", mediaType: "application/pdf" }] }).ok).toBe(false);
 });
+
+// Compaction (ADR 0023 D13). The fake model's window is 128,000 tokens and each
+// of its messages ends a context of 17 tokens, so a share of 0.0001 is passed
+// and a share of 0.5 is not.
+const FLUSH = "Write what you must remember, then say ok.";
+/** pi keeps the last 20,000 tokens and summarizes the rest, so a session needs more than that to compact. */
+const LONG = "word ".repeat(40_000);
+
+/** The input of a second long turn on a session that already has a first one, so there is history to summarize. */
+async function secondLongTurn(s: Setup, compact: Record<string, unknown>): Promise<Record<string, unknown>> {
+  const first = await runFake(s, [{ text: "EARLIER" }], { ...s.input, prompt: LONG });
+  return { ...s.input, prompt: LONG, resumeSession: last(first)["sessionId"], compact };
+}
+
+test("a context over the share runs one silent flush turn and then compacts; the reply stays the first turn's", async () => {
+  const s = setup();
+  const contexts = join(s.dir, "contexts.jsonl");
+  const run = await runFake(
+    s,
+    [{ text: "ANSWER" }, { text: "FLUSHED-WORDS" }, { text: "SUMMARY" }],
+    await secondLongTurn(s, { at: 0.0001, flush: FLUSH }),
+    { FAKE_CONTEXT_FILE: contexts },
+  );
+  expect(run.exitCode).toBe(0);
+  const result = last(run);
+  expect(result["result"]).toBe("done");
+  expect(result["finalMessage"]).toBe("ANSWER");
+  expect(result["compaction"]).toMatchObject({ reason: "threshold", flushed: true });
+  // Nothing of the flush turn is shown: no increment and no text on its message line.
+  expect(run.raw.join("\n")).not.toContain("FLUSHED");
+  expect(run.lines.filter((line) => line["type"] === "message_end")).toHaveLength(2);
+  // The flush turn's prompt reached the model, and a third call wrote the summary.
+  const calls = readFileSync(contexts, "utf8").split("\n").filter((line) => line.length > 0);
+  expect(calls).toHaveLength(3);
+  expect(calls[1]).toContain(FLUSH);
+  // The usage of the flush turn counts.
+  expect(result["usage"]).toMatchObject({ output: expect.any(Number) });
+  // The context the chat sees next is the compacted one, not the flush turn's.
+  const context = result["context"] as { used: number };
+  const compaction = result["compaction"] as { after?: number };
+  expect(context.used).toBe(compaction.after ?? 17);
+});
+
+test("a context under the share is not compacted and runs no flush turn", async () => {
+  const s = setup();
+  const run = await runFake(s, [{ text: "ANSWER" }], { ...s.input, compact: { at: 0.5, flush: FLUSH } });
+  const result = last(run);
+  expect(result["compaction"]).toBeUndefined();
+  expect(result["context"]).toEqual({ used: 17, window: 128_000 });
+  expect(run.lines.filter((line) => line["type"] === "message_end")).toHaveLength(1);
+});
+
+test("with no compact input pi never compacts, however large the context", async () => {
+  const s = setup();
+  const run = await runFake(s, [{ text: "ANSWER" }]);
+  expect(last(run)["compaction"]).toBeUndefined();
+});
+
+test("a failed flush turn does not stop the compaction or fail the reply", async () => {
+  const s = setup();
+  const run = await runFake(
+    s,
+    [{ text: "ANSWER" }, { text: "", error: "the model is down" }, { text: "SUMMARY" }],
+    await secondLongTurn(s, { at: 0.0001, flush: FLUSH }),
+  );
+  const result = last(run);
+  expect(result["result"]).toBe("done");
+  expect(result["finalMessage"]).toBe("ANSWER");
+  expect(result["compaction"]).toMatchObject({ flushed: false });
+});
+
+test("a compaction that fails leaves the reply done and says nothing was compacted", async () => {
+  const s = setup();
+  const run = await runFake(
+    s,
+    [{ text: "ANSWER" }, { text: "", error: "no summary" }],
+    await secondLongTurn(s, { at: 0.0001 }),
+  );
+  const result = last(run);
+  expect(result["result"]).toBe("done");
+  expect(result["compaction"]).toBeUndefined();
+  expect(run.stderr).toContain("the compaction failed");
+});
+
+test("compact.only compacts a resumed session without a prompt and without a reply", async () => {
+  const s = setup();
+  const second = await secondLongTurn(s, { at: 0.75, flush: FLUSH });
+  const first = await runFake(s, [{ text: "ANSWER" }], { ...second, compact: undefined });
+  const run = await runFake(
+    s,
+    [{ text: "ok" }, { text: "SUMMARY" }],
+    { ...s.input, resumeSession: last(first)["sessionId"], compact: { at: 0.75, flush: FLUSH, only: true } },
+  );
+  const result = last(run);
+  expect(result["result"]).toBe("done");
+  expect(result["finalMessage"]).toBeNull();
+  expect(result["compaction"]).toMatchObject({ reason: "manual", flushed: true });
+});
+
+test("parseInput refuses a compact share outside (0, 1]", () => {
+  const base = { prompt: "p", cwd: "/c", authPath: "/a", modelsPath: "/m", agentDir: "/d", sessionDir: "/s" };
+  expect(parseInput({ ...base, compact: { at: 0.75 } }).ok).toBe(true);
+  expect(parseInput({ ...base, compact: { at: 0 } }).ok).toBe(false);
+  expect(parseInput({ ...base, compact: { at: 1.5 } }).ok).toBe(false);
+  expect(parseInput({ ...base, compact: { at: 0.5, flush: 3 } }).ok).toBe(false);
+});

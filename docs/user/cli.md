@@ -42,7 +42,7 @@ and `operad help` print the whole table.
 
 | Command | Arguments | What it does and prints |
 |---|---|---|
-| `operad` | none | Creates the home when it has none, starts `serve` when none answers, and opens [the terminal client](tui.md) on the default bot's new chat, with the cursor in its input. The first message creates the chat. |
+| `operad` | none | Creates the home when it has none, starts `serve` when none answers, and opens [the terminal client](tui.md) on the default bot's main chat: the chat bound to Telegram when there is one, else its latest open chat (a chat a scheduled prompt opened does not count). With no open chat it opens a new chat with the cursor in its input, and the first message creates it. A new chat is `bot:chat` on the bot. |
 | `operad doctor` | `[--json]` | Checks the home and changes nothing in it. Prints one line per check, `ok` or `problem`: the home and `config.json`, each enabled plugin, each agent with its version and whether it is signed in, whether `serve` answers, an `ok` line saying so when git is not installed (chat works without it; a task needs it), the test host when `dev.testHost` is set, and what `operad pending` reports as a setup problem. A `problem` line ends with the command to type next; for an agent that is not signed in, `operad bot:login <bot>` when operad can log in to that agent, else the agent's own command. Exits `1` when any line is a problem. `--json` prints `{ "ok", "checks": [{ "id", "ok", "message", "next" }] }`. |
 | `operad init` | none | Creates `config.json` when it is missing and checks each loaded plugin. Prints `created <file>` or `using <file>`, then one `<plugin>: <result>` line per check. A new home enables `chat`, `bot` and `memory`, and enables `radian`, `claude` and `pi` for the commands found on `PATH`; `shell`, `dev` and `pool` stay off until they are enabled. When `claude` is found it also installs `@operad-io/harness-claude` and its SDK in the home. With no agent found it enables `pi` and installs operad's own pinned pi in the home; that download needs the network once, and running `operad init` again retries it. `codex` stays off until `operad plugin enable codex`. The checks of the enabled plugins: `shell` is ready when it is on, each enabled harness finds its agent on `PATH` or, for `pi`, the copy operad installed, and `dev` reaches each registered repository's remote when it is on (see [dev commands](#dev-commands)). A failed check exits `1`. |
 | `operad serve` | none | Runs the loop for this home: starts waits, runs steps, serves HTTP and runs notify. Prints `http <url>` for each listen address and `serving <home>`. Exit `4` when another `serve` holds the home. |
@@ -99,6 +99,8 @@ and `operad help` print the whole table.
 | `operad bot follow-ups <chat>` | `--cancel <id>` | Lists the chat's follow-ups, or cancels one with `--cancel`. |
 | `operad memory search <query>` | `--scope <scope>`, `--field <name>=<value>`, `--limit <n>` | Searches the shared wiki, the bot's memory and the bot's chats. Prints each result's document id, title, line range and snippet, then the directory notes that came back with it. `--scope` takes `wiki`, `memory` or `chats`; `--field` narrows by frontmatter; `--limit` caps the results. The same arguments may be given as JSON on stdin. |
 | `operad memory read <id>` | `from`, `to`, `--json` | Reads one document a search returned, or the line range named by `from` and `to` (both 1-based). A read of a note another note links to ends with its `Backlinks`, each with the linking note's path, line and an excerpt. Prints text by default; `--json` gives the same result, including a `backlinks` array. The id and range may also be given as JSON on stdin. |
+| `operad memory score` | `--cases <dir>`, `--bot <name>`, `--memory <dir>`, `--window <n>`, `--no-record`, `--answer-with <program>` | Runs the memory regression set against the bot's current memory and appends the score to `memory-scores.jsonl` in the home. Prints the score, the change since the last run of the same set, and each case that fails. See [the regression set](memory.md#the-regression-set). |
+| `operad memory propose` | `--chat <id>` | Finds corrections in the chat record and stores each as a pending item; approving one with the phrases a right answer states adds a case. Prints how many were proposed. |
 
 The scheduled flows verb is also reached with its plugin name as `operad cron scheduled ...`; the short `operad scheduled ...` is the same command.
 
@@ -155,6 +157,12 @@ A client of `serve` does the same over HTTP with `GET /v1/plugins` and `POST /v1
 | `--cancel <id>` | `bot follow-ups` | The follow-up to cancel. |
 | `--scope <scope>` | `memory search` | The part of the index to search: `wiki`, `memory` or `chats`. The default is all three; a comma-separated list is accepted. |
 | `--field <name>=<value>` | `memory search` | One frontmatter field a result must have; may be repeated. A frontmatter field with several values matches any of them. |
+| `--cases <dir>` | `memory score` | The directory of cases; the default is `memory-cases` in the home. |
+| `--bot <name>` | `memory score` | The bot whose memory is used; the default is `default`. |
+| `--memory <dir>` | `memory score` | A memory directory used in place of the bot's own. |
+| `--window <n>` | `memory score` | How many recent messages stay whole, as after a compaction; the default is 6. |
+| `--no-record` | `memory score` | Prints the score without adding it to the history. |
+| `--answer-with <program> [args]` | `memory score` | Scores the answers of a program instead of what the bot is shown; it takes everything after it. |
 
 The flags of an action are made from its arguments: an argument named `note`
 becomes `--note <text>`, a boolean becomes `--flag` or `--flag=true`, and an

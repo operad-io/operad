@@ -335,6 +335,18 @@ describe("pi/agent", () => {
     );
   });
 
+  test("a chat's compaction input reaches the worker, and a bad share fails the step by name", async () => {
+    const on = await setup("done");
+    await runAgent(on, { prompt: "hello", cwd: on.root, compact: { at: 0.75, flush: "write it", only: true } });
+    expect(recorded(on).compact).toEqual({ at: 0.75, flush: "write it", only: true });
+
+    const absent = await setup("done");
+    await runAgent(absent, { prompt: "hello", cwd: absent.root });
+    expect("compact" in recorded(absent)).toBe(false);
+
+    await expect(runAgent(on, { prompt: "hello", cwd: on.root, compact: { at: 2 } })).rejects.toThrow(/compact\.at/);
+  });
+
   test("an effort from a chat reaches the worker as pi's thinking level", async () => {
     const env = await setup("done", { thinkingLevel: "low" });
     await runAgent(env, { prompt: "hello", cwd: env.root, effort: "xhigh" });
