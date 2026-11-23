@@ -192,3 +192,15 @@ export function noteBlock(notes: readonly NoteContent[]): string {
     })
     .join("\n\n");
 }
+
+// The pointer the first message after a `/new` carries: the chat's earlier
+// record exists, and the tools the agent already has read it. The person does
+// not see it; it rides on the message like a note.
+export function earlierRecordPointer(chatId: string): string {
+  return [
+    "[Earlier record of this chat]",
+    "The person started a new agent session in this chat, so you do not remember what was said before. The earlier messages are kept.",
+    `Read them with the operad tool \`section\` (id \`chat:${chatId}\`, section \`transcript\`; \`cursor\` pages back). Look for a phrase with the operad tool \`search\` (scope \`chats\`) and open a hit with \`read\`. Do this when the person refers to something earlier; do not read it all first.`,
+    "[End of earlier record]",
+  ].join("\n");
+}

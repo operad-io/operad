@@ -107,6 +107,26 @@ describe("/new", () => {
     await round;
   });
 
+  test("the first message after /new carries a pointer to the earlier record, and only that one", async () => {
+    const r = await rig(() => reply("ok", "s-1"));
+    const chat = await r.chat();
+    await r.say(chat, "one");
+    await r.round(chat);
+    expect(String(r.calls[0]?.params.prompt)).not.toContain("Earlier record");
+    await command(r, chat, "/new");
+    await r.say(chat, "two");
+    await r.round(chat);
+    const prompt = String(r.calls[1]?.params.prompt);
+    expect(prompt).toContain("[Earlier record of this chat]");
+    expect(prompt).toContain(`chat:${chat}`);
+    expect(prompt).toContain("`section`");
+    expect(prompt).toContain("`search`");
+    expect(prompt.indexOf("[End of earlier record]")).toBeLessThan(prompt.indexOf("two"));
+    await r.say(chat, "three");
+    await r.round(chat);
+    expect(String(r.calls[2]?.params.prompt)).not.toContain("Earlier record");
+  });
+
   test("it is a command with a one-line description", async () => {
     const r = await rig(() => reply("x"));
     const chat = await r.chat();
