@@ -7,6 +7,8 @@ the same version.
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-11-23
+
 ### Fixed
 
 - In a long chat, the oldest replies are no longer cut to nothing: each keeps the
@@ -355,7 +357,8 @@ The first public release. Install it with `bun add -g @operad-io/cli`; it needs
   `operad http token rotate` replaces it. The app itself is not in this
   repository.
 
-[Unreleased]: https://github.com/operad-io/operad/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/operad-io/operad/compare/v0.3.1...HEAD
+[0.3.1]: https://github.com/operad-io/operad/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/operad-io/operad/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/operad-io/operad/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/operad-io/operad/compare/v0.1.0...v0.1.1
