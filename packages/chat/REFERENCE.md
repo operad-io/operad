@@ -140,6 +140,17 @@ stay answered. The command line says so and says `/retry` answers the last
 message. With no reply running, or with one that had
 already ended, it says so and changes nothing. Its button word is **Stop**.
 
+## `chat:new <chat>`
+
+Starts a new agent session in the chat (`/new`). It records a `chat.new` fact
+and clears the chat's session reference, and ends the chat's kept worker. The
+reply after it passes no `resumeSession`, so each agent starts a session of its
+own: `pi` creates a new session file, `claude` starts without `resume`, `codex`
+starts a thread (`thread/start`, not `thread/resume`) and `radian` runs without
+`--resume`. The transcript stays, the `context` view is empty until the next
+reply, and the bot's memory notes ride on that reply as on any new session.
+Refused while a reply is being written.
+
 ## `chat:retry <chat>`
 
 Answers the last message again when the last attempt failed, was stopped or was

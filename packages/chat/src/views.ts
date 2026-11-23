@@ -62,7 +62,7 @@ function sections(): readonly ViewSection[] {
 
 /** The context the chat's detail page and transcript show: its last finished reply's. */
 function chatContext(object: StoredObject, read: ChatRead): ChatContext | undefined {
-  return lastReplyContext(chatData(object.data), read.messages);
+  return lastReplyContext(chatData(object.data), read.messages, read.facts);
 }
 
 function minute(at: number): string {

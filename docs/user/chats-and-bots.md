@@ -63,6 +63,7 @@ A chat has these actions:
 | `chat:effort` | `effort` | Changes the effort the next reply uses, from the agent's list; prints `chat <id> now uses effort <effort>; the next reply uses it`. |
 | `chat:access` | `level` (`plan`, `ask`, `edits` or `full`) | Changes the access level of the chat; every tool call from then on uses it, including a reply being written. Prints `chat <id> now uses access level <level>; replies follow it`. See [Access level](#access-level). |
 | `chat:stop` | none | Stops the reply being written. What was written stays in the transcript, marked stopped. Messages that arrived meanwhile stay unanswered and no new reply starts by itself; prints that and points to `/retry`. With no reply running it says so and changes nothing. The client's button word is **Stop**. |
+| `chat:new` | none | Starts a new agent session in the same chat. The transcript stays; the next message goes to an agent with no earlier context (the bot's memory notes still ride on it), and the `Context used` figure is empty until that reply. Refused while a reply is being written. |
 | `chat:retry` | none | Answers the last message again after a reply failed, was stopped or was interrupted. It appears only while it would answer: the chat is open, a message waits for a reply and no reply is being written. The failed or stopped attempt stays in the record and the agent's session continues. Otherwise typing it says why and starts nothing. |
 | `chat:status` | none | Shows the agent, the model and effort in force, whether a reply is being written and since when, how many messages wait, the session's cost and token usage, and the last reply's usage and time to first output. It reads only, costs no tokens and works while a reply is being written. An agent that reports no cost leaves it `unknown`. |
 | `chat:close` | none; asks to confirm | Records `chat.closed` and ends the chat. Prints `closed <id>`. The transcript stays readable; no other action appears. |
@@ -77,7 +78,7 @@ each of them. A message a run has taken never changes, and both actions refuse
 it with a line naming the message.
 
 A line that starts with `/` and names one of the chat's actions runs that action
-instead of going to the agent: `/model sonnet`, `/effort high`, `/access edits`, `/stop`, `/retry`,
+instead of going to the agent: `/model sonnet`, `/effort high`, `/access edits`, `/stop`, `/new`, `/retry`,
 `/status`, `/close`, `/help`. `chat:withdraw` and `chat:edit` are actions of the
 queued message, not chat commands.
 The rest of the line is the action's arguments, in the order its fields are
