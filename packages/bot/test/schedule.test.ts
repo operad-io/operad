@@ -684,6 +684,21 @@ describe("scheduled prompts", () => {
     }
   });
 
+  test("a bot row carries the server's IANA time zone", async () => {
+    const r = await rig();
+    const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });
+    try {
+      await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "Digest." });
+      process.env.TZ = "America/Toronto";
+      const row = (await views.list("bot")).rows.find((entry) => entry.id === "default");
+      expect((row?.data as { readonly timeZone?: string } | undefined)?.timeZone).toBe("America/Toronto");
+      expect((await views.get("bot:default")).row.data).toEqual(row?.data);
+    } finally {
+      process.env.TZ = "UTC";
+      views.close();
+    }
+  });
+
   test("the view shows next run time and the last result and chat id; edit, pause, resume and remove are actions", async () => {
     const r = await rig();
     const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });

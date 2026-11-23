@@ -747,6 +747,11 @@ function botMarkdown(object: StoredObject): string {
   return lines.join("\n\n");
 }
 
+/** The server's IANA time zone, the one cron expressions run in; read at each call so `TZ` can be set. */
+export function serverTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone;
+}
+
 /** How a bot shows in a list and on its page. */
 export const botViews: ObjectViews = {
   row: (object): ObjectRow => ({
@@ -755,6 +760,7 @@ export const botViews: ObjectViews = {
     state: object.data.removed === true ? "removed" : "open",
     data: {
       scheduled: scheduledData(scheduledPrompts(object.data), Date.now()) as unknown as JsonValue,
+      timeZone: serverTimeZone(),
       followUps: followUpData(followUps(object.data)) as unknown as JsonValue,
     },
   }),

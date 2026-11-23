@@ -433,3 +433,4 @@ changes for bots, in the order they were recorded. The root
 |---|---|---|---|
 | T-0747-M1 | packages/bot/src/proposals.ts | the Setup Dev proposal's title went back to `Setup Dev for <folder>` | `Setup Dev on the command line > a piped dev.json proposes, and pending prints an id the item's actions take` |
 | T-0747-M2 | packages/bot/src/proposals.ts | the pending prompt of a Setup Dev proposal used the generic `<title> for bot <bot>` wording | `Setup Dev on the command line > a piped dev.json proposes, and pending prints an id the item's actions take` |
+| T-0751-M1 | packages/bot/src/index.ts | the bot row left out `timeZone` | `a bot row carries the server's IANA time zone` |
