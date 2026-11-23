@@ -424,3 +424,10 @@ changes for bots, in the order they were recorded. The root
 | T-0748-M2 | packages/bot/src/schedule.ts | a run now after a late timed run carried that run's lateness line | `scheduled prompts > run now fires the entry once like a timed firing, records its result, and leaves the next timed run alone` |
 | T-0748-M3 | packages/bot/src/schedule.ts | the run-now request was not cleared, so it fired at every check | `scheduled prompts > run now fires the entry once like a timed firing, records its result, and leaves the next timed run alone` |
 | T-0748-M4 | packages/bot/src/schedule.ts | run now of an unknown entry was accepted | `scheduled prompts > run now of an unknown entry is refused with a reason and opens no chat` |
+
+## T-0747 — the Setup Dev pending item reads as a title
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0747-M1 | packages/bot/src/proposals.ts | the Setup Dev proposal's title went back to `Setup Dev for <folder>` | `Setup Dev on the command line > a piped dev.json proposes, and pending prints an id the item's actions take` |
+| T-0747-M2 | packages/bot/src/proposals.ts | the pending prompt of a Setup Dev proposal used the generic `<title> for bot <bot>` wording | `Setup Dev on the command line > a piped dev.json proposes, and pending prints an id the item's actions take` |
