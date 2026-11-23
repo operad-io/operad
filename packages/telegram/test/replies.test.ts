@@ -46,7 +46,13 @@ async function bound(follow = false): Promise<{ w: TelegramWorld; chat: string }
 }
 
 let counter = 0;
-async function reply(w: TelegramWorld, chat: string, text: string, role: "assistant" | "user" = "assistant"): Promise<void> {
+async function reply(
+  w: TelegramWorld,
+  chat: string,
+  text: string,
+  role: "assistant" | "user" = "assistant",
+  extra: Record<string, unknown> = {},
+): Promise<void> {
   counter += 1;
   await w.ctx.facts.append({
     type: MESSAGE_FACT,
@@ -58,6 +64,7 @@ async function reply(w: TelegramWorld, chat: string, text: string, role: "assist
       text,
       attachments: [],
       source: { kind: "agent", ref: null },
+      ...extra,
     },
   });
 }
@@ -251,6 +258,21 @@ describe("sending a reply", () => {
     await reply(w, chat, "second");
     await sender(w, api).sweepChat(chat);
     expect(api.sent.map((request) => request.text)).toEqual(["the <b>answer</b>", "second"]);
+    await w.close();
+  });
+
+  test("a reply that saved to memory ends with that line, and the notes it used are not sent", async () => {
+    const { w, chat } = await bound();
+    const api = new FakeApi();
+    await reply(w, chat, "noted", "assistant", {
+      memory: { wrote: [{ file: "memory/topics/tea.md", summary: "Likes tea" }], used: ["memory/index.md"] },
+    });
+    await reply(w, chat, "only read", "assistant", { memory: { wrote: [], used: ["memory/index.md"] } });
+    await sender(w, api).sweepAll();
+    expect(api.sent.map((request) => request.text)).toEqual([
+      "noted\n\nSaved to memory: memory/topics/tea.md (Likes tea)",
+      "only read",
+    ]);
     await w.close();
   });
 

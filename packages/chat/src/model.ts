@@ -533,6 +533,55 @@ export interface MessageData {
   readonly context?: ReplyContext | undefined;
   /** An assistant message: how long the step took to start, to its first line, and in all. */
   readonly timings?: AgentTimings | undefined;
+  /** An assistant message: the memory notes it wrote and the ones it used. */
+  readonly memory?: MemoryShown | undefined;
+}
+
+/** A note a reply wrote: its file and a one-line summary. */
+export interface MemoryWrote {
+  readonly file: string;
+  readonly summary: string;
+}
+
+/** The memory a reply touched: notes it wrote, and notes it used (ADR 0026 D18 and the memory tools). */
+export interface MemoryShown {
+  readonly wrote: readonly MemoryWrote[];
+  readonly used: readonly string[];
+}
+
+/** The two labels clients show for a reply's memory, English and Chinese (owner-approved wording). */
+export const MEMORY_LABELS = {
+  wrote: { en: "Saved to memory", zh: "已记入记忆" },
+  used: { en: "Used memory", zh: "用到的记忆" },
+} as const;
+
+/** The memory a stored reply names; undefined when it names none. */
+export function memoryShownOf(value: unknown): MemoryShown | undefined {
+  if (!isRecord(value)) return undefined;
+  const wrote: MemoryWrote[] = [];
+  if (Array.isArray(value.wrote)) {
+    for (const item of value.wrote) {
+      if (!isRecord(item) || typeof item.file !== "string" || item.file.length === 0) continue;
+      wrote.push({ file: item.file, summary: typeof item.summary === "string" ? item.summary : "" });
+    }
+  }
+  const used = Array.isArray(value.used)
+    ? value.used.filter((item): item is string => typeof item === "string" && item.length > 0)
+    : [];
+  return wrote.length === 0 && used.length === 0 ? undefined : { wrote, used };
+}
+
+/** The line that names the notes a reply wrote, or undefined when it wrote none. */
+export function memoryWroteLine(memory: MemoryShown | undefined): string | undefined {
+  if (memory === undefined || memory.wrote.length === 0) return undefined;
+  const notes = memory.wrote.map((note) => (note.summary.length === 0 ? note.file : `${note.file} (${note.summary})`));
+  return `${MEMORY_LABELS.wrote.en}: ${notes.join("; ")}`;
+}
+
+/** The line that names the notes a reply used, or undefined when it used none. */
+export function memoryUsedLine(memory: MemoryShown | undefined): string | undefined {
+  if (memory === undefined || memory.used.length === 0) return undefined;
+  return `${MEMORY_LABELS.used.en}: ${memory.used.join(", ")}`;
 }
 
 /** One message with when it was recorded. */
@@ -1144,6 +1193,7 @@ function messageOfFact(fact: PluginFact): Message | undefined {
   const timings = timingsOf(data.timings);
   const tokens = usageTokensOf(data.tokens);
   const context = replyContextOf(data.context);
+  const memory = memoryShownOf(data.memory);
   return {
     id: data.id,
     role: data.role,
@@ -1170,6 +1220,7 @@ function messageOfFact(fact: PluginFact): Message | undefined {
     ...(tokens === undefined ? {} : { tokens }),
     ...(context === undefined ? {} : { context }),
     ...(timings === undefined ? {} : { timings }),
+    ...(memory === undefined ? {} : { memory }),
     at: fact.at,
     sequence: fact.sequence,
   };

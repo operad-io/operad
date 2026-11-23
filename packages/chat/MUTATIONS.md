@@ -718,3 +718,11 @@ are append-only, so the old lines stay as history.
 | T-0770-M5 | packages/chat/src/reply.ts | the prompt left out the delivered results | `a delivered result > rides on the next message as its summary, not its whole text, and only once` and `a failed run says so in the header and the carried line` |
 | T-0770-M6 | packages/chat/src/deliver.ts | a delivery of one run was recorded twice | `a delivered result > is recorded once for one run` |
 | T-0781-M5 | packages/chat/src/index.ts | the chat type declared no unlisted state, so a run record showed in `all` | `a run record is in no list > not in open, closed or all, in the tree, and still read by its id` |
+
+## T-0778 — A reply shows the memory it wrote and used
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0778-M1 | packages/chat/src/notes.ts | a tool call that failed counted as a read of the note it named | `a reply shows the memory it wrote and used > names the notes that rode on the message and those read through the memory tools` |
+| T-0778-M2 | packages/chat/src/reply.ts | the after step was not marked as run, so it ran again when the reply step ended | `a reply shows the memory it wrote and used > names the notes the run wrote, in the reply data and the markdown` |
+| T-0778-M3 | packages/chat/src/reply.ts | the after step ran in a round that left messages to answer | `the step a chat's refresh data names after a reply > runs once for a run that takes more than one round, not once per round` |
