@@ -26,7 +26,7 @@ The command and its outcome are one `chat.command` fact: who typed it, the line 
 
 ### D4: `/help` lists the chat's commands
 
-`chat:help` is a command action. It lists every command this chat can run now, each under the name it is typed by, with the one-line description from the same action declaration. `/model`, `/effort`, `/close`, `/stop`, `/retry`, `/compact`, `/status`, `/pending` and `/help` are declared as commands. `/pending` is declared by the `telegram` plugin on a chat, not by `chat`: it sends the channel's own item messages with their buttons, and the chat plugin knows no channel (ADR 0026 D1).
+`chat:help` is a command action. It lists every command this chat can run now, each under the name it is typed by, with the one-line description from the same action declaration. `/model`, `/effort`, `/close`, `/stop`, `/retry`, `/status`, `/pending` and `/help` are declared as commands; D11 adds `/new` and D12 `/compact`. `/pending` is declared by the `telegram` plugin on a chat, not by `chat`: it sends the channel's own item messages with their buttons, and the chat plugin knows no channel (ADR 0026 D1).
 
 ### D5: `/stop` stops the reply being written
 
@@ -58,7 +58,13 @@ A message that is not a command and arrives while a reply is being written is ha
 
 On a chat's page, `/` opens its input with the commands listed from the same action declarations: the name typed after the slash, the one-line description, and the arguments the command takes, a choice showing its options. The list filters as the person types. Choosing a command fills the line; it does not run the action. Sending the line goes through `chat:send` like any text, so the same declaration decides whether it is a command. A line that names no command is sent as written. The `:` palette keeps listing every action; elsewhere `/` keeps its key meaning.
 
-### D11: `/compact` compacts a pi chat's context now
+### D11: `/new` starts a new agent session in the same chat
+
+`chat:new` is a command action: `/new`. It records a `chat.new` fact and clears the chat's session reference, so the next reply continues no earlier session: the transcript stays, the next message reaches an agent with no earlier context, and the bot's memory notes ride on it as on any first message of a session (ADR 0026 D18). The `context` view carries nothing until that reply (ADR 0026 D16). The kept worker of the chat is ended, so no live session survives in memory. It is refused while a reply is being written, as `/retry` is, and a reply from before the fact is never the session in force. It leaves one transcript line like every command and is listed in `/help`, the TUI's `/` list and the Telegram menu from its declaration, with no client change.
+
+A new session means, per agent, a reply with no `resumeSession`: `pi` creates a new session file, `claude` starts without `resume`, `codex` starts a thread instead of resuming one, and `radian` runs without `--resume`.
+
+### D12: `/compact` compacts a pi chat's context now
 
 `chat:compact` is a command action offered on an open chat whose agent is `pi`; on another agent it is not offered, and `/help`, the TUI list and the Telegram menu, which read the declarations, do not list it. A person asks for what happens by itself when a pi context nears the window (ADR 0023 D12): one silent turn lets the bot write what it should remember to its memory, then pi compacts the session.
 
