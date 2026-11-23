@@ -110,5 +110,7 @@ The flush turn is silent: its text and thinking are neither increments nor the r
 
 The result line carries `compaction: { reason, before, after?, flushed }` when the session was compacted, and `context` is the size after it, so the next reply does not look as if the context had just been huge. The step's data carries `compacted: true` and `compaction`. A kept worker (D10) is used the same way; the kept-worker key leaves `compact` out, because it changes per reply and not the worker. Cancel during the flush or the compaction ends the run as a cancelled one.
 
+A compaction runs only in the run of the reply that made the context big, straight after that reply's turn and the flush turn, so it reads a prompt cache that is warm; there is no idle compaction. A `/compact` on a session that has been idle runs on a cold cache. pi's summary keeps its own `<read-files>` and `<modified-files>` lists, and a test holds that. When the context a compaction leaves is still at or over `at` of the window, the chat does not compact again in a loop: the chat plugin records that the session is full, the next reply fails with one plain line that says the chat is too full to continue and suggests `/new`, and the agent is not called. A `/new`, or a later compaction that fits, ends it.
+
 Claude's SDK keeps its own automatic compaction on (`packages/harness/claude/REFERENCE.md`), and codex's app server compacts under its own configuration, which operad does not change; radian's agent has no compaction operad sets. Nothing here is built for them.
 
