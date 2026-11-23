@@ -1646,3 +1646,12 @@ the row fields.
 |---|---|---|---|
 | T-0745-M1 | packages/dev/src/chat.ts | opening the worktree left the chat at level `plan`, so the reply there was still read-only | `dev/chat_worktree > the worktree takes the chat off plan: its level moves to edits and the chat says so, so the agent can write there` |
 | T-0745-M2 | packages/dev/src/chat.ts | a reply that ended because the chat had already moved was not answered again | `dev/chat_worktree > a reply that ended because the chat moved meanwhile is answered again, though the worktree was already open` |
+
+## T-0747 — dev clip findings (server side)
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0747-M1 | packages/dev/src/mainclone.ts | the fast-forward's status check counted untracked files again (`--untracked-files=normal`) | `an untracked file elsewhere does not stop the fast-forward (T-0747)` and `an untracked file at a path the merge adds is refused with the reason (T-0747)` |
+| T-0747-M2 | packages/dev/src/mainclone.ts | a refusal over untracked files did not name them | `an untracked file at a path the merge adds is refused with the reason (T-0747)` |
+| T-0747-M3 | packages/dev/src/views.ts | a call the access profile denied was shown as the raw denied/failed lines | `dev views > a call the access profile stopped reads as a normal guard, not a failure (T-0747)` |
+| T-0747-M4 | packages/dev/src/views.ts | the Review section did not escape the reviewer's text | `dev views > the Review section shows the latest round and reaches earlier ones, safe as Markdown (T-0747)` |

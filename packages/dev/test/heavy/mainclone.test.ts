@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { updateMainClone, type CommandRunner } from "../../src/mainclone.ts";
@@ -120,4 +120,36 @@ test("a dirty clone is left alone and runs nothing", async () => {
   expect(outcome.updated).toBe(false);
   expect(sh(dir, "rev-parse", "HEAD")).toBe(before);
   expect(calls).toEqual([]);
+});
+
+test("an untracked file elsewhere does not stop the fast-forward (T-0747)", async () => {
+  const { dir, target } = scratch();
+  mkdirSync(join(dir, ".archify"));
+  writeFileSync(join(dir, ".archify", "x.svg"), "x\n");
+  const outcome = await updateMainClone(dir, "main", target, [], async () => ({ ok: true, out: "" }));
+  expect(outcome).toEqual({ updated: true });
+  expect(sh(dir, "rev-parse", "HEAD")).toBe(target);
+});
+
+test("an untracked file at a path the merge adds is refused with the reason (T-0747)", async () => {
+  const { dir } = scratch();
+  sh(dir, "checkout", "-q", "next");
+  writeFileSync(join(dir, "added"), "tracked\n");
+  sh(dir, "add", "added");
+  sh(dir, "commit", "-q", "-m", "adds a file");
+  const target = sh(dir, "rev-parse", "HEAD");
+  sh(dir, "checkout", "-q", "main");
+  writeFileSync(join(dir, "added"), "mine\n");
+  const before = sh(dir, "rev-parse", "HEAD");
+  const outcome = await updateMainClone(dir, "main", target, [], async () => ({ ok: true, out: "" }));
+  expect(outcome.updated).toBe(false);
+  expect(outcome.note).toContain("untracked files in the way: added");
+  expect(sh(dir, "rev-parse", "HEAD")).toBe(before);
+});
+
+test("a modified tracked file still refuses the fast-forward (T-0747)", async () => {
+  const { dir, target } = scratch();
+  writeFileSync(join(dir, "a"), "edited\n");
+  const outcome = await updateMainClone(dir, "main", target, [], async () => ({ ok: true, out: "" }));
+  expect(outcome).toEqual({ updated: false, note: "uncommitted changes" });
 });

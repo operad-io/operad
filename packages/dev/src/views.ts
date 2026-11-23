@@ -276,6 +276,7 @@ export const taskViews: ObjectViews = {
       sections.push({ id: "answer", title: "Answer" });
     }
     sections.push({ id: "log", title: "Log", live: true });
+    if (hasReview(task)) sections.push({ id: "review", title: "Review" });
     sections.push({ id: "diff", title: "Diff" });
     sections.push({ id: "metrics", title: "Metrics" });
     return sections;
@@ -297,6 +298,7 @@ export const taskViews: ObjectViews = {
     if (sectionId === "changes") return { markdown: renderChanges(parts.changes) };
     if (sectionId === "answer") return answerSection(ctx, object, options.cursor);
     if (sectionId === "log") return { markdown: await workerLog(ctx, task) };
+    if (sectionId === "review") return reviewSection(ctx, object, options.cursor);
     if (sectionId === "diff") return diffSection(ctx, object, options.cursor);
     if (sectionId === "metrics") return { markdown: await metrics(ctx, object) };
     return { markdown: "" };
@@ -477,9 +479,15 @@ export function readableLog(lines: readonly string[], options: { readonly worktr
           : finished
             ? ` no end logged${at === undefined ? "" : ` (started ${clockTime(at)})`}`
             : ` running${at === undefined ? "" : ` since ${clockTime(at)}`}`;
+      const guard = input === undefined ? undefined : guardedCall(input);
+      if (guard !== undefined) {
+        // A call the access profile stopped is a normal guard, not a failure.
+        out.push(`tool ${guard.tool}${when} blocked by the access profile${guard.rule === undefined ? "" : `: ${inlineCode(guard.rule)}`}`);
+        continue;
+      }
       const command = input === undefined ? "" : shownCommand(input, options.worktree);
       out.push(`tool ${name}${when}${command.length === 0 ? "" : ` ${inlineCode(command)}`}`);
-      if (end?.error !== undefined) out.push(`tool ${name} failed: ${end.error.replace(/\s+/g, " ")}`);
+      if (end?.error !== undefined && end.error !== PROFILE_REFUSAL) out.push(`tool ${name} failed: ${end.error.replace(/\s+/g, " ")}`);
       continue;
     }
     if (record !== undefined && kind === "tool_execution_end") {
@@ -487,7 +495,7 @@ export function readableLog(lines: readonly string[], options: { readonly worktr
       const error = stringField(record, ["error"]);
       const id = stringField(record, ["toolCallId"]);
       const hasStart = id !== undefined && starts.has(id);
-      if (error !== undefined && !hasStart) {
+      if (error !== undefined && !hasStart && error !== PROFILE_REFUSAL) {
         out.push(oneLine(`tool ${stringField(record, ["toolName"]) ?? "tool"} failed: ${error}`, LOG_LINE_CHARS));
       }
       continue;
@@ -508,6 +516,8 @@ export function readableLog(lines: readonly string[], options: { readonly worktr
     }
     if (record !== undefined && kind === "blocked") {
       const reason = stringField(record, ["reason"]);
+      // The start line already says the profile blocked the call.
+      if (reason === PROFILE_REFUSAL) continue;
       out.push(
         oneLine(`blocked ${stringField(record, ["toolName"]) ?? "tool"}${reason === undefined ? "" : `: ${reason}`}`, LOG_LINE_CHARS),
       );
@@ -576,6 +586,17 @@ export function readableLog(lines: readonly string[], options: { readonly worktr
   }
   flushDeltas();
   return out;
+}
+
+/** What a harness logs for a call the access profile refused. */
+const PROFILE_REFUSAL = "refused by the access profile";
+const PROFILE_DENIED = /^(.*?) denied by the access profile(?: \(rule: (.*)\))?$/s;
+
+/** The tool and rule of a call the access profile denied, from its logged input. */
+function guardedCall(input: string): { readonly tool: string; readonly rule: string | undefined } | undefined {
+  const found = PROFILE_DENIED.exec(input.trim());
+  if (found === null) return undefined;
+  return { tool: found[1] ?? "tool", rule: found[2] === undefined ? undefined : oneLine(found[2], LOG_LINE_CHARS) };
 }
 
 /** One worker log line as a sentence, or undefined for bookkeeping. */
@@ -779,6 +800,128 @@ async function answerSection(
         }
       : {}),
     ...(index + 1 < numbers.length ? { next: String(index + 1) } : {}),
+  };
+}
+
+/* ---------------------------------------------------------------------------
+ * Review: the reviewer's report of each round, newest first.
+ * ------------------------------------------------------------------------- */
+
+/** Text from a reviewer or a model, safe inside Markdown: no markup, no raw HTML. */
+export function markdownSafe(text: string): string {
+  return text
+    .replace(/\r/g, "")
+    .replace(/[\\`*_{}[\]<>#|~!]/g, (char) => `\\${char}`)
+    .replace(/^(\s*)([-+]|\d+[.)])(\s)/gm, "$1\\$2$3");
+}
+
+function hasReview(task: TaskData): boolean {
+  const attempt = task.attempt;
+  return (
+    (attempt?.review !== undefined && attempt.review !== null) ||
+    (attempt?.reviewRuns ?? []).length > 0 ||
+    (attempt?.reviewPending !== undefined && attempt.reviewPending !== null) ||
+    (Array.isArray(task.reviewHistory) && task.reviewHistory.length > 0)
+  );
+}
+
+const SEVERITY_ORDER = ["critical", "major", "minor"];
+
+function severityCounts(findings: readonly { readonly severity: string }[]): string {
+  if (findings.length === 0) return "none";
+  const known = SEVERITY_ORDER.flatMap((severity) => {
+    const count = findings.filter((finding) => finding.severity === severity).length;
+    return count === 0 ? [] : [`${count} ${severity}`];
+  });
+  return known.length === 0 ? String(findings.length) : known.join(", ");
+}
+
+/** One recorded review round as Markdown. */
+export function reviewRound(record: ReviewRecord, attempt: number, fixLevel: string | undefined): string {
+  const runs = record.runs ?? [];
+  const last = runs[runs.length - 1];
+  const findings = record.findings ?? [];
+  const decision = record.decision ?? record.result;
+  const lines: string[] = [];
+  const round = typeof record.round === "number" ? record.round : 1;
+  lines.push(`### Attempt ${attempt}, round ${round}`);
+  const outcome =
+    decision === "passed" || decision === "pass"
+      ? "pass"
+      : decision === "findings" || decision === "fail"
+        ? `findings (${severityCounts(findings)})`
+        : markdownSafe(String(decision).replace(/_/g, " "));
+  lines.push("", `- Result: ${outcome}`);
+  if (fixLevel !== undefined) lines.push(`- Fix level: ${markdownSafe(fixLevel)} (findings at or above it need a fix)`);
+  const agent = last?.use ?? record.reviewSettings?.use;
+  if (agent !== undefined) lines.push(`- Reviewer agent: ${inlineCode(agent)}`);
+  const model = record.model ?? last?.model;
+  if (typeof model === "string" && model.length > 0) lines.push(`- Model: ${inlineCode(model)}`);
+  if (typeof record.sha === "string" && record.sha.length > 0) lines.push(`- Commit reviewed: ${inlineCode(record.sha.slice(0, 12))}`);
+  if (typeof record.message === "string" && record.message.length > 0) {
+    lines.push("", markdownSafe(record.message.trim()));
+  }
+  if (findings.length > 0) {
+    lines.push("", "**Findings**", "");
+    for (const finding of findings) {
+      const place = inlineCode(`${finding.file}:${finding.line}`);
+      const note = finding.preExisting === true || finding.pre_existing === true ? " (already there before this change)" : "";
+      const trigger = typeof finding.trigger === "string" && finding.trigger.length > 0 ? ` — ${markdownSafe(finding.trigger.trim())}` : "";
+      lines.push(`- ${place} ${markdownSafe(finding.severity)}: ${markdownSafe(finding.summary.trim())}${trigger}${note}`);
+    }
+  }
+  const verified = record.verified ?? [];
+  if (verified.length > 0) {
+    lines.push("", "**Checked**", "", ...verified.map((item) => `- ${markdownSafe(item.trim())}`));
+  }
+  return lines.join("\n");
+}
+
+async function reviewSection(
+  ctx: ViewContext,
+  object: StoredObject,
+  cursor: string | undefined,
+): Promise<{
+  readonly markdown: string;
+  readonly next?: string;
+  readonly pages?: readonly { readonly label: string; readonly cursor?: string }[];
+}> {
+  // The latest record of each round, found in the object's history: the task
+  // keeps only the newest round in its own data.
+  const rounds = new Map<string, { readonly attempt: number; readonly round: number; readonly record: ReviewRecord }>();
+  const keep = (data: TaskData): void => {
+    const attempt = data.attempt;
+    const record = attempt?.review;
+    if (attempt === undefined || record === undefined || record === null) return;
+    const round = typeof record.round === "number" ? record.round : 1;
+    rounds.set(`${attempt.number}.${round}`, { attempt: attempt.number, round, record });
+  };
+  for (const version of foldObjectFacts(await allFactsOf(ctx.store, object))) keep(taskData(version.data));
+  keep(taskData(object.data));
+  const ordered = [...rounds.values()].sort((a, b) => b.attempt - a.attempt || b.round - a.round);
+  if (ordered.length === 0) return { markdown: "_No review yet._" };
+  const index = cursor === undefined ? 0 : Number(cursor);
+  const shown = Number.isInteger(index) ? ordered[index] : undefined;
+  if (shown === undefined) return { markdown: "_That page of the reviews does not exist._" };
+  let fixLevel: string | undefined;
+  try {
+    const task = taskData(object.data);
+    const found = await findRepository(ctx.store, task.repository);
+    if (found !== undefined) fixLevel = (await readDevSettings(repositoryData(found.data).path)).reviewer.fixLevel;
+  } catch {
+    fixLevel = undefined;
+  }
+  return {
+    markdown: reviewRound(shown.record, shown.attempt, fixLevel),
+    ...(ordered.length > 1
+      ? {
+          pages: ordered.map((entry, at) => ({
+            label: `attempt ${entry.attempt}, round ${entry.round}`,
+            ...(at === 0 ? {} : { cursor: String(at) }),
+          })),
+        }
+      : {}),
+    ...(index + 1 < ordered.length ? { next: String(index + 1) } : {}),
   };
 }
 

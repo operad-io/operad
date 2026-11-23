@@ -1037,6 +1037,7 @@ item goes away once `pool` is loaded.
   characters is cut with `…`; Metrics has the whole name.
 - `operad history` has the work line above: `work: claude` or
   `work: pi (fallback from claude)`.
+- A task that has been reviewed has a Review section: the newest round first (result, the fix level from dev.json, the reviewer agent and model, the findings by severity and what the reviewer checked), earlier rounds on further pages. A tool call the access profile stopped shows in the Log as `blocked by the access profile: <rule>`; it is a guard, not a failure.
 - The task's Metrics section adds a table under the attempts, one row per
   worker, summed over the attempts that worker ran: attempts, cost, time and
   first pass (attempts whose first review round passed, out of the attempts
