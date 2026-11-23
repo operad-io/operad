@@ -200,6 +200,7 @@ The window rule (M11 to M16 above) was replaced by a fold that keeps its state a
 | T-0492-M4 | packages/chat/src/views.ts | a stopped half reply was shown without the stopped mark | `chat:stop and chat:retry > stop during text keeps the half-written reply, marked stopped, and says what happens to later messages` |
 | T-0492-M5 | packages/chat/src/index.ts | a retry right after a stop waited for the stopped entry instead of following the successful stop line | `chat:stop and chat:retry > retry after a stop answers again on the same session, keeps the stopped reply, and a rerun adds no entry` |
 | T-0492-M6 | packages/chat/src/index.ts | `chat:stop` asked the run control to cancel a run id that was not the chat's latest | `chat:stop and chat:retry > stop during text keeps the half-written reply, marked stopped, and says what happens to later messages` |
+
 | T-0485-M6 | packages/chat/src/reply.ts | the failure line kept the provider message's internal word `harness` instead of the person's `agent` | `a failed reply > uses the person's words for the internal names a provider's message carries` |
 
 ## T-0504 — a rerun's failure and the tail's kept entries
@@ -664,6 +665,7 @@ are append-only, so the old lines stay as history.
 |---|---|---|---|
 | T-0772-M1 | packages/chat/src/model.ts | `startsAfterNew` stayed true after a reply, so every later message carried the pointer | `/new > the first message after /new carries a pointer to the earlier record, and only that one` |
 | T-0772-M2 | packages/chat/src/model.ts | `startsAfterNew` ignored `chat.new`, so no message carried the pointer | the same test |
+
 | T-0768-M2 | packages/chat/src/model.ts | a run record took a chat number | `the record of a routine's run > takes an R- id of its own, leaves the chat numbers alone, and is in no chat list` |
 | T-0768-M3 | packages/chat/src/views.ts | a run record showed in the open chat list | `the record of a routine's run > takes an R- id of its own, leaves the chat numbers alone, and is in no chat list` |
 ## T-0773 — `/new <goal>` brief
