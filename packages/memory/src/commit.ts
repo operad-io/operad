@@ -105,7 +105,7 @@ function stagedNotes(repository: Repository, paths: string, label: string): read
     const path = parts[index + 1] ?? "";
     if (!path.endsWith(".md")) continue;
     const inside = paths === "." ? path : path.slice(paths.length + 1);
-    let summary = "removed";
+    let summary = "";
     if (!status.startsWith("D")) {
       try {
         summary = noteSummary(readFileSync(join(repository.root, path), "utf8"));

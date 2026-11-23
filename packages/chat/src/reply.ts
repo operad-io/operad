@@ -1158,7 +1158,7 @@ async function recordFailure(
   const read = readChat(ctx.store, chat);
   let lastReply = 0;
   for (const item of read.messages) {
-    if (item.role === "user") continue;
+    if (item.role === "user" || item.role === "recap") continue;
     lastReply = Math.max(lastReply, item.sequence);
   }
   const recorded = read.entries.some(

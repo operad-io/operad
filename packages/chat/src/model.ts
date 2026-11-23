@@ -181,9 +181,11 @@ export const OTHER_SOURCE = "other";
 
 /**
  * Who wrote a message: the person, the assistant, or a plugin that delivers a
- * result into the chat (a `delivery`, which never starts a reply).
+ * result into the chat (a `delivery`, which never starts a reply), or the
+ * recap code writes when the person returns (a `recap`, which neither starts a
+ * reply nor reaches the model).
  */
-export type MessageRole = "user" | "assistant" | "delivery";
+export type MessageRole = "user" | "assistant" | "delivery" | "recap";
 
 /** What a delivered result says about itself. */
 export interface DeliveryData {
@@ -1185,7 +1187,7 @@ function messageOfFact(fact: PluginFact): Message | undefined {
   if (fact.type !== MESSAGE_FACT) return undefined;
   const data = fact.data;
   if (typeof data.id !== "string" || typeof data.text !== "string") return undefined;
-  if (data.role !== "user" && data.role !== "assistant" && data.role !== "delivery") return undefined;
+  if (data.role !== "user" && data.role !== "assistant" && data.role !== "delivery" && data.role !== "recap") return undefined;
   const delivery = data.role === "delivery" ? deliveryOf(data.delivery) : undefined;
   if (data.role === "delivery" && delivery === undefined) return undefined;
   const from = isRecord(data.from) ? data.from : {};

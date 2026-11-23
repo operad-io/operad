@@ -55,6 +55,7 @@ import {
 import { keepInterrupted, runReply, withLevelFileDeny, WORKTREE_ALLOW_ALWAYS, WORKTREE_ALLOW_ONCE, WORKTREE_CHOICES, WORKTREE_DENY, WORKTREE_REPLY_EVENT, WORKTREE_YES, worktreeChoiceInfo } from "./reply.ts";
 import { syncQueuedLocked, withQueueLock } from "./queue.ts";
 import { chatCommands, findCommand, helpText, parseCommand, runCommand } from "./command.ts";
+import { AWAY_MINUTES_DEFAULT, recapIdOf, recapOf } from "./recap.ts";
 import { readChatSkills } from "./skills.ts";
 import { chatViews } from "./views.ts";
 
@@ -167,6 +168,8 @@ export type SendContext = Pick<ActionContext, "facts" | "emit" | "actor"> & {
   readonly store?: ActionContext["store"] | undefined;
   /** The operad home, for the queue lock. */
   readonly home?: string | undefined;
+  /** Minutes without the person that count as away; a message after that gets a recap. Absent or 0: none. */
+  readonly awayMinutes?: number | undefined;
 };
 
 /**
@@ -200,6 +203,20 @@ export async function sendMessage(
   // The message is a fact first; the event is what starts the answer.
   const record = async (): Promise<void> => {
     await ctx.facts.append({ type: MESSAGE_FACT, object: chatRef(chatId), data: message });
+    if (ctx.store !== undefined && ctx.awayMinutes !== undefined && ctx.awayMinutes > 0) {
+      // The recap follows the message that shows the person is back, and no
+      // event starts from it; the model never gets it.
+      const read = readChat(ctx.store, chatId);
+      const current = read.messages.find((item) => item.id === id);
+      const text = current === undefined ? undefined : recapOf(read.messages, read.facts, current, ctx.awayMinutes * 60_000);
+      if (text !== undefined) {
+        await ctx.facts.append({
+          type: MESSAGE_FACT,
+          object: chatRef(chatId),
+          data: { id: recapIdOf(id), role: "recap", from: { via: "chat", id: "recap" }, text, attachments: [], source: { kind: "chat", ref: null } },
+        });
+      }
+    }
     if (ctx.store !== undefined) await syncQueuedLocked(ctx.store, chatId, "action:chat/send");
   };
   if (ctx.home === undefined || ctx.store === undefined) await record();
@@ -262,7 +279,14 @@ const sendAction: ActionTypeDefinition = {
       await ctx.facts.append({ type: COMMAND_FACT, object: chatRef(ctx.object.id), data });
       return result.outcome;
     }
-    return sendMessage(ctx, ctx.object.id, text, input.ref, files);
+    const away = ctx.settings.awayMinutes;
+    return sendMessage(
+      { ...ctx, awayMinutes: typeof away === "number" ? away : AWAY_MINUTES_DEFAULT },
+      ctx.object.id,
+      text,
+      input.ref,
+      files,
+    );
   },
 };
 
@@ -955,6 +979,15 @@ export function createChatPlugin() {
           description:
             "How a transcript labels the model's messages. A bot chat uses its bot's speaker instead.",
         },
+        awayMinutes: {
+          type: "integer",
+          title: "Away after (minutes)",
+          minimum: 0,
+          default: AWAY_MINUTES_DEFAULT,
+          editable: true,
+          description:
+            "When a person writes to a chat after this long without writing, the chat shows one recap of the routine results and replies that came meanwhile. 0 turns it off.",
+        },
       },
       additionalProperties: false,
     },
@@ -1010,6 +1043,7 @@ export default createChatPlugin();
 export * from "./model.ts";
 export * from "./notes.ts";
 export * from "./deliver.ts";
+export * from "./recap.ts";
 export * from "./command.ts";
 export * from "./queue.ts";
 export * from "./reply.ts";

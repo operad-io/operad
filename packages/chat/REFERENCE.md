@@ -334,3 +334,10 @@ The transcript labels the model's messages with a speaker name, read each time
 it is drawn: `plugins.chat.settings.speaker`, `Operad Bot` when not set. A
 chat's parent object may carry a `speaker` of its own (a bot does), and that
 name is used instead. Messages already recorded get a changed name too.
+
+## The recap on return
+
+`plugins.chat.settings.awayMinutes` (default 240; 0 turns it off): a message
+written after this many minutes without the person's message or command is
+followed by one `recap` message listing the routine results and the replies that
+came meanwhile (ADR 0026 D20). It is not sent to the model.

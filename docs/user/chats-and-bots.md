@@ -278,6 +278,7 @@ MCP servers.
 | `bot.bots.<name>.tidyTime` | string | `03:30` | `HH:MM` from `00:00` to `23:59`, in the machine's local time zone | The next nightly memory check of the bot. |
 | `bot.bots.<name>.runWithoutAsking` | boolean | `false` | `true`, `false` | The next nightly check: `true` runs the bot's Dreaming (memory tidy) with no pending item; `false` waits for Run or Skip. |
 | `chat.speaker` | string | `"Operad Bot"` | Any non-empty string | Every reply of a chat that does not use a bot's `speaker`; editable with `operad settings set chat.speaker <value>`. |
+| `chat.awayMinutes` | integer | `240` | 0 or more; 0 turns it off | A message written after this many minutes without a message or command of yours: the chat adds one recap of the routine results and replies that came meanwhile; editable with `operad settings set chat.awayMinutes <value>`. |
 
 The default access profile denies credentials and secrets (`~/.ssh`, `~/.gnupg`,
 `~/.aws`, `~/.config/gh`, keychains and browser profiles), the operad home

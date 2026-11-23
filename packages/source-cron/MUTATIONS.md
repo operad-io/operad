@@ -66,3 +66,7 @@ the row fields.
 | T-0782-M1 | packages/source-cron/src/index.ts | the old command name `scheduled` was declared again as an alias | `operad routines > the old name scheduled is gone, with no alias` |
 | T-0782-M2 | packages/source-cron/src/schedules.ts | an empty list printed `no scheduled flows` instead of `no routines` | `operad routines > the old name scheduled is gone, with no alias` |
 | T-0782-M3 | packages/source-cron/src/schedules.ts | the command's default name stayed `scheduled`, so `operad routines` was unknown | `operad routines > adds a flow, lists it, and refuses an unknown flow` |
+| T-0783-M1 | packages/source-cron/src/schedules.ts | `routines add --command` no longer refused when the shell flow is not loaded | `command routines > with shell off it refuses and names the command that turns shell on` |
+| T-0783-M2 | packages/source-cron/src/schedules.ts | the list showed the flow name instead of the command line | `command routines > --command writes the same rule as --flow shell:command --params, and list shows the line` |
+| T-0783-M3 | packages/source-cron/src/schedules.ts | a failed run's last result dropped the failing step's message | `command routines > a failed command's last result carries the step's message` |
+| T-0783-M4 | packages/source-cron/src/schedules.ts | every command routine got the same default object | `command routines > two command routines at one time get different objects` |

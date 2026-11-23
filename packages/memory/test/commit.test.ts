@@ -92,7 +92,7 @@ describe("a bot run is recorded in git", () => {
     expect(memoryGit(memory, ["status", "--porcelain"]).out).toBe("");
   });
 
-  test("names the notes the run wrote with a one-line summary, and the one it removed", async () => {
+  test("names the notes the run wrote with a one-line summary, and the one it removed, which has no summary", async () => {
     const r = await rig();
     await botChat(r, "C-1");
     const memory = join(r.cwd, "memory");
@@ -107,7 +107,7 @@ describe("a bot run is recorded in git", () => {
     const outcome = await r.run("C-1", "run-1");
     expect(outcome.data["wrote"]).toEqual([
       { file: "memory/topics/milk.md", summary: "Milk" },
-      { file: "memory/topics/old.md", summary: "removed" },
+      { file: "memory/topics/old.md", summary: "" },
       { file: "memory/topics/tea.md", summary: "How the person takes tea" },
       { file: "wiki/note.md", summary: "a note" },
     ]);

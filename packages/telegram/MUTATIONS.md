@@ -219,4 +219,6 @@ T-0588 added the `bot-tidy` type, which stores one object per bot under the bot'
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0770-M7 | packages/telegram/src/replies.ts | a delivered result was sent without its header | `sending a reply > a routine's delivered result is sent to the bound chat once, under its header` |
+| T-0774-M4 | packages/telegram/src/replies.ts | a recap was not sent to the bound chat | `sending a reply > a recap on return is sent once, as one message` |
+
 | T-0778-M5 | packages/telegram/src/replies.ts | the line of the notes a reply used was sent after the answer as well | `sending a reply > a reply that saved to memory ends with that line, and the notes it used are not sent` |
