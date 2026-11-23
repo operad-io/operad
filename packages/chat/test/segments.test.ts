@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 import type { SectionContent, ViewContext } from "@operad-io/engine";
-import { allMessages, CHAT_TYPE, chatRef, chatViews, COMMAND_FACT, NEW_FACT, readChat, segmentsOf, SEGMENT_TITLE_FACT } from "../src/index.ts";
+import { allMessages, CHAT_TYPE, chatData, chatRef, chatViews, COMMAND_FACT, NEW_FACT, readChat, segmentsOf, SEGMENT_TITLE_FACT } from "../src/index.ts";
 import { cleanupRoots, reply, rig, setTestClock } from "./support.ts";
 
 afterAll(cleanupRoots);
@@ -123,6 +123,21 @@ describe("segments of a long chat", () => {
     await r.say(chat, "two");
     await r.round(chat);
     expect(r.calls.filter(titling)[0]?.params.args).toEqual(["--model", "small"]);
+  });
+
+  test("the title call is paid like a reply: the chat's cost counts it as soon as it is made", async () => {
+    const r = await rig((_ctx, call) =>
+      titling(call)
+        ? { result: "done", data: { finalMessage: "Named", usage: { model: "m", costMicros: 7, costQuality: "exact" } } }
+        : { result: "done", data: { finalMessage: "ok", usage: { model: "m", costMicros: 100, costQuality: "exact" } } },
+    );
+    const chat = await r.chat();
+    await r.say(chat, "one");
+    await r.round(chat);
+    await slashNew(r, chat);
+    await r.say(chat, "two");
+    await r.round(chat);
+    expect(chatData((await r.store.get(CHAT_TYPE, chat))?.data ?? {}).costMicros).toBe(207);
   });
 
   test("a title call that fails leaves the first words of the question, once", async () => {

@@ -240,6 +240,8 @@ async function nameSegment(
       },
     },
   });
+  // The call is paid like a reply: the chat's cost counts it now.
+  if (called) await syncChat(ctx, object.id, undefined);
 }
 
 /**
