@@ -30,7 +30,41 @@ describe("idle chats", () => {
   });
 });
 
+describe("idle chats left alone", () => {
+  test("a run chat and a chat of a parent that is not a bot stay open however long they idle", async () => {
+    const r = await rig();
+    const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });
+    try {
+      const now = Date.now();
+      await r.store.put(CHAT_TYPE, "R-0009", { run: true, title: "run", parent: "bot:default" }, "test");
+      await r.store.put(CHAT_TYPE, "C-0009", { title: "repo chat", parent: "repo:x" }, "test");
+      expect(await closeIdleChats(r.store, views as unknown as ClientApi, now + 30 * DAY)).toBe(0);
+      expect((await r.store.get(CHAT_TYPE, "R-0009"))?.data.closed).not.toBe(true);
+      expect((await r.store.get(CHAT_TYPE, "C-0009"))?.data.closed).not.toBe(true);
+    } finally {
+      views.close();
+    }
+  });
+});
+
 describe("routine history", () => {
+  test("a run still marked running is kept however old", async () => {
+    const r = await rig();
+    await r.act("bot", "default", "bot/schedule-add", { name: "Slow", schedule: "0 8 * * *", prompt: "Go." });
+    const object = await findRoutine(r.store, "default", "Slow");
+    if (object === undefined) throw new Error("no routine");
+    const now = Date.now();
+    await r.store.put(CHAT_TYPE, "R-0005", { run: true, title: "run" }, "test");
+    await r.store.put(
+      ROUTINE_TYPE,
+      object.id,
+      { ...object.data, runs: [{ id: "R-0005", at: now - (ROUTINE_HISTORY_DAYS + 5) * DAY, status: "running" }] },
+      "test",
+    );
+    expect(await pruneRoutineRuns(r.store, now)).toBe(0);
+    expect(await r.store.get(CHAT_TYPE, "R-0005")).toBeDefined();
+  });
+
   test("runs older than 30 days are removed; the last results on the routine stay", async () => {
     const r = await rig();
     await r.act("bot", "default", "bot/schedule-add", { name: "Old", schedule: "0 8 * * *", prompt: "Go." });

@@ -509,3 +509,5 @@ changes for bots, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0788-M2 | packages/bot/src/delivery.ts | the delivery did not carry the routine's object id | `a routine's result reaches the bot's main chat > a result with content is one message in the main chat, headed with the routine, and starts no reply` |
+| T-0790-M1 | packages/bot/src/idle.ts | an idle run chat was closed like any other chat | `idle chats left alone > a run chat and a chat of a parent that is not a bot stay open however long they idle` |
+| T-0790-M2 | packages/bot/src/schedule.ts | prune dropped a run still marked running when it was old | `routine history > a run still marked running is kept however old` |

@@ -122,7 +122,7 @@ export const COMMAND_FACT = "chat.command";
 /** The fact type of a request to compact a chat's context (`/compact`) and of its being taken. */
 export const COMPACT_FACT = "chat.compact";
 
-/** The share of the model's window at which a pi chat compacts its context after a reply (ADR 0023 D13). */
+/** The share of the model's window at which a pi chat compacts its context after a reply (ADR 0023 D12). */
 export const COMPACT_AT = 0.75;
 
 /**
@@ -966,7 +966,7 @@ export async function mainChatOf(store: ObjectStore, parent: string): Promise<st
       const data = chatData(object.data);
       if (data.parent !== parent || data.closed || data.scheduled !== undefined) continue;
       if (latest === undefined || object.id > latest) latest = object.id;
-      if (data.channels.length > 0 && (bound === undefined || object.id > bound)) bound = object.id;
+      if (data.channels.some((channel) => channel.startsWith("telegram:")) && (bound === undefined || object.id > bound)) bound = object.id;
     }
     cursor = page.next;
   } while (cursor !== undefined);

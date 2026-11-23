@@ -338,3 +338,4 @@ the row fields.
 | T-0767-M4 | packages/harness/pi/src/prune.ts | the placeholder did not name the tool | `after it, old results become a placeholder naming the tool and recent ones stay` |
 | T-0767-M5 | packages/harness/pi/src/worker.ts | the `context` hook returned `undefined` instead of the pruned messages | `after the cache lifetime, old tool results reach the model as a placeholder and the session keeps them` |
 | T-0767-M6 | packages/harness/pi/src/worker.ts | a new process ignored the session's last assistant message time | `a resumed session is pruned by the time of its last message, not by a fresh process` |
+| T-0790-M1 | packages/harness/pi/src/index.ts | the step accepted a compaction share above 1 (`compactOf` checked only `> 0`) | `pi/agent > a chat's compaction input reaches the worker, and a bad share fails the step by name` |

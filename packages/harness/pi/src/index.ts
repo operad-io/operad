@@ -612,7 +612,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
   });
 }
 
-/** The compaction a chat reply asks for (ADR 0023 D13), checked here so a bad value fails the step by name. */
+/** The compaction a chat reply asks for (ADR 0023 D12), checked here so a bad value fails the step by name. */
 function compactOf(
   value: unknown,
   at: string,

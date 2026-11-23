@@ -575,3 +575,4 @@ the row fields.
 |---|---|---|---|
 | T-0769-M4 | packages/tui/src/state.ts | the bot page's `mainChat` was ignored, so a new chat was always started | `a bot page that names a main chat opens it instead of a new one > a main chat in the section opens that chat and starts no new one` |
 | T-0769-M5 | packages/tui/src/state.ts | the first message was asked for as soon as the bot opened, before its page named a main chat | `a bot page that names a main chat opens it instead of a new one > the first message waits for the page's section` |
+| T-0790-M1 | packages/tui/src/state.ts | a bot page whose section failed to read left the first message unasked instead of starting a new chat | `a bot page that names a main chat opens it instead of a new one > a section that fails to read starts the new chat's first message` |
