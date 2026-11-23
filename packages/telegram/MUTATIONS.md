@@ -213,3 +213,9 @@ T-0588 added the `bot-tidy` type, which stores one object per bot under the bot'
 | T-0644-M1 | packages/telegram/src/events.ts | the stream was requested before the `try`, so a synchronous refusal ended the one event loop | `the plugin's one event loop > a stream refused synchronously is retried instead of ending the loop` |
 | T-0644-M2 | packages/telegram/src/pending.ts | every stored change restarted the debounce, so a steady stream postponed the pending pass | `pending items go to Telegram > continuous stored changes do not postpone the one pending pass` |
 | T-0644-M3 | packages/telegram/src/progress.ts | a chat already found not bound read its chat again for every live tail | `the progress message of a reply > a live tail of a chat that is not bound does not read the chat again` |
+
+## T-0770 — A delivered result is sent to Telegram
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0770-M7 | packages/telegram/src/replies.ts | a delivered result was sent without its header | `sending a reply > a routine's delivered result is sent to the bound chat once, under its header` |

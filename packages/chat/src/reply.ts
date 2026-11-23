@@ -34,6 +34,8 @@ import {
   BRIEF_FACT,
   briefDue,
   briefToCarry,
+  deliveriesToCarry,
+  deliveryBlock,
   attemptEndedOfFact,
   chatFacts,
   COMMAND_FACT,
@@ -1780,6 +1782,7 @@ async function replyOnce(
     live.notes === undefined ? [] : notesToAttach(noteContents, chat.noteHashes, session);
   const noteText = carried.length === 0 ? undefined : noteBlock(carried);
   const briefText = briefToCarry(messages, (locked as ChatRead | undefined)?.facts ?? read.facts);
+  const deliveryText = deliveryBlock(deliveriesToCarry(messages, (locked as ChatRead | undefined)?.facts ?? read.facts));
   const messagePrompt = promptFor(
     pending.map((message) => ({ ...message, text: skillMessage(message.text, skills, loadsSkills) })),
     new Set(images.map((image) => image.path)),
@@ -1788,7 +1791,7 @@ async function replyOnce(
   const pointer = startsAfterNew(read.facts, messages) ? earlierRecordPointer(object.id) : undefined;
   const prompt = compactOnly
     ? "compact"
-    : [context, noteText, pointer, briefText, messagePrompt]
+    : [context, noteText, pointer, briefText, deliveryText, messagePrompt]
         .filter((part): part is string => part !== undefined && part.length > 0)
         .join("\n\n");
   if (compactAsked) {

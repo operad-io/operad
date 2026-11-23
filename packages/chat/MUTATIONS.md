@@ -694,3 +694,11 @@ are append-only, so the old lines stay as history.
 | T-0769-M1 | packages/chat/src/model.ts | `mainChatOf` ignored a chat bound to a channel and took the newest | `the bot's main chat > a chat bound to Telegram is the main chat even when a newer one is open` (packages/bot/test/main-chat.test.ts) |
 | T-0769-M2 | packages/chat/src/model.ts | `mainChatOf` counted a closed chat | `the bot's main chat > the most recent open chat is the main chat, and closing it falls back to the one before` and the Telegram test |
 | T-0769-M3 | packages/chat/src/model.ts | `mainChatOf` counted a chat a scheduled prompt opened | `the bot's main chat > a chat a scheduled prompt opened is not the main chat` |
+
+## T-0770 — A plugin delivers a result into a chat
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0770-M4 | packages/chat/src/model.ts | a delivery was carried again after a reply had seen it | `a delivered result > rides on the next message as its summary, not its whole text, and only once` |
+| T-0770-M5 | packages/chat/src/reply.ts | the prompt left out the delivered results | `a delivered result > rides on the next message as its summary, not its whole text, and only once` and `a failed run says so in the header and the carried line` |
+| T-0770-M6 | packages/chat/src/deliver.ts | a delivery of one run was recorded twice | `a delivered result > is recorded once for one run` |

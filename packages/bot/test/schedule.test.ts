@@ -147,7 +147,7 @@ describe("scheduled prompts", () => {
       // Answer the scheduled prompt as the fake agent does.
       await r.reply(id);
       await source.settled();
-      expect(notices).toEqual([{ routineId: "RT-0001", runId: id, title: "Morning", summary: "ok" }]);
+      expect(notices).toEqual([{ routineId: "RT-0001", runId: id, title: "Morning", summary: "ok", text: "ok", failed: false, bot: "default" }]);
       const entry = (await routinesOf(r.store, "default")).find((item) => item.name === "Morning");
       expect(entry?.last).toMatchObject({ runId: id, result: "ok", notified: true });
       expect(entry?.runs).toEqual([{ id, at: Date.parse("2026-01-01T00:01:10Z"), status: "done", result: "ok" }]);

@@ -20,7 +20,7 @@ import { maskSecrets, type FoldEntry } from "@operad-io/harness-process";
 import { secretValues } from "./reply.ts";
 import { readChatSkills, skillSummaries, type ObjectReader } from "./skills.ts";
 import { foldLogTail, agentLogPath } from "./tail.ts";
-import { agentLine, answeredOfFact, attachmentsOf, CHAT_TYPE, chatData, chatRef, COMMAND_FACT, commandOfFact, ENTRY_FACT, entryOfFact, factsOf, IMAGE_TYPES, lastReplyContext, latestRunOf, MESSAGE_CHANGE_FACT, MESSAGE_FACT, messageChangeOfFact, messageFactsInForce, modelAndCost, queuedData, queuedMessages, queuedOf, readChat, RUN_FACT, stopOfFact, timingsOf, unanswered, ANSWER_FACT, type Attachment, type ChatContext, type ChatRead, type Command, type Entry, type Message, type MessageChange, type ToolResult } from "./model.ts";
+import { agentLine, answeredOfFact, attachmentsOf, CHAT_TYPE, deliveryHeader, deliveryOf, chatData, chatRef, COMMAND_FACT, commandOfFact, ENTRY_FACT, entryOfFact, factsOf, IMAGE_TYPES, lastReplyContext, latestRunOf, MESSAGE_CHANGE_FACT, MESSAGE_FACT, messageChangeOfFact, messageFactsInForce, modelAndCost, queuedData, queuedMessages, queuedOf, readChat, RUN_FACT, stopOfFact, timingsOf, unanswered, ANSWER_FACT, type Attachment, type ChatContext, type ChatRead, type Command, type Entry, type Message, type MessageChange, type ToolResult } from "./model.ts";
 import type { TailRead } from "./tail.ts";
 
 /** How many messages of a chat one page of the transcript holds. */
@@ -98,6 +98,9 @@ function attachmentMarkdown(file: Attachment, home: string | undefined): string 
 
 /** One message as Markdown: who, when and where from, then the text. */
 export function messageMarkdown(message: Message, speaker: string = DEFAULT_SPEAKER, home?: string): string {
+  if (message.delivery !== undefined) {
+    return [`**${deliveryHeader(message.delivery)}** · ${minute(message.at)}`, message.text].filter((part) => part.length > 0).join("\n\n");
+  }
   const who = message.role === "assistant" ? speaker : "you";
   const via = message.role === "user" && message.source.kind.length > 0 ? ` via ${message.source.kind}` : "";
   const head = `**${who}**${via} · ${minute(message.at)}`;
@@ -139,7 +142,9 @@ function messageFrom(fact: {
 }): Message | undefined {
   const data = fact.data;
   if (typeof data.id !== "string" || typeof data.text !== "string") return undefined;
-  if (data.role !== "user" && data.role !== "assistant") return undefined;
+  if (data.role !== "user" && data.role !== "assistant" && data.role !== "delivery") return undefined;
+  const delivery = data.role === "delivery" ? deliveryOf(data.delivery) : undefined;
+  if (data.role === "delivery" && delivery === undefined) return undefined;
   const from = isRecord(data.from) ? data.from : {};
   const source = typeof data.source === "object" && data.source !== null ? (data.source as Record<string, unknown>) : {};
   const timings = timingsOf(data.timings);
@@ -156,6 +161,7 @@ function messageFrom(fact: {
       kind: typeof source.kind === "string" ? source.kind : "",
       ref: typeof source.ref === "string" ? source.ref : null,
     },
+    ...(delivery === undefined ? {} : { delivery }),
     ...(typeof data.runId === "string" && data.runId.length > 0 ? { runId: data.runId } : {}),
     ...(typeof data.model === "string" && data.model.length > 0 ? { model: data.model } : {}),
     ...(timings === undefined ? {} : { timings }),

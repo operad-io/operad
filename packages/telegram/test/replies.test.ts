@@ -9,6 +9,7 @@ import {
   ENTRY_FACT,
   MESSAGE_FACT,
   chatRef,
+  deliverResult,
 } from "@operad-io/chat";
 import { Secret, type ClientApi, type SourceContext, type ViewEvent } from "@operad-io/engine";
 import {
@@ -250,6 +251,33 @@ describe("sending a reply", () => {
     await reply(w, chat, "second");
     await sender(w, api).sweepChat(chat);
     expect(api.sent.map((request) => request.text)).toEqual(["the <b>answer</b>", "second"]);
+    await w.close();
+  });
+
+  test("a routine's delivered result is sent to the bound chat once, under its header", async () => {
+    const { w, chat } = await bound();
+    const api = new FakeApi();
+    await deliverResult(w.ctx, chat, {
+      routine: "Morning news",
+      runId: "R-0001",
+      summary: "short",
+      text: "Three items today.",
+      from: { via: "bot", id: "Morning news" },
+    });
+    await deliverResult(w.ctx, chat, {
+      routine: "Backup",
+      runId: "R-0002",
+      summary: "boom",
+      text: "disk full",
+      failed: true,
+      from: { via: "bot", id: "Backup" },
+    });
+    await sender(w, api).sweepAll();
+    await sender(w, api).sweepChat(chat);
+    expect(api.sent.map((request) => request.text)).toEqual([
+      "<b>Routine · Morning news</b>\n\nThree items today.",
+      "<b>Routine · Backup · failed</b>\n\ndisk full",
+    ]);
     await w.close();
   });
 
