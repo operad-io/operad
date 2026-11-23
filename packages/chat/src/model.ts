@@ -210,6 +210,11 @@ export interface ChatData {
   readonly tokensIncomplete?: true | undefined;
   /** The scheduled prompt that opened this chat; absent for every other chat. */
   readonly scheduled?: ScheduledChat | undefined;
+  /**
+   * True for the record of one run of a routine: it keeps the reply and its
+   * process like a chat, takes an `R-` id, and is not in the chat list.
+   */
+  readonly run?: true | undefined;
 }
 
 /** What a plugin gives to create a chat. */
@@ -237,6 +242,8 @@ export interface NewChat {
   readonly accessAction?: string | undefined;
   /** See {@link ChatData.scheduled}. */
   readonly scheduled?: ScheduledChat | undefined;
+  /** See {@link ChatData.run}. */
+  readonly run?: boolean | undefined;
 }
 
 /** One file attached to a message: where it is stored, and what a client shows of it. */
@@ -798,6 +805,7 @@ export function chatData(data: Readonly<Record<string, unknown>>): ChatData {
     ...(tokens === undefined ? {} : { tokens }),
     ...(data.tokensIncomplete === true ? { tokensIncomplete: true as const } : {}),
     ...(scheduled === undefined ? {} : { scheduled }),
+    ...(data.run === true ? { run: true as const } : {}),
   };
 }
 
@@ -953,18 +961,18 @@ export function chatRef(id: string): ObjectRef {
 }
 
 /** The next free chat id, `C-0001` upward. */
-async function nextChatId(store: ObjectStore): Promise<string> {
+async function nextChatId(store: ObjectStore, prefix: "C" | "R" = "C"): Promise<string> {
   let highest = 0;
   let cursor: string | undefined;
   do {
     const page = await store.list(CHAT_TYPE, { ...(cursor === undefined ? {} : { cursor }) });
     for (const object of page.objects) {
-      const match = /^C-(\d+)$/.exec(object.id);
-      if (match !== null) highest = Math.max(highest, Number(match[1]));
+      const match = /^([CR])-(\d+)$/.exec(object.id);
+      if (match !== null && match[1] === prefix) highest = Math.max(highest, Number(match[2]));
     }
     cursor = page.next;
   } while (cursor !== undefined);
-  return `C-${String(highest + 1).padStart(4, "0")}`;
+  return `${prefix}-${String(highest + 1).padStart(4, "0")}`;
 }
 
 /** Creates a chat for a plugin that has every field; returns its id. */
@@ -999,11 +1007,13 @@ export async function createChat(
     ...(input.refresh === undefined ? {} : { refresh: input.refresh }),
     ...(input.accessAction === undefined ? {} : { accessAction: input.accessAction }),
     ...(input.scheduled === undefined ? {} : { scheduled: input.scheduled }),
+    ...(input.run === true ? { run: true as const } : {}),
   };
+  const prefix = input.run === true ? "R" : "C";
   // The id counts up; a taken one (two chats made at once) moves on to the next.
   for (let attempt = 0; attempt < 20; attempt += 1) {
-    const base = await nextChatId(store);
-    const id = `C-${String(Number(base.slice(2)) + attempt).padStart(4, "0")}`;
+    const base = await nextChatId(store, prefix);
+    const id = `${prefix}-${String(Number(base.slice(2)) + attempt).padStart(4, "0")}`;
     if ((await store.get(CHAT_TYPE, id)) !== undefined) continue;
     await store.put(CHAT_TYPE, id, data, cause);
     return id;

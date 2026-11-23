@@ -48,9 +48,10 @@ function row(object: StoredObject): ObjectRow {
   return {
     id: object.id,
     title: chat.title.length > 0 ? chat.title : object.id,
-    state: chat.closed ? "closed" : "open",
+    // A run of a routine is in neither list: its state is in no filter.
+    state: chat.run === true ? "run" : chat.closed ? "closed" : "open",
     ...(note.length === 0 ? {} : { note: note.join(" · ") }),
-    ...(chat.closed ? { final: true } : {}),
+    ...(chat.closed || chat.run === true ? { final: true } : {}),
     ...(typeof chat.parent === "string" && chat.parent.length > 0 ? { parent: chat.parent } : {}),
     ...(Object.keys(data).length === 0 ? {} : { data }),
   };

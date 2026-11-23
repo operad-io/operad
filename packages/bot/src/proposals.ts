@@ -51,7 +51,7 @@ import {
   checkPromptName,
   checkSchedule,
   scheduleChangeOf,
-  scheduledPrompts,
+  routinesOf,
   type ScheduleChange,
   type ScheduledPrompt,
 } from "./schedule.ts";
@@ -517,15 +517,15 @@ function schedulePromptLines(entry: ScheduledPrompt): string[] {
   ];
 }
 
-/** What a person reads before a scheduled prompt is added, changed or removed. */
+/** What a person reads before a routine is added, changed or removed. */
 function scheduleReview(bot: string, change: ScheduleChange): string {
   const name = (change.after ?? change.before)?.name ?? "?";
   const action =
     change.action === "add" ? "adds" : change.action === "edit" ? "changes" : "removes";
   const out = [
-    `## Scheduled prompt ${name} for bot ${bot}`,
+    `## Routine ${name} for bot ${bot}`,
     "",
-    `This proposal ${action} a scheduled prompt on bot ${bot}. Approve applies it; reject leaves the bot as it is.`,
+    `This proposal ${action} a routine on bot ${bot}. Approve applies it; reject leaves the bot as it is.`,
   ];
   if (change.before !== null) {
     out.push(
@@ -556,7 +556,7 @@ export function proposalReview(object: StoredObject): string {
   if (data.kind === "schedule") {
     const change = scheduleChangeOf(data.schedule);
     return change === undefined
-      ? "No scheduled prompt is recorded for this proposal."
+      ? "No routine is recorded for this proposal."
       : scheduleReview(data.bot, change);
   }
   if (data.kind === "mcp") {
@@ -746,7 +746,7 @@ function optionalText(value: string | undefined): string | undefined {
 }
 
 /**
- * Proposes adding, changing or removing one of a bot's scheduled prompts. The
+ * Proposes adding, changing or removing one of a bot's routines. The
  * owner's direct actions apply at once; this path is the one a chat's agent
  * uses, so nothing fires until a person approves the proposal.
  */
@@ -760,12 +760,12 @@ export async function proposeSchedule(
   const object = await store.get(BOT_TYPE, bot);
   if (object === undefined) throw new BotError(`there is no bot "${bot}"`);
   const name = checkPromptName(input.name);
-  const current = scheduledPrompts(object.data).find((entry) => entry.name === name);
+  const current = (await routinesOf(store, bot)).find((entry) => entry.name === name);
   if (input.action === "add" && current !== undefined) {
-    throw new BotError(`bot ${bot} already has a scheduled prompt "${name}"`);
+    throw new BotError(`bot ${bot} already has a routine "${name}"`);
   }
   if (input.action !== "add" && current === undefined) {
-    throw new BotError(`bot ${bot} has no scheduled prompt "${name}"`);
+    throw new BotError(`bot ${bot} has no routine "${name}"`);
   }
   if (
     input.action === "remove" &&
@@ -775,7 +775,7 @@ export async function proposeSchedule(
       input.effort !== undefined)
   ) {
     throw new BotError(
-      "removing a scheduled prompt takes only its name and, optionally, the schedule in words",
+      "removing a routine takes only its name and, optionally, the schedule in words",
     );
   }
   const words = optionalText(input.words);
@@ -787,10 +787,10 @@ export async function proposeSchedule(
   let after: ScheduledPrompt | null = null;
   if (input.action === "add") {
     if (input.schedule === undefined) {
-      throw new BotError("adding a scheduled prompt needs --schedule, a five-field cron expression");
+      throw new BotError("adding a routine needs --schedule, a five-field cron expression");
     }
     const prompt = input.prompt === undefined ? "" : input.prompt.trim();
-    if (prompt.length === 0) throw new BotError("a scheduled prompt needs a prompt");
+    if (prompt.length === 0) throw new BotError("a routine needs a prompt");
     const model = optionalText(input.model);
     const effort = optionalText(input.effort);
     after = {
@@ -809,12 +809,12 @@ export async function proposeSchedule(
       input.effort === undefined
     ) {
       throw new BotError(
-        "editing a scheduled prompt needs a field to change: --schedule, --prompt, --model or --effort",
+        "editing a routine needs a field to change: --schedule, --prompt, --model or --effort",
       );
     }
     const schedule = input.schedule === undefined ? current.schedule : checkSchedule(input.schedule);
     const prompt = input.prompt === undefined ? current.prompt : input.prompt.trim();
-    if (prompt.length === 0) throw new BotError("a scheduled prompt needs a prompt");
+    if (prompt.length === 0) throw new BotError("a routine needs a prompt");
     const model = input.model === undefined ? current.model : optionalText(input.model);
     const effort = input.effort === undefined ? current.effort : optionalText(input.effort);
     after = {
@@ -840,14 +840,14 @@ export async function proposeSchedule(
   const data: ProposalData = {
     bot,
     kind: "schedule",
-    title: `Scheduled prompt ${name}`,
+    title: `Routine ${name}`,
     state: "pending",
     createdAt: Date.now(),
     schedule: change,
   };
   const id = `p-${randomUUID()}`;
   await store.put(PROPOSAL_TYPE, id, data as unknown as Record<string, JsonValue>, "command:bot/schedule");
-  return `proposed scheduled prompt "${name}" for bot ${bot}; review it in pending`;
+  return `proposed routine "${name}" for bot ${bot}; review it in pending`;
 }
 
 function skillData(value: unknown): ProposalData["skill"] | undefined {
@@ -940,7 +940,7 @@ export async function applyProposal(
     applyGit(home, change);
   } else if (data.kind === "schedule") {
     const change = scheduleChangeOf(data.schedule);
-    if (change === undefined) throw new BotError(`proposal ${id} has no scheduled prompt to apply`);
+    if (change === undefined) throw new BotError(`proposal ${id} has no routine to apply`);
     await applyScheduleChange(store, data.bot, change);
   } else if (data.kind === "mcp") {
     const change = mcpChangeOf(data.mcp);

@@ -425,33 +425,51 @@ A row may also carry `data`, an object the plugin defines for its clients. The
 kernel passes it through unchanged in list, get and pending rows. A client that
 does not know a plugin's shape ignores it.
 
-A bot row's `data.scheduled` is an array of its scheduled prompts, so an edit
-form needs no parsing of the bot section's Markdown. Each entry is:
+A routine is an object of type `bot-routine` (id `RT-0001`, or `dreaming-<bot>`
+for a bot's built-in Dreaming), listed at `GET /v1/objects/bot-routine`. Its row
+has the routine's name as `title`, the bot's name as `note`, `parent`
+`bot:<bot>`, and `state` `open`, `paused` or `removed` (the default list shows
+the first two). Its `data` is, so an edit form needs no parsing of the page's
+Markdown:
 
 ```json
 {
-  "name": "Morning",
+  "bot": "default",
   "schedule": "0 8 * * *",
   "prompt": "Collect the day's news.",
   "model": "claude-sonnet",
   "effort": "high",
   "paused": false,
+  "builtin": false,
   "nextRun": "2026-01-02T08:00:00.000Z",
-  "lastResult": "Collected 12 items.",
-  "lastChatId": "C-0042"
+  "lastResult": "done",
+  "lastSummary": "Collected 12 items.",
+  "timeZone": "America/Toronto"
 }
 ```
 
-`bot:schedule-run-now` on the bot, argument `name`, runs an entry once now, as a timed firing does, and leaves its next timed run unchanged; the chat opens within a second of the answer, and `lastChatId` and `lastResult` show it. An unknown name is refused with `422` and a reason.
+`schedule` is a cron expression that runs in `timeZone`, the server's IANA time
+zone, so a client in another zone uses that zone, not its own, to preview a next
+run while the user edits; `nextRun` is already an absolute time. `model` and
+`effort` are `null` when the routine leaves them to the bot. `nextRun` is an ISO
+time, or `null` when the routine is paused or has no next run within two years.
+`lastResult` is `done`, `nothing to report` or `failed`, and `null` before the
+first run or while one is running; `lastSummary` is the reply's short summary.
+For the built-in Dreaming, `builtin` is `true` and `prompt`, `model` and
+`effort` are left out.
 
-A bot row's `data.timeZone` is the server's IANA time zone, for example
-`"America/Toronto"`. A `schedule` is a cron expression that runs in that zone,
-so a client in another zone uses it, not its own, to preview a next run while
-the user edits; `nextRun` is already an absolute time.
-
-`model` and `effort` are `null` when the entry leaves them to the bot. `nextRun`
-is an ISO time, or `null` when the entry is paused or has no next run within two
-years. `lastResult` and `lastChatId` are `null` before the entry first fires.
+The page's sections are `routine` (the prompt, schedule and last result) and one
+`run-<id>` per run of the last 30 days, newest first, each with that run's
+process and result. The actions are `bot:edit` (optional `schedule`, `prompt`,
+`model`, `effort`), `bot:pause`, `bot:resume`, `bot:run-now` and `bot:remove` on
+the routine, and `bot:schedule-add` on the bot, which takes `name`, `schedule`,
+`prompt` and the optional fields; the older `bot:schedule-edit`,
+`bot:schedule-pause`, `bot:schedule-resume`, `bot:schedule-run-now` and
+`bot:schedule-remove` stay on the bot and take `name`. `bot:run-now` runs a
+routine once now and leaves its next timed run unchanged; an unknown routine, or
+one whose previous run is still replying, is refused with `422` and a reason. A
+bot row no longer carries `data.scheduled`; it still carries `data.timeZone` and
+`data.followUps`.
 
 A bot row's `data.followUps` is an array of the bot's follow-ups not yet due,
 soonest first, across all its chats. A client shows a chat's own by matching
@@ -470,15 +488,11 @@ soonest first, across all its chats. A client shows a chat's own by matching
 `bot:follow-up-cancel` on the bot, argument `id`. The array is empty when the bot
 has none.
 
-A chat a scheduled prompt opened carries `data.scheduled`, which names its bot
-and the entry that opened it, so a client reads that instead of guessing from
-the title:
-
-```json
-{ "scheduled": { "bot": "default", "entry": "Morning" } }
-```
-
-Every other chat has no `data.scheduled`.
+A run of a routine is not a chat. Its record has an `R-` id and `state`
+`run`, so it is in neither the open nor the closed chat list, and a client shows
+it only as a section of the routine's page. The record carries `data.scheduled`,
+which names its bot and the routine, and `data.run`. Every chat a person has has
+neither.
 
 A chat with messages that no run has taken carries `data.queued`, in sending
 order, and `data.queuedCount`; it has neither when nothing is queued. Each entry

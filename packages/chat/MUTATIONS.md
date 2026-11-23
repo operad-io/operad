@@ -650,3 +650,5 @@ are append-only, so the old lines stay as history.
 | T-0761-M4 | packages/chat/src/views.ts | no guard against ending on a lone high surrogate | the same test |
 | T-0761-M5 | packages/chat/src/views.ts | the second pass cut answers to 64 bytes, under the preview | the line-end test and `the preview floor is broken only when nothing else is left` |
 | T-0763-M1 | packages/chat/src/views.ts | `shorten` takes a line end even when everything before it is whitespace | `a line end inside leading whitespace does not leave a bare ellipsis` |
+| T-0768-M2 | packages/chat/src/model.ts | a run record took a chat number | `the record of a routine's run > takes an R- id of its own, leaves the chat numbers alone, and is in no chat list` |
+| T-0768-M3 | packages/chat/src/views.ts | a run record showed in the open chat list | `the record of a routine's run > takes an R- id of its own, leaves the chat numbers alone, and is in no chat list` |

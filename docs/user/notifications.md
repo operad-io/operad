@@ -26,7 +26,7 @@ operad does not ship a delivery service. It runs your command and passes the det
 5. After the command ends, `serve` records the notice. A failure or a timeout is logged with the exit code and the last lines of output, recorded too, and not retried. The wait does not notify again, including after a restart of `serve`.
 6. If `serve` is stopped while the command is still running, the command is cancelled and nothing is recorded, so the next `serve` runs it again. If `serve` is killed after the command ends but before the record is written, that wait notifies once more.
 7. When you answer and the same run later waits again, that is a new wait and a new notice.
-8. A scheduled prompt of a bot also runs the command once when its reply ends. `OPERAD_ID`, `OPERAD_TITLE` and `OPERAD_LINK` name the new chat, and `OPERAD_REASON` is a short summary of the reply (or its failure line). `notify.on` does not matter here, only `notify.command`: the command is the way to tell you that a scheduled run finished. A reply that ends quietly (`NOTHING_TO_REPORT`) does not run it; see [Scheduled prompts](chats-and-bots.md#scheduled-prompts).
+8. A routine of a bot also runs the command once when its run's reply ends. `OPERAD_ID` and `OPERAD_LINK` name the routine (`bot-routine:<id>`), `OPERAD_TITLE` is its name, and `OPERAD_REASON` is a short summary of the reply (or its failure line). `notify.on` does not matter here, only `notify.command`: the command is the way to tell you that a routine ran. A reply that ends quietly (`NOTHING_TO_REPORT`) does not run it; see [Routines](chats-and-bots.md#routines). Dreaming, the bot's nightly memory tidy, is a routine and notifies the same way.
 
 ## Settings and variables
 
