@@ -687,3 +687,7 @@ are append-only, so the old lines stay as history.
 | T-0766-M11 | packages/chat/src/model.ts | a finished compaction run still counted as a reply being written | `/compact > a compaction run that is done is no longer a reply being written` |
 | T-0766-M12 | packages/chat/src/reply.ts | a chat without memory notes also got the flush turn | `automatic compaction of a pi chat > a pi reply asks for compaction at the share; a bot chat adds the memory flush turn, a chat without notes does not` |
 | T-0766-M13 | packages/chat/src/reply.ts | a `/compact` typed during a reply was not taken when it ended | `/compact > a /compact typed during a reply is taken by the next round of that same flow` |
+| T-0780-M1 | packages/chat/src/reply.ts | a chat whose compacted context was still full was answered and compacted again | `a chat too full to compact > when the compaction leaves the context over the share, the next reply fails with one plain line and the agent is not called` |
+| T-0780-M2 | packages/chat/src/model.ts | a compaction was never judged still full | `a chat too full to compact > two compactions never run in a row: with no reply that added context between, the agent is not asked again` |
+| T-0780-M3 | packages/chat/src/model.ts | `/new` did not end the full state | `a chat too full to compact > /new ends it: the next message goes to a fresh session` |
+| T-0780-M4 | packages/chat/src/model.ts | every compaction counted as full | `a chat too full to compact > a compaction that fits does not stop the chat` |
