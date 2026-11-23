@@ -27,7 +27,7 @@
 4. **Memory tidy 改名 Dreaming，中文"梦境整理"。** 只改用户看得到的文字；代码里的 `tidy`、设置键 `tidyTime` 和文件名不动。它是 Routines 里的一条内置项。
 5. **Telegram 绑定的 chat 是默认 bot 的主 chat。** 客户端没选 chat 时回到 bot 最近的 chat，新开变成显式操作（改 ADR 0028 D10）。
 6. **多话题这一轮不做**（Telegram 话题、一个 bot 多条线）。
-7. **侧边栏里 routine 平铺**，每行带 bot 名，不按 bot 分组。Routines 这一栏和知识库等栏平级。
+7. **侧边栏里 Routines 是一项**，和待处理、运行中、知识库平级；点它在中栏显示 routine 列表，和待处理、运行中一致（owner 2026-11-23 改定）。列表平铺，每行带 bot 名，不按 bot 分组。
 8. **Routine 的中文继续用"定时任务"。**
 9. **有内容的结果送进 bot 的主 chat，追问在主 chat 里进行。**
 10. **天数**：routine 的运行历史保留 30 天；没绑通道的 chat 闲置 7 天自动关闭，绑定通道的不参与。
