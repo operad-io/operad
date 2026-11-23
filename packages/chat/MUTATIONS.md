@@ -650,3 +650,11 @@ are append-only, so the old lines stay as history.
 | T-0761-M4 | packages/chat/src/views.ts | no guard against ending on a lone high surrogate | the same test |
 | T-0761-M5 | packages/chat/src/views.ts | the second pass cut answers to 64 bytes, under the preview | the line-end test and `the preview floor is broken only when nothing else is left` |
 | T-0763-M1 | packages/chat/src/views.ts | `shorten` takes a line end even when everything before it is whitespace | `a line end inside leading whitespace does not leave a bare ellipsis` |
+
+## T-0765 — `/new`
+
+| id | file | mutation | caught by |
+|---|---|---|---|
+| T-0765-M1 | packages/chat/src/model.ts | `currentSession` ignored the latest `chat.new` and resumed the session of an earlier reply | `/new > the next reply starts a session with no resume, the transcript stays, and the line is recorded` |
+| T-0765-M2 | packages/chat/src/model.ts | `lastReplyContext` ignored `chat.new`, so an agent with no session id kept showing the old context | `/new > an agent that reports no session id still shows no context after /new` |
+| T-0765-M3 | packages/chat/src/index.ts | `/new` ran while a reply was being written | `/new > it is refused while a reply is running and changes nothing` |

@@ -30,6 +30,7 @@ import {
   MESSAGE_CHANGE_FACT,
   attachmentOf,
   MODEL_FACT,
+  NEW_FACT,
   newMessageId,
   readChat,
   STOP_FACT,
@@ -633,6 +634,32 @@ const closeAction: ActionTypeDefinition = {
   },
 };
 
+const newAction: ActionTypeDefinition = {
+  name: "new",
+  on: CHAT_TYPE,
+  command: "Start a new agent session in this chat; the transcript stays.",
+  when: (state) => !chatData(state).closed,
+  why: (object) =>
+    chatData(object.data).closed ? `${object.id} is closed; it has no session to start` : undefined,
+  async run(ctx) {
+    const stored = await openChat(ctx, "it has no session to start");
+    const chat = chatData(stored.data);
+    const read = readChat(ctx.store, ctx.object.id);
+    if ((await writingReplyNow(read.facts, read.messages, read.entries, ctx.runs)) !== undefined) {
+      throw new Error(`chat ${ctx.object.id} is writing a reply; send /new once it ends or /stop it`);
+    }
+    await ctx.facts.append({
+      type: NEW_FACT,
+      object: chatRef(ctx.object.id),
+      data: { by: { via: ctx.actor.via, id: ctx.actor.id } },
+    });
+    await changeChat(ctx, "action:chat/new", (data) => ({ ...data, session: null }));
+    // A kept worker holds the old session in memory; the next reply starts its own.
+    await endKeptWorker(ctx.home, chat, ctx.object.id);
+    return "started a new session; the transcript stays and the next message goes to an agent with no earlier context";
+  },
+};
+
 const stopAction: ActionTypeDefinition = {
   name: "stop",
   on: CHAT_TYPE,
@@ -903,7 +930,7 @@ export function createChatPlugin() {
         mode: "auto" as const,
       },
     ],
-    actions: [sendAction, withdrawAction, editAction, modelAction, effortAction, accessAction, stopAction, retryAction, statusAction, closeAction, helpAction],
+    actions: [sendAction, withdrawAction, editAction, modelAction, effortAction, accessAction, stopAction, newAction, retryAction, statusAction, closeAction, helpAction],
     views: { [CHAT_TYPE]: chatViews },
   });
 }
