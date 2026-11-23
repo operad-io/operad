@@ -143,6 +143,7 @@ const FILE_PAGES: Readonly<Record<string, string>> = {
   "review.schema.json": "dev.md",
   "bot.schema.json": "config.md",
   "memory.schema.json": "memory.md",
+  "memory-case.schema.json": "memory.md",
   "access-user.schema.json": "access.md",
   "access-grants.schema.json": "access.md",
   "telegram.schema.json": "telegram.md",

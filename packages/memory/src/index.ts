@@ -13,6 +13,8 @@ import { runMemoryCommit } from "./commit.ts";
 import { openMemorySearch } from "./search/service.ts";
 import { runMemoryRead, runMemorySearch } from "./search/command.ts";
 import { botMemoryDirectories } from "./search/sources.ts";
+import { runMemoryPropose, runMemoryScore } from "./cases/command.ts";
+import { CASE_PROPOSAL_TYPE, caseProposalActions, caseProposalItems, caseProposalViews } from "./cases/propose.ts";
 import {
   WIKI_FOLDER_TYPE,
   WIKI_NOTE_TYPE,
@@ -60,6 +62,7 @@ export function createMemoryPlugin() {
     version: pkg.version,
     settings: MEMORY_SETTINGS,
     objects: [
+      { name: CASE_PROPOSAL_TYPE },
       {
         name: WIKI_FOLDER_TYPE,
         filters: WIKI_FILTERS,
@@ -73,10 +76,17 @@ export function createMemoryPlugin() {
         resolve: (ctx, type, id) => claimIfStored(ctx.store, type, resolveWikiNoteId(id)),
       },
     ],
+    actions: caseProposalActions,
     steps: [{ name: "commit", results: ["done", "failed"], run: runMemoryCommit }],
     commands: [
       { name: "search", args: "[--scope <scope>] [--field <name>=<value>] [--limit <n>] <query>", run: runMemorySearch },
       { name: "read", args: "<id> [from] [to] [--json]", run: runMemoryRead },
+      {
+        name: "score",
+        args: "[--cases <dir>] [--bot <name>] [--memory <dir>] [--window <n>] [--answer-with <program> [args]] [--no-record]",
+        run: runMemoryScore,
+      },
+      { name: "propose", args: "[--chat <id>]", run: runMemoryPropose },
     ],
     // The wiki is there before the first bot needs it; a directory that is
     // already a git repository is used as it is. The index is brought up to
@@ -114,7 +124,10 @@ export function createMemoryPlugin() {
         },
       };
     },
+    // A proposed test case waits for no run; it is a pending item until approved or rejected.
+    standing: (ctx) => caseProposalItems(ctx.store),
     views: {
+      [CASE_PROPOSAL_TYPE]: caseProposalViews,
       [WIKI_FOLDER_TYPE]: wikiFolderViews,
       [WIKI_NOTE_TYPE]: wikiNoteViews,
     },
@@ -136,3 +149,7 @@ export * from "./link-report.ts";
 export * from "./search/sources.ts";
 export * from "./search/command.ts";
 export * from "./wiki.ts";
+export * from "./cases/format.ts";
+export * from "./cases/score.ts";
+export * from "./cases/propose.ts";
+export * from "./cases/command.ts";

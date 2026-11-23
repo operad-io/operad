@@ -99,6 +99,8 @@ and `operad help` print the whole table.
 | `operad bot follow-ups <chat>` | `--cancel <id>` | Lists the chat's follow-ups, or cancels one with `--cancel`. |
 | `operad memory search <query>` | `--scope <scope>`, `--field <name>=<value>`, `--limit <n>` | Searches the shared wiki, the bot's memory and the bot's chats. Prints each result's document id, title, line range and snippet, then the directory notes that came back with it. `--scope` takes `wiki`, `memory` or `chats`; `--field` narrows by frontmatter; `--limit` caps the results. The same arguments may be given as JSON on stdin. |
 | `operad memory read <id>` | `from`, `to`, `--json` | Reads one document a search returned, or the line range named by `from` and `to` (both 1-based). A read of a note another note links to ends with its `Backlinks`, each with the linking note's path, line and an excerpt. Prints text by default; `--json` gives the same result, including a `backlinks` array. The id and range may also be given as JSON on stdin. |
+| `operad memory score` | `--cases <dir>`, `--bot <name>`, `--memory <dir>`, `--window <n>`, `--no-record`, `--answer-with <program>` | Runs the memory regression set against the bot's current memory and appends the score to `memory-scores.jsonl` in the home. Prints the score, the change since the last run of the same set, and each case that fails. See [the regression set](memory.md#the-regression-set). |
+| `operad memory propose` | `--chat <id>` | Finds corrections in the chat record and stores each as a pending item; approving one with the phrases a right answer states adds a case. Prints how many were proposed. |
 
 The routines verb is also reached with its plugin name as `operad cron routines ...`; the short `operad routines ...` is the same command.
 
@@ -155,6 +157,12 @@ A client of `serve` does the same over HTTP with `GET /v1/plugins` and `POST /v1
 | `--cancel <id>` | `bot follow-ups` | The follow-up to cancel. |
 | `--scope <scope>` | `memory search` | The part of the index to search: `wiki`, `memory` or `chats`. The default is all three; a comma-separated list is accepted. |
 | `--field <name>=<value>` | `memory search` | One frontmatter field a result must have; may be repeated. A frontmatter field with several values matches any of them. |
+| `--cases <dir>` | `memory score` | The directory of cases; the default is `memory-cases` in the home. |
+| `--bot <name>` | `memory score` | The bot whose memory is used; the default is `default`. |
+| `--memory <dir>` | `memory score` | A memory directory used in place of the bot's own. |
+| `--window <n>` | `memory score` | How many recent messages stay whole, as after a compaction; the default is 6. |
+| `--no-record` | `memory score` | Prints the score without adding it to the history. |
+| `--answer-with <program> [args]` | `memory score` | Scores the answers of a program instead of what the bot is shown; it takes everything after it. |
 
 The flags of an action are made from its arguments: an argument named `note`
 becomes `--note <text>`, a boolean becomes `--flag` or `--flag=true`, and an
