@@ -14,6 +14,7 @@ import {
 } from "../platform/index.ts";
 import { runTimes } from "./running.ts";
 import type { PluginRegistry, ActionInfo } from "../plugin/registry.ts";
+import { DRAIN_TIMEOUT_MS, InFlight } from "../plugin/in-flight.ts";
 import { rankOf, sortByRank, splitActionName } from "../plugin/registry.ts";
 import { messageOf } from "../plugin/errors.ts";
 import { createPluginLogger } from "../plugin/logger.ts";
@@ -715,6 +716,7 @@ export class Views {
   /** The section of the last tail an object pushed, so an empty tail can clear it. */
   private readonly liveSections = new Map<string, string>();
   private closed = false;
+  private readonly resolving = new InFlight();
   /** How the newest ended run of an object ended, keyed by its run and last fact. */
   private readonly lastRunEnds = new Map<
     string,
@@ -847,6 +849,14 @@ export class Views {
       }
     }
     return this.store.get(type, id);
+  }
+
+  /**
+   * Stops starting work on the store and waits, a bounded time, for the
+   * resolves and standing work in flight. Call it before the store closes.
+   */
+  async drain(timeoutMs: number = DRAIN_TIMEOUT_MS): Promise<void> {
+    await Promise.all([this.resolving.drain(timeoutMs), this.registry.drain(timeoutMs)]);
   }
 
   /** Closes the change listeners this view opened. */
@@ -2367,6 +2377,15 @@ export class Views {
     id: string,
     onlyType?: string,
   ): Promise<ResolvedObject | undefined> {
+    // A resolve that starts after the drain finds nothing: the store closes.
+    if (this.resolving.draining) return undefined;
+    return await this.resolving.track(() => this.resolveNow(id, onlyType));
+  }
+
+  private async resolveNow(
+    id: string,
+    onlyType?: string,
+  ): Promise<ResolvedObject | undefined> {
     const matches: ResolvedObject[] = [];
     for (const entry of this.registry.objectTypes()) {
       if (onlyType !== undefined && entry.type !== onlyType) continue;
@@ -2386,6 +2405,7 @@ export class Views {
       } catch (error) {
         // A plugin refuses with a ViewError when it knows why the id is wrong.
         if (error instanceof ViewError) throw error;
+        if (this.resolving.draining) return undefined;
         this.onLog(
           `plugin "${entry.plugin}": resolve failed for "${entry.type}:${id}": ${messageOf(error)}`,
         );

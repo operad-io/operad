@@ -430,3 +430,9 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0730-M1 | packages/cli/src/doctor.ts | the git line was added when git is installed instead of when it is not | `operad doctor > git not installed is an ok line with a note, and an installed git adds no line` |
+
+## T-0787 — a serve context waits for work on its stores before they close
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0787-M7 | packages/cli/src/serve-close.ts | the serve context closed the stores without draining the views first, so standing work in flight met a closed store | `a serve context waits for standing work in flight before it closes the stores` |
