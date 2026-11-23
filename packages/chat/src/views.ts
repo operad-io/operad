@@ -635,20 +635,31 @@ export function replyData(
   let sum = sizes.reduce((total, size) => total + size, 0);
   const sizeOf = (count: number, inner: number): number => overhead + inner + Math.max(0, count - 1);
   if (sizeOf(blanked.length, sum) <= maxBytes) return data(blanked);
-  // Thinking, text, input and answer text are shortened next, the oldest reply
-  // first and whole reply by whole reply: a reply is cut only when every older
-  // one is already at the smallest cap, so the newest stays whole the longest.
+  // Shortening goes in three passes, each the oldest reply first and whole
+  // reply by whole reply, so the newest stays whole the longest. Pass 1
+  // shortens everything that is not an answer (thinking, text, tool input and
+  // the input messages, which keep a preview). Pass 2 shortens answers to a
+  // preview of about two lines. Pass 3 goes below the preview, and only then
+  // are replies dropped.
   const cuts: ReplyBlock[] = [...blanked];
-  for (let at = 0; at < blanked.length; at += 1) {
-    const original = blanked[at];
-    if (original === undefined) continue;
-    for (const cap of [512, 128, 32, 0]) {
-      const cut = cutReply(original, cap);
-      const size = measure(cut);
-      sum += size - (sizes[at] ?? 0);
-      sizes[at] = size;
-      cuts[at] = cut;
-      if (sizeOf(cuts.length, sum) <= maxBytes) return data(cuts);
+  const step = (at: number, caps: ReplyCaps): boolean => {
+    const original = cuts[at];
+    if (original === undefined) return false;
+    const cut = cutReply(original, caps);
+    const size = measure(cut);
+    sum += size - (sizes[at] ?? 0);
+    sizes[at] = size;
+    cuts[at] = cut;
+    return sizeOf(cuts.length, sum) <= maxBytes;
+  };
+  const passes: readonly (readonly ReplyCaps[])[] = [
+    FREE_CAPS.map((free) => ({ free, input: Math.max(free, PREVIEW_BYTES), answer: Infinity })),
+    [{ free: 0, input: PREVIEW_BYTES, answer: PREVIEW_BYTES }],
+    [64, 0].map((all) => ({ free: all, input: all, answer: all })),
+  ];
+  for (const pass of passes) {
+    for (let at = 0; at < cuts.length; at += 1) {
+      for (const caps of pass) if (step(at, caps)) return data(cuts);
     }
   }
   // Even empty text leaves too much structure: the oldest replies go.
@@ -662,35 +673,61 @@ export function replyData(
   return (measure({ replies: [] }) <= maxBytes ? { replies: [] } : {}) as Readonly<Record<string, JsonValue>>;
 }
 
-/** Text cut to fit a byte budget, ending with an ellipsis when it was longer. */
+/** The preview an older reply's answer and input keep while anything else can still be cut: about two lines. */
+const PREVIEW_BYTES = 200;
+const FREE_CAPS: readonly number[] = [128, 0];
+
+/** Byte caps for the three kinds of text in a reply; `Infinity` leaves a kind whole. */
+interface ReplyCaps {
+  readonly free: number;
+  readonly input: number;
+  readonly answer: number;
+}
+
+/**
+ * Text cut to fit a byte budget, ending with an ellipsis when it was longer.
+ * The cut is at a line or sentence end when one is in the last quarter of what
+ * fits, and never inside a code point.
+ */
 function shorten(text: string, capBytes: number): string {
   if (capBytes <= 0) return "";
   if (Buffer.byteLength(text, "utf8") <= capBytes) return text;
   if (capBytes <= 3) return "";
   let end = Math.min(text.length, capBytes);
   while (end > 0 && Buffer.byteLength(text.slice(0, end), "utf8") + 3 > capBytes) end -= 1;
-  return end === 0 ? "" : `${text.slice(0, end)}…`;
+  const last = text.charCodeAt(end - 1);
+  if (end > 0 && last >= 0xd800 && last <= 0xdbff) end -= 1;
+  if (end === 0) return "";
+  const head = text.slice(0, end);
+  const floor = Math.floor(end * 0.75);
+  const newline = head.lastIndexOf("\n");
+  if (newline > 0 && newline >= floor) return `${head.slice(0, newline).trimEnd()}…`;
+  const sentence = /[.!?。！？](?=\s|$)/g;
+  let stop = -1;
+  for (let found = sentence.exec(head); found !== null; found = sentence.exec(head)) stop = found.index + 1;
+  if (stop > 0 && stop >= floor) return `${head.slice(0, stop)}…`;
+  return `${head}…`;
 }
 
 /** One reply with its free text cut to a budget; every text that got shorter says `cut`. */
-function cutReply(reply: ReplyBlock, capBytes: number): ReplyBlock {
-  const text = (original: string): { readonly text: string; readonly cut?: true } => {
+function cutReply(reply: ReplyBlock, caps: ReplyCaps): ReplyBlock {
+  const text = (original: string, capBytes: number): { readonly text: string; readonly cut?: true } => {
     const shortened = shorten(original, capBytes);
     return shortened === original ? { text: shortened } : { text: shortened, cut: true };
   };
-  const message = (block: ReplyMessage): ReplyMessage => ({ ...block, ...text(block.text) });
+  const message = (block: ReplyMessage, capBytes: number): ReplyMessage => ({ ...block, ...text(block.text, capBytes) });
   const item = (entry: ReplyItem): ReplyItem => {
     if (entry.kind === "tool") {
       if (entry.input === null) return entry;
-      const shortened = shorten(entry.input, capBytes);
+      const shortened = shorten(entry.input, caps.free);
       return shortened === entry.input ? entry : { ...entry, input: shortened, cut: true };
     }
-    return { ...entry, ...text(entry.text) };
+    return { ...entry, ...text(entry.text, caps.free) };
   };
   return {
     ...reply,
-    input: reply.input.map(message),
-    ...(reply.answer === undefined ? {} : { answer: message(reply.answer) }),
+    input: reply.input.map((block) => message(block, caps.input)),
+    ...(reply.answer === undefined ? {} : { answer: message(reply.answer, caps.answer) }),
     process: reply.process.map((group) => ({
       ...group,
       items: group.items.map(item),
