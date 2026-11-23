@@ -48,7 +48,10 @@ export function isBusy(error: unknown): boolean {
  * until the other writer commits, so nothing has to sleep and poll.
  */
 function waitForWriter(database: Database): void {
-  database.transaction(() => undefined).immediate();
+  // A writer that keeps committing (a first open creating the schema on a slow
+  // disk) can hold the lock past the busy timeout with nothing stuck, so the
+  // wait goes on while the data version moves, as for any other write.
+  writeImmediate(database, () => undefined);
 }
 
 /**
