@@ -726,6 +726,8 @@ describe("dev/work", () => {
     const failed = await runWork(state, "retry-run");
     expect(failed.result).toBe("failed");
     expect((await taskDataOf(state)).attempts).toBe(1);
+    // The gate and reverify read this to tell failed work from a finished one (T-0752).
+    expect((await taskDataOf(state)).attempt?.workDone).toBe(false);
 
     const again = await state.registry.runStep("dev/worktree", {}, {
       runId: "retry-run",

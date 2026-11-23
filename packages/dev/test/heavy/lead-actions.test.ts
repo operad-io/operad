@@ -110,7 +110,7 @@ const WAITS: Readonly<Record<string, Partial<TaskData>>> = {
     reworkStreak: 3,
   },
   "work that returned nothing": {
-    attempt: { number: 1, run: "run-1", result: "failed", worked: true },
+    attempt: { number: 1, run: "run-1", result: "failed", worked: true, workDone: false },
   },
 };
 
@@ -132,6 +132,8 @@ describe("dev:rework and dev:reverify", () => {
       expect(after.reworkStreak).toBe(0);
     });
 
+    // The work never finished: verifying its empty branch again would pass it.
+    if (state === "work that returned nothing") continue;
     test(`reverify from ${state} clears the gate results and answers reverify`, async () => {
       const fixture = await setup();
       await setTaskPhase(fixture.store, fixture.task.id, "waiting");
@@ -269,6 +271,16 @@ describe("dev:rework and dev:reverify", () => {
     await setTaskPhase(fixture.store, fixture.task.id, "waiting");
     const before = await getTask(fixture.store, fixture.task.id);
     await expect(run(fixture, "reverify")).rejects.toThrow(/no work to verify/);
+    expect(fixture.answers).toEqual([]);
+    expect((await getTask(fixture.store, fixture.task.id)).version).toBe(before.version);
+  });
+
+  test("reverify after work that did not finish refuses and says to rework (T-0752)", async () => {
+    const fixture = await setup();
+    await setTaskPhase(fixture.store, fixture.task.id, "waiting");
+    await patch(fixture, { attempt: WAITS["work that returned nothing"]?.attempt });
+    const before = await getTask(fixture.store, fixture.task.id);
+    await expect(run(fixture, "reverify")).rejects.toThrow(/did not finish.*rework/);
     expect(fixture.answers).toEqual([]);
     expect((await getTask(fixture.store, fixture.task.id)).version).toBe(before.version);
   });

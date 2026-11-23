@@ -1369,6 +1369,40 @@ describe("dev/review", () => {
     expect(state.reviewer.calls).toHaveLength(0);
   });
 
+  test("an empty diff after work that did not finish goes back to work, not to a pass (T-0752)", async () => {
+    const state = await fixture({ commit: false, reviewerArgs: ["none"] });
+    await verify(state);
+    const object = await state.store.get("task", state.taskKey);
+    if (object === undefined) throw new Error("task disappeared");
+    const task = taskData(object.data);
+    await state.store.put(
+      "task",
+      state.taskKey,
+      { ...task, attempt: { ...task.attempt, worked: true, workDone: false, result: "failed" } },
+      "test:work-failed",
+    );
+    const result = await review(state);
+    expect(result.result).toBe("fail");
+    expect(result.data?.counted).toBe(1);
+    expect(String(result.data?.message)).toContain("work did not finish");
+    expect(state.reviewer.calls).toHaveLength(0);
+  });
+
+  test("an empty diff after work that reported done still passes (T-0752)", async () => {
+    const state = await fixture({ commit: false, reviewerArgs: ["none"] });
+    await verify(state);
+    const object = await state.store.get("task", state.taskKey);
+    if (object === undefined) throw new Error("task disappeared");
+    const task = taskData(object.data);
+    await state.store.put(
+      "task",
+      state.taskKey,
+      { ...task, attempt: { ...task.attempt, worked: true, workDone: true, result: "done" } },
+      "test:work-done",
+    );
+    expect((await review(state)).result).toBe("pass");
+  });
+
   test("a vendored 3 MB script is listed once and the code is reviewed", async () => {
     const state = await fixture({
       maxFileDiffBytes: 200_000,
