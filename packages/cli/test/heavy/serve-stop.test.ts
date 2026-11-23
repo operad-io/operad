@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { pidAlive } from "@operad-io/engine";
+import { waitForChange } from "../../../engine/src/platform/index.ts";
 import {
   keptWorkerArgument,
   newKeptWorkerSlot,
@@ -26,6 +27,7 @@ import { operad, type OperadResult as Result } from "@operad-io/test-support";
 afterAll(cleanupTempRoots);
 
 const CLI_ENTRY = fileURLToPath(new URL("../../bin/operad.ts", import.meta.url));
+const IN_FLIGHT = fileURLToPath(new URL("../fixtures/reload-in-flight.ts", import.meta.url));
 const IGNORE_TERM = fileURLToPath(new URL("../fixtures/ignore-term.ts", import.meta.url));
 
 async function makeStopHome(): Promise<{ root: string; home: string; lock: string }> {
@@ -189,6 +191,44 @@ describe("operad serve stop", () => {
       }
       removeKeptWorker(stoppedAtStart);
       removeKeptWorker(keptAtStop);
+    }
+  }, 30_000);
+
+  test("a stop while a reload is in flight leaves no serve: the supervisor does not start the next one", async () => {
+    const { home } = await makeStopHome();
+    const supervisor = Bun.spawn({
+      cmd: [process.execPath, IN_FLIGHT, "serve"],
+      env: { ...testEnv(), OPERAD_HOME: home },
+      stdin: "ignore",
+      stdout: "ignore",
+      stderr: "ignore",
+    });
+    const named = async (name: string): Promise<void> => {
+      while (!existsSync(join(home, name))) await waitForChange(home, name, 200);
+    };
+    try {
+      await named("up1");
+      // The serve gives up the lock and is about to leave for new code: nothing holds the lock.
+      writeFileSync(join(home, "release"), "");
+      await named("leaving");
+      const stopping = serveStop({ home, timeoutSecs: 20, write: () => {} });
+      // The serve ends only after the stop reached it through the supervisor,
+      // so the supervisor must not start another.
+      await named("term");
+      writeFileSync(join(home, "go"), "");
+      await stopping;
+      const outcome = await Promise.race([
+        supervisor.exited.then(() => "supervisor ended"),
+        named("up2").then(() => "another serve started"),
+      ]);
+      expect(outcome).toBe("supervisor ended");
+      expect(existsSync(join(home, "up2"))).toBe(false);
+      expect(pidAlive(supervisor.pid)).toBe(false);
+    } finally {
+      if (supervisor.exitCode === null) {
+        supervisor.kill("SIGKILL");
+        await supervisor.exited;
+      }
     }
   }, 30_000);
 
