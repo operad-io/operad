@@ -45,6 +45,7 @@ import {
   type Entry,
   chatRef,
   currentSession,
+  startsAfterNew,
   ENTRY_FACT,
   latestRunOf,
   MESSAGE_FACT,
@@ -63,7 +64,7 @@ import {
   type Message,
   type MessageData,
 } from "./model.ts";
-import { noteBlock, noteFilesOf, noteHashesAfter, notesToAttach, notesWrittenHere, readNoteFiles, type NoteFile } from "./notes.ts";
+import { earlierRecordPointer, noteBlock, noteFilesOf, noteHashesAfter, notesToAttach, notesWrittenHere, readNoteFiles, type NoteFile } from "./notes.ts";
 import { queueTestHooks, syncQueuedLocked, takeLocked, withQueueLock } from "./queue.ts";
 import { agentLogPath, foldLogTail } from "./tail.ts";
 
@@ -1732,7 +1733,9 @@ async function replyOnce(
     pending.map((message) => ({ ...message, text: skillMessage(message.text, skills, loadsSkills) })),
     new Set(images.map((image) => image.path)),
   );
-  const prompt = [context, noteText, briefText, messagePrompt]
+  // The first message after `/new` says the earlier record exists and how to read it.
+  const pointer = startsAfterNew(read.facts, messages) ? earlierRecordPointer(object.id) : undefined;
+  const prompt = [context, noteText, pointer, briefText, messagePrompt]
     .filter((part): part is string => part !== undefined && part.length > 0)
     .join("\n\n");
   let outcome: PluginStepResult;
