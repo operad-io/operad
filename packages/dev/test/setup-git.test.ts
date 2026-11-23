@@ -232,3 +232,33 @@ describe("a request to set up git, carried by the request file", () => {
     expect(items[0]?.prompt).toContain(file);
   });
 });
+
+describe("a folder that already has a .gitignore", () => {
+  const custom = "*.log\nprivate-dir/\n";
+
+  test("the list returns its text, and a proposal that keeps every line commits and keeps the line", async () => {
+    const dir = folder({ "a.txt": "a", ".gitignore": custom, "x.log": "l", "private-dir/s": "s" });
+    const text = `${custom}${DEFAULT_GITIGNORE}`;
+    const list = firstCommitList(dir, text, options);
+    expect(list.existingGitignore).toBe(custom);
+    // The folder's own rules still apply: the ignored files are not listed.
+    expect(list.files).toEqual([".gitignore", "a.txt"]);
+    await applySetupGit({ path: dir, gitignore: text, paths: list.files, identity: ME }, options);
+    expect(readFileSync(join(dir, ".gitignore"), "utf8")).toContain("private-dir/");
+    expect(git(dir, "ls-tree", "-r", "--name-only", "HEAD").split("\n")).toEqual([".gitignore", ".operad/dev.json", "a.txt"]);
+    expect(firstCommitList(folder({ a: "a" }), DEFAULT_GITIGNORE, options).existingGitignore).toBeUndefined();
+  });
+
+  test("a text that drops a line is refused and nothing in the folder changes", async () => {
+    const dir = folder({ "a.txt": "a", ".gitignore": custom });
+    const before = readdirSync(dir).sort();
+    expect(() => firstCommitList(dir, DEFAULT_GITIGNORE, options)).toThrow("private-dir/");
+    await expect(
+      applySetupGit({ path: dir, gitignore: DEFAULT_GITIGNORE, paths: ["a.txt"], identity: ME }, options),
+    ).rejects.toThrow("would drop these lines: *.log, private-dir/");
+    expect(readdirSync(dir).sort()).toEqual(before);
+    expect(readFileSync(join(dir, ".gitignore"), "utf8")).toBe(custom);
+    expect(existsSync(join(dir, ".git"))).toBe(false);
+    expect(existsSync(join(dir, ".operad"))).toBe(false);
+  });
+});

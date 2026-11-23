@@ -70,6 +70,8 @@ export interface SetupGitOptions {
 }
 
 export interface FirstCommitList {
+  /** The folder's own `.gitignore` text, when it has one: a proposal builds on it and must keep every line. */
+  readonly existingGitignore: string | undefined;
   /** Files `git add` would take, relative to the folder, sorted; `.gitignore` is the first when the text is not empty. */
   readonly files: readonly string[];
   /** Folders that are git repositories of their own; they are not committed. */
@@ -168,6 +170,8 @@ export function firstCommitList(folder: string, gitignore: string, options: Setu
   refuseUnsafeFolder(folder, options.home);
   const problem = gitignoreProblem(gitignore, options);
   if (problem !== undefined) throw new DevRefusal(problem);
+  const dropped = droppedLines(folder, gitignore);
+  if (dropped !== undefined) throw new DevRefusal(dropped);
   const env = options.env ?? { ...process.env };
   const listed = scratchGit((scratch, run) => {
     const gitDirectory = join(scratch, "git");
@@ -188,6 +192,7 @@ export function firstCommitList(folder: string, gitignore: string, options: Setu
   const sorted = [...files].sort();
   const large = sorted.length > FIRST_COMMIT_FILE_LIMIT;
   return {
+    existingGitignore: existingGitignore(folder),
     files: sorted,
     nested,
     count: sorted.length,
@@ -196,6 +201,32 @@ export function firstCommitList(folder: string, gitignore: string, options: Setu
       ? `This folder has ${sorted.length} files for the first commit, more than ${FIRST_COMMIT_FILE_LIMIT}. Check the .gitignore: build output and dependencies are usually not part of it.`
       : undefined,
   };
+}
+
+/** The text of the folder's own `.gitignore`, or `undefined` when it has none. */
+export function existingGitignore(folder: string): string | undefined {
+  try {
+    return readFileSync(join(folder, ".gitignore"), "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+const linesOf = (text: string): string[] =>
+  text
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line !== "");
+
+/** A sentence when `proposed` would drop a line of the folder's own `.gitignore`, else `undefined`. */
+function droppedLines(folder: string, proposed: string): string | undefined {
+  const existing = existingGitignore(folder);
+  if (existing === undefined) return undefined;
+  const kept = new Set(linesOf(proposed));
+  const missing = linesOf(existing).filter((line) => !kept.has(line));
+  if (missing.length === 0) return undefined;
+  return `This folder already has a .gitignore, and the new text would drop ${missing.length === 1 ? "this line" : "these lines"}: ${missing.join(", ")}. Keep every line of the existing file and add to it.`;
 }
 
 function validPaths(folder: string, paths: readonly string[]): string[] {
@@ -272,6 +303,8 @@ function applyLocked(folder: string, request: SetupGitRequest, options: SetupGit
   }
   const problem = gitignoreProblem(request.gitignore, options);
   if (problem !== undefined) throw new DevRefusal(problem);
+  const dropped = droppedLines(folder, request.gitignore);
+  if (dropped !== undefined) throw new DevRefusal(dropped);
   const identity = request.identity;
   if (identity !== undefined) {
     if (identity.name.trim() === "" || !/^\S+@\S+$/.test(identity.email.trim()) || /[\r\n]/.test(identity.name + identity.email)) {
