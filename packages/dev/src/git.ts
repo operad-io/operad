@@ -57,8 +57,10 @@ export function printsOnSuccess(args: readonly string[]): boolean {
   const [command, sub] = args;
   switch (command) {
     case "rev-parse":
-    case "symbolic-ref":
       return true;
+    case "symbolic-ref":
+      // The setting form (`symbolic-ref HEAD refs/heads/x`) prints nothing.
+      return !args.some((argument) => argument.startsWith("refs/"));
     case "worktree":
       return sub === "list";
     case "merge-base":

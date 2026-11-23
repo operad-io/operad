@@ -453,7 +453,7 @@ export async function resolveDevKey(
   }
 }
 
-function ensureExcludes(repositoryPath: string): void {
+export function ensureExcludes(repositoryPath: string): void {
   const path = git(repositoryPath, ["rev-parse", "--git-path", "info/exclude"]);
   if (!path.ok) {
     throw new DevError("path", `is not a git work tree: ${path.err}`);
@@ -471,7 +471,7 @@ function ensureExcludes(repositoryPath: string): void {
   appendFileSync(excludePath, `${prefix}${missing.join("\n")}\n`, "utf8");
 }
 
-function writeSettings(
+export function writeSettings(
   repositoryPath: string,
   name: string,
   hasRemote: boolean,
