@@ -53,6 +53,8 @@ export interface ScheduledFlow {
   /** The rule's stable identity; the id add, edit, pause, resume and remove take. */
   readonly id: string;
   readonly flow: string;
+  /** The command line of a routine that runs one command; the list shows it in place of the flow. */
+  readonly command?: string | undefined;
   readonly schedule: string;
   readonly params?: JsonValue | undefined;
   readonly object: string;
@@ -96,6 +98,18 @@ export function nextScheduledMinute(expression: string, now: number): number | n
     }
   }
   return null;
+}
+
+/** The flow a command routine starts. */
+export const COMMAND_FLOW = "shell:command";
+const SHELL_OFF = 'shell is off: run "operad plugin enable shell" first';
+
+/** The command line a rule runs, when it starts the shell plugin's command flow. */
+function commandOf(rule: TriggerRule): string | undefined {
+  if (rule.start.flow !== COMMAND_FLOW) return undefined;
+  const params = rule.start.params;
+  if (!isRecord(params)) return undefined;
+  return typeof params.command === "string" ? params.command : undefined;
 }
 
 function range(count: number): number[] {
@@ -242,8 +256,13 @@ async function lastRunOf(
   if (active) return { runId, result: "running" };
   let result = "done";
   let reason: string | undefined;
+  let stepMessage: string | undefined;
   let endedAt: number | undefined;
   for await (const fact of log.read(runId)) {
+    if (fact.kind === "step_result" && isRecord(fact.payload) && isRecord(fact.payload.data)) {
+      const message = fact.payload.data.message;
+      stepMessage = typeof message === "string" && message.length > 0 ? message : undefined;
+    }
     if (fact.kind !== "run_ended" || !isRecord(fact.payload)) continue;
     if (typeof fact.payload.status === "string") result = fact.payload.status;
     if (typeof fact.payload.reason === "string" && fact.payload.reason.length > 0) {
@@ -251,6 +270,7 @@ async function lastRunOf(
     }
     endedAt = fact.time;
   }
+  if (reason === undefined && result === "failed") reason = stepMessage;
   return {
     runId,
     result,
@@ -273,6 +293,7 @@ async function listFlows(
     return {
       id,
       flow: rule.start.flow,
+      ...(commandOf(rule) === undefined ? {} : { command: commandOf(rule) }),
       schedule,
       ...(rule.start.params === undefined ? {} : { params: rule.start.params }),
       object: rule.object,
@@ -294,8 +315,12 @@ function line(entry: ScheduledFlow): string {
     : entry.nextRun === null
       ? "next none"
       : `next ${entry.nextRun}`;
-  const params = entry.params === undefined ? "" : ` params ${JSON.stringify(entry.params)}`;
-  return `${entry.id}  ${entry.flow}  ${entry.schedule}  on ${entry.object} (${entry.mode})  ${next}  ${last}${params}`;
+  const params =
+    entry.params === undefined || entry.command !== undefined
+      ? ""
+      : ` params ${JSON.stringify(entry.params)}`;
+  const what = entry.command === undefined ? entry.flow : `command ${JSON.stringify(entry.command)}`;
+  return `${entry.id}  ${what}  ${entry.schedule}  on ${entry.object} (${entry.mode})  ${next}  ${last}${params}`;
 }
 
 interface ParsedArgs {
@@ -353,7 +378,7 @@ export function scheduledCommand(
   const now = options.now ?? Date.now;
   return {
     name: "routines",
-    args: "list [--json] | add --flow <flow> --schedule <expression> [--params <json>] [--object <id>] [--mode <mode>] | edit <id> [--flow <flow>] [--schedule <expression>] [--params <json>] [--object <id>] [--mode <mode>] | pause <id> | resume <id> | remove <id>",
+    args: "list [--json] | add (--flow <flow> [--params <json>] | --command <line> [--cwd <dir>]) --schedule <expression> [--object <id>] [--mode <mode>] | edit <id> [--flow <flow>] [--schedule <expression>] [--params <json>] [--object <id>] [--mode <mode>] | pause <id> | resume <id> | remove <id>",
     async run(ctx, argv) {
       const [sub, ...rest] = argv;
       if (sub === undefined || sub === "help") {
@@ -375,12 +400,37 @@ export function scheduledCommand(
         if (parsed.positionals.length > 0) {
           throw new ScheduleError("routines add takes no id");
         }
-        const flow = checkedFlow(ctx, required(parsed, "--flow"));
+        const commandArg = parsed.values.get("--command");
+        const cwdArg = parsed.values.get("--cwd");
+        let flow: string;
+        let params: JsonValue | undefined;
+        let defaultObject: string;
+        if (commandArg === undefined) {
+          if (cwdArg !== undefined) throw new ScheduleError("routines: --cwd needs --command");
+          flow = checkedFlow(ctx, required(parsed, "--flow"));
+          const paramsArg = parsed.values.get("--params");
+          params = paramsArg === undefined ? undefined : checkedParams(paramsArg);
+          defaultObject = `flow:${flow}`;
+        } else {
+          if (parsed.values.has("--flow") || parsed.values.has("--params")) {
+            throw new ScheduleError("routines: --command does not take --flow or --params");
+          }
+          if (commandArg.trim().length === 0) {
+            throw new ScheduleError("routines: --command: must be a non-empty string");
+          }
+          if (cwdArg !== undefined && cwdArg.length === 0) {
+            throw new ScheduleError("routines: --cwd: must be a non-empty string");
+          }
+          if (!ctx.flows.includes(COMMAND_FLOW)) throw new ScheduleError(SHELL_OFF);
+          flow = COMMAND_FLOW;
+          params = { command: commandArg, ...(cwdArg === undefined ? {} : { cwd: cwdArg }) };
+          // Two command routines at one time must not share an object, or the second is skipped.
+          const digest = createHash("sha256").update(JSON.stringify(params)).digest("hex").slice(0, 8);
+          defaultObject = `routine:${digest}`;
+        }
         const schedule = checkedSchedule(required(parsed, "--schedule"));
-        const object = checkedObject(parsed.values.get("--object") ?? `flow:${flow}`);
+        const object = checkedObject(parsed.values.get("--object") ?? defaultObject);
         const mode = checkedMode(parsed.values.get("--mode") ?? "auto");
-        const paramsArg = parsed.values.get("--params");
-        const params = paramsArg === undefined ? undefined : checkedParams(paramsArg);
         const rule: TriggerRule = {
           source: "cron",
           type: "tick",
@@ -399,7 +449,7 @@ export function scheduledCommand(
         }
         writeRules(ctx.home, [...rules, rule]);
         baselineCronRule(ctx.home, rule, now());
-        return `routine ${flow} (${id}) every ${schedule}`;
+        return `routine ${commandArg === undefined ? flow : `command ${JSON.stringify(commandArg)}`} (${id}) every ${schedule}`;
       }
 
       if (sub === "edit") {

@@ -7,7 +7,7 @@
 import pkg from "../package.json" with { type: "json" };
 import { createHash } from "node:crypto";
 import { stat } from "node:fs/promises";
-import { definePlugin, directoryError, paramsObject, type PluginLogger, type PluginStepResult, type StepContext } from "@operad-io/engine";
+import { defineFlow, definePlugin, directoryError, paramsObject, type PluginLogger, type PluginStepResult, type StepContext } from "@operad-io/engine";
 import { guardOutward, outwardCommandWrites, personStarted } from "@operad-io/access-match";
 import {
   runLine,
@@ -210,6 +210,69 @@ function probeId(runId: string, cwd: string, line: string): string {
     .digest("hex");
 }
 
+/** Runs one command line: the body of the command step and of the scheduled flow's step. */
+async function runCommandLine(
+  ctx: StepContext,
+  input: Record<string, unknown>,
+  at: string,
+  line: string,
+  cwd: string,
+  clock: Clock | undefined,
+): Promise<PluginStepResult> {
+        const env = envParam(input, at);
+        const timeout = timeoutParam(input, at);
+        const stall = stallParam(input, at);
+        const refused = await outwardProblem(ctx, line);
+        if (refused !== undefined) {
+          return { result: "fail", data: { reason: "outward", message: refused } };
+        }
+
+        const cwdProblem = await directoryError(cwd);
+        if (cwdProblem !== undefined) {
+          const log = await writeNote(ctx.logger, cwdProblem);
+          return {
+            result: "fail",
+            data: {
+              reason: "cwd",
+              message: cwdProblem,
+              exitCode: null,
+              log,
+              tail: [cwdProblem],
+            },
+          };
+        }
+
+        const outcome = await runLine({
+          line,
+          cwd,
+          env,
+          timeoutMs: timeout.ms,
+          stallMs: stall.ms,
+          signal: ctx.signal,
+          logger: ctx.logger,
+          clock,
+        });
+        return commandResult(outcome, timeout.secs, stall.secs);
+}
+
+/** The flow a routine starts to run one command line: params command and optional cwd. */
+export const commandFlow = defineFlow({
+  name: "shell:command",
+  entry: "run",
+  steps: [
+    {
+      id: "run",
+      kind: "plugin",
+      params: { use: "shell/scheduled", params: {} },
+      replay: "unsafe",
+      next: { pass: "done", fail: "failed", interrupted: "cancelled" },
+    },
+    { id: "done", kind: "end", params: { status: "done" }, replay: "safe" },
+    { id: "failed", kind: "end", params: { status: "failed" }, replay: "safe" },
+    { id: "cancelled", kind: "end", params: { status: "cancelled" }, replay: "safe" },
+  ],
+});
+
 /** Options for the shell plugin. A test injects a clock to control timeouts. */
 export interface ShellPluginOptions {
   readonly clock?: Clock | undefined;
@@ -221,6 +284,7 @@ export function createShellPlugin(options: ShellPluginOptions = {}) {
     name: "shell",
     kind: "stage",
     version: pkg.version,
+    flows: [commandFlow],
     steps: [
       {
         name: "command",
@@ -229,42 +293,27 @@ export function createShellPlugin(options: ShellPluginOptions = {}) {
         async run(ctx, params) {
           const at = "shell/command";
           const input = paramsObject(params, at);
-          const line = lineParam(input, at);
-          const cwd = cwdParam(ctx, input, at);
-          const env = envParam(input, at);
-          const timeout = timeoutParam(input, at);
-          const stall = stallParam(input, at);
-          const refused = await outwardProblem(ctx, line);
-          if (refused !== undefined) {
-            return { result: "fail", data: { reason: "outward", message: refused } };
+          return runCommandLine(ctx, input, at, lineParam(input, at), cwdParam(ctx, input, at), clock);
+        },
+      },
+      {
+        // The step of the shell:command flow: the line and directory come from
+        // the parameters a routine started the flow with.
+        name: "scheduled",
+        reachesOutside: true,
+        results: ["pass", "fail", "interrupted"],
+        async run(ctx) {
+          const at = "shell/scheduled";
+          const input = paramsObject(ctx.params, at);
+          const command = input.command;
+          if (typeof command !== "string" || command.trim().length === 0) {
+            throw new Error(`${at}: params.command: must be a non-empty string`);
           }
-
-          const cwdProblem = await directoryError(cwd);
-          if (cwdProblem !== undefined) {
-            const log = await writeNote(ctx.logger, cwdProblem);
-            return {
-              result: "fail",
-              data: {
-                reason: "cwd",
-                message: cwdProblem,
-                exitCode: null,
-                log,
-                tail: [cwdProblem],
-              },
-            };
+          const cwd = input.cwd;
+          if (cwd !== undefined && (typeof cwd !== "string" || cwd.length === 0)) {
+            throw new Error(`${at}: params.cwd: must be a non-empty string`);
           }
-
-          const outcome = await runLine({
-            line,
-            cwd,
-            env,
-            timeoutMs: timeout.ms,
-            stallMs: stall.ms,
-            signal: ctx.signal,
-            logger: ctx.logger,
-            clock,
-          });
-          return commandResult(outcome, timeout.secs, stall.secs);
+          return runCommandLine(ctx, {}, at, command, cwd ?? ctx.home, clock);
         },
       },
       {
