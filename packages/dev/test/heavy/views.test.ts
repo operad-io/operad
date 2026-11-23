@@ -1266,4 +1266,64 @@ describe("dev views", () => {
     ].map((line) => JSON.stringify(line));
     expect(readableLog(lines)).toEqual([]);
   });
+
+  test("a call the access profile stopped reads as a normal guard, not a failure (T-0747)", () => {
+    const lines = [
+      { type: "tool_execution_start", toolCallId: "t1", toolName: "Bash", input: "Bash denied by the access profile (rule: .git/config)" },
+      { type: "blocked", toolName: "Bash", reason: "refused by the access profile" },
+      { type: "tool_execution_end", toolCallId: "t1", toolName: "Bash", isError: true, error: "refused by the access profile" },
+    ].map((line) => JSON.stringify(line));
+    const out = readableLog(lines);
+    expect(out).toEqual(["tool Bash blocked by the access profile: `.git/config`"]);
+    expect(out.join("\n")).not.toMatch(/failed|denied|refused/);
+  });
+
+  test("a real tool failure is still shown as failed (T-0747)", () => {
+    const lines = [
+      { type: "tool_execution_start", toolCallId: "t1", toolName: "Bash", input: "ls" },
+      { type: "tool_execution_end", toolCallId: "t1", toolName: "Bash", isError: true, error: "exit 2" },
+    ].map((line) => JSON.stringify(line));
+    expect(readableLog(lines).join("\n")).toContain("tool Bash failed: exit 2");
+  });
+
+  test("the Review section shows the latest round and reaches earlier ones, safe as Markdown (T-0747)", async () => {
+    const { store, task } = await setup();
+    const stored = await getTask(store, task.id);
+    expect(taskViews.sections(stored).map((s) => s.id)).not.toContain("review");
+    const put = (cause: string, attempt: Record<string, unknown>) =>
+      store.put("task", task.id, { ...stored.data, attempt }, cause);
+    await put("dev:review", {
+      number: 1,
+      review: {
+        result: "fail",
+        decision: "findings",
+        round: 1,
+        model: "gpt-x",
+        sha: "abcdef0123456789",
+        runs: [{ round: 1, role: "primary", use: "pi/agent", args: [], model: "gpt-x", reason: "initial", outcome: "report" }],
+        findings: [{ file: "a.ts", line: 3, severity: "major", summary: "uses <b>raw</b> *html*", trigger: "when empty" }],
+        verified: ["ran the tests"],
+      },
+    });
+    await put("dev:review", {
+      number: 1,
+      review: { result: "pass", decision: "passed", round: 2, model: "gpt-x", runs: [{ round: 2, role: "primary", use: "pi/agent", args: [], model: "gpt-x", reason: "initial", outcome: "report" }], findings: [], verified: [] },
+    });
+    const latest = await getTask(store, task.id);
+    expect(taskViews.sections(latest).find((s) => s.id === "review")?.title).toBe("Review");
+    const first = (await taskViews.load({ store } as never, latest, "review", {})) as {
+      markdown: string; next?: string; pages?: { label: string }[];
+    };
+    expect(first.markdown).toContain("Attempt 1, round 2");
+    expect(first.markdown).toContain("Result: pass");
+    expect(first.markdown).toContain("`pi/agent`");
+    expect(first.next).toBe("1");
+    expect(first.pages?.map((p) => p.label)).toEqual(["attempt 1, round 2", "attempt 1, round 1"]);
+    const older = (await taskViews.load({ store } as never, latest, "review", { cursor: "1" })) as { markdown: string };
+    expect(older.markdown).toContain("Result: findings (1 major)");
+    expect(older.markdown).toContain("`gpt-x`");
+    expect(older.markdown).toContain("`a.ts:3` major: uses \\<b\\>raw\\</b\\> \\*html\\*");
+    expect(older.markdown).not.toContain("<b>");
+    expect(older.markdown).toContain("ran the tests");
+  });
 });

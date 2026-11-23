@@ -46,6 +46,9 @@ describe("Setup Dev on the command line", () => {
     const first = pending.out.split("\n")[0] ?? "";
     const id = first.split(/\s+/)[0] ?? "";
     expect(id).toMatch(/^bot-proposal:p-/);
+    // The item reads as a title, not as its id (T-0747).
+    const folder = repo.split("/").pop() ?? "";
+    expect(pending.out).toContain(`Setup Dev: ${folder} (proposed by bot default) is waiting for your review`);
 
     const review = await operad(home, ["bot:review", id]);
     expect(review.err).not.toContain("no object");

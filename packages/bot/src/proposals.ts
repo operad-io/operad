@@ -1004,7 +1004,7 @@ export async function proposalItems(
     const data = dataOf(object);
     return {
       id: object.id,
-      prompt: `${data.title} for bot ${data.bot} is waiting for your review`,
+      prompt: data.kind === "dev" ? `${data.title} (proposed by bot ${data.bot}) is waiting for your review` : `${data.title} for bot ${data.bot} is waiting for your review`,
       object: { type: PROPOSAL_TYPE, id: object.id },
     };
   });
@@ -1061,7 +1061,7 @@ export async function runSetupDev(ctx: CommandContext, argv: readonly string[], 
     const data: ProposalData = {
       bot,
       kind: "dev",
-      title: `Setup Dev for ${basename(change.repo)}`,
+      title: `Setup Dev: ${basename(change.repo)}`,
       state: "pending",
       createdAt: Date.now(),
       dev: change,

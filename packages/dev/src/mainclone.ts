@@ -44,6 +44,23 @@ export interface MainCloneOutcome {
   readonly prepared?: boolean | undefined;
 }
 
+/**
+ * Why a fast-forward refused. When untracked files are in the way, git lists
+ * them before "Aborting"; say which.
+ */
+function mergeReason(text: string): string {
+  const lines = text.split("\n");
+  const at = lines.findIndex((line) => line.includes("untracked working tree files would be overwritten"));
+  if (at >= 0) {
+    const files = lines
+      .slice(at + 1)
+      .filter((line) => line.startsWith("\t") || line.startsWith("    "))
+      .map((line) => line.trim());
+    if (files.length > 0) return `untracked files in the way: ${files.join(", ")}`;
+  }
+  return lastLine(text);
+}
+
 function lastLine(text: string): string {
   const lines = text.split("\n").filter((line) => line.trim().length > 0);
   return lines[lines.length - 1] ?? "";
@@ -147,7 +164,7 @@ export async function updateMainClone(
       note: `the main clone is on ${current.ok ? `"${current.out}"` : "no branch"}, not "${branch}"`,
     };
   }
-  const status = git(repository, ["status", "--porcelain", "--untracked-files=normal"]);
+  const status = git(repository, ["status", "--porcelain", "--untracked-files=no"]);
   if (!status.ok) {
     return { updated: false, note: `cannot read its status: ${status.err}` };
   }
@@ -173,7 +190,7 @@ export async function updateMainClone(
     if (lines.length > 0 && marker !== undefined) await marker.save(marker.due);
     return {
       updated: false,
-      note: `cannot fast-forward: ${lastLine(merge.err || merge.out) || "git merge failed"}`,
+      note: `cannot fast-forward: ${mergeReason(merge.err || merge.out) || "git merge failed"}`,
     };
   }
   return prepareAndClear(repository, lines, run, marker);

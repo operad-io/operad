@@ -426,3 +426,10 @@ changes for bots, in the order they were recorded. The root
 | T-0748-M4 | packages/bot/src/schedule.ts | run now of an unknown entry was accepted | `scheduled prompts > run now of an unknown entry is refused with a reason and opens no chat` |
 | T-0722-M11 | packages/bot/src/setup-dev.ts | Setup Dev refused a git repository with no remote again | `Setup Dev without a remote > a git repository with no remote is proposed, and the file written names no remote` |
 | T-0722-M12 | packages/bot/src/setup-dev.ts | the proposal kept a `remote` key the bot wrote for a repository that has no remote | `Setup Dev without a remote > a git repository with no remote is proposed, and the file written names no remote` |
+
+## T-0747 — the Setup Dev pending item reads as a title
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0747-M1 | packages/bot/src/proposals.ts | the Setup Dev proposal's title went back to `Setup Dev for <folder>` | `Setup Dev on the command line > a piped dev.json proposes, and pending prints an id the item's actions take` |
+| T-0747-M2 | packages/bot/src/proposals.ts | the pending prompt of a Setup Dev proposal used the generic `<title> for bot <bot>` wording | `Setup Dev on the command line > a piped dev.json proposes, and pending prints an id the item's actions take` |

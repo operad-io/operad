@@ -139,6 +139,8 @@ refusal is the command's line, word for word.
 that has `pages` also answers with the table of contents, so a client can jump:
 the first page has no cursor, every other page carries its own.
 
+Sections are drawn generically: a section a plugin adds (a task's Review in `dev`, newest round first with `pages`) needs no change in the desktop or iOS app, which already draw any section's Markdown and `pages`.
+
 A live section also carries `mark` and `tail`. `mark` is an opaque position of
 the finished content; `tail` is the Markdown of the part still changing (a chat's
 unfinished reply and thinking, a running tool call, or a model request the

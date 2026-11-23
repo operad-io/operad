@@ -1656,3 +1656,12 @@ the row fields.
 | T-0722-M8 | packages/dev/src/integrate.ts | `pushAllowed` asked a scheduled run before a merge that only moves the local main branch | `a repository with no remote > a scheduled integrate asks nothing: no push leaves the machine` |
 | T-0722-M9 | packages/dev/src/integrate.ts | `landOnMain` moved the ref with `update-ref` where the clone has main checked out, so a change that cannot fast-forward was not refused | `a repository with no remote > a main that does not fast-forward is refused, not overwritten` (the same break as M2) |
 | T-0722-M10 | packages/dev/src/views.ts | the task diff compared with `undefined/main` when there is no remote | `a repository with no remote > the diff of a task is read against the local main branch` |
+
+## T-0747 — dev clip findings (server side)
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0747-M1 | packages/dev/src/mainclone.ts | the fast-forward's status check counted untracked files again (`--untracked-files=normal`) | `an untracked file elsewhere does not stop the fast-forward (T-0747)` and `an untracked file at a path the merge adds is refused with the reason (T-0747)` |
+| T-0747-M2 | packages/dev/src/mainclone.ts | a refusal over untracked files did not name them | `an untracked file at a path the merge adds is refused with the reason (T-0747)` |
+| T-0747-M3 | packages/dev/src/views.ts | a call the access profile denied was shown as the raw denied/failed lines | `dev views > a call the access profile stopped reads as a normal guard, not a failure (T-0747)` |
+| T-0747-M4 | packages/dev/src/views.ts | the Review section did not escape the reviewer's text | `dev views > the Review section shows the latest round and reaches earlier ones, safe as Markdown (T-0747)` |
