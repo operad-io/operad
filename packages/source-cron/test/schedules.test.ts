@@ -33,7 +33,10 @@ async function scheduleHome(): Promise<string> {
   return home;
 }
 
-function commandContext(home: string): CommandContext {
+function commandContext(
+  home: string,
+  flows: readonly string[] = ["plugin-one", "plugin-two"],
+): CommandContext {
   return {
     plugin: "cron",
     home,
@@ -44,7 +47,7 @@ function commandContext(home: string): CommandContext {
     signal: new AbortController().signal,
     settings: {},
     secrets: {} as unknown as CommandContext["secrets"],
-    flows: ["plugin-one", "plugin-two"],
+    flows,
   };
 }
 
@@ -52,9 +55,10 @@ async function run(
   home: string,
   argv: readonly string[],
   now: { value: number },
+  flows?: readonly string[],
 ): Promise<unknown> {
   return await scheduledCommand({ now: () => now.value }).run(
-    commandContext(home),
+    commandContext(home, flows),
     argv,
   );
 }
@@ -367,6 +371,101 @@ describe("scheduled flows", () => {
         result: "failed",
         reason: "the step failed",
       });
+    } finally {
+      await log.close();
+    }
+  });
+});
+
+describe("command routines", () => {
+  const withShell = ["shell:command"];
+
+  test("--command writes the same rule as --flow shell:command --params, and list shows the line", async () => {
+    const short = await scheduleHome();
+    const long = await scheduleHome();
+    const now = { value: Date.parse("2026-01-01T07:00:00Z") };
+    const added = await run(
+      short,
+      ["add", "--command", "echo hi", "--cwd", "/work", "--schedule", "0 3 * * *"],
+      now,
+      withShell,
+    );
+    expect(added).toContain('command "echo hi"');
+    const rule = JSON.parse(readFileSync(join(short, "triggers.json"), "utf8"))[0];
+    expect(rule.start).toEqual({
+      flow: "shell:command",
+      params: { command: "echo hi", cwd: "/work" },
+    });
+    await run(
+      long,
+      [
+        "add",
+        "--flow",
+        "shell:command",
+        "--params",
+        '{"command":"echo hi","cwd":"/work"}',
+        "--schedule",
+        "0 3 * * *",
+        "--object",
+        rule.object,
+      ],
+      now,
+      withShell,
+    );
+    expect(readFileSync(join(long, "triggers.json"), "utf8")).toBe(
+      readFileSync(join(short, "triggers.json"), "utf8"),
+    );
+    const text = (await run(short, ["list"], now, withShell)) as string;
+    expect(text).toContain('command "echo hi"');
+    expect(text).not.toContain("shell:command");
+    const entries = (await run(short, ["list", "--json"], now, withShell)) as ScheduledFlow[];
+    expect(entries[0]?.command).toBe("echo hi");
+  });
+
+  test("with shell off it refuses and names the command that turns shell on", async () => {
+    const home = await scheduleHome();
+    const now = { value: Date.parse("2026-01-01T07:00:00Z") };
+    await expect(
+      run(home, ["add", "--command", "echo hi", "--schedule", "0 3 * * *"], now),
+    ).rejects.toThrow("operad plugin enable shell");
+    expect(() => readFileSync(join(home, "triggers.json"), "utf8")).toThrow();
+  });
+
+  test("two command routines at one time get different objects", async () => {
+    const home = await scheduleHome();
+    const now = { value: Date.parse("2026-01-01T07:00:00Z") };
+    await run(home, ["add", "--command", "a", "--schedule", "0 3 * * *"], now, withShell);
+    await run(home, ["add", "--command", "b", "--schedule", "0 3 * * *"], now, withShell);
+    const rules = JSON.parse(readFileSync(join(home, "triggers.json"), "utf8"));
+    expect(rules[0].object).not.toBe(rules[1].object);
+  });
+
+  test("a failed command's last result carries the step's message", async () => {
+    const home = await scheduleHome();
+    const now = { value: Date.parse("2026-01-01T07:00:00Z") };
+    await run(home, ["add", "--command", "exit 3", "--schedule", "0 8 * * *"], now, withShell);
+    const id = ((await run(home, ["list", "--json"], now, withShell)) as ScheduledFlow[])[0]?.id ?? "";
+    const log = openConfigLog(await readConfig(home));
+    try {
+      const key = `${id}:2026-01-01T08:00:00.000Z`;
+      const input = await log.recordInput(null, "cron", key, {
+        source: "cron",
+        key,
+        type: "tick",
+        hops: 0,
+      });
+      const runInfo = await log.startRun("shell:command", "job:1", input.inputId);
+      await log.append(runInfo.runId, 0, [
+        {
+          kind: "step_result",
+          payload: { step: "run", result: "fail", data: { message: "the command exited 3" } },
+          cause: "test",
+        },
+        { kind: "run_ended", payload: { status: "failed" }, cause: "test" },
+      ]);
+      await log.endRun(runInfo.runId);
+      const text = (await run(home, ["list"], now, withShell)) as string;
+      expect(text).toContain(`last failed ${runInfo.runId}: the command exited 3`);
     } finally {
       await log.close();
     }
