@@ -7,6 +7,17 @@ the same version.
 
 ## [Unreleased]
 
+### Changed
+
+- Scheduled prompts are now Routines (Chinese 定时任务): each is an object of its
+  own under its bot, with a row (name, bot, next run, last result) and a page
+  (prompt, schedule, its runs as history, and edit, pause, resume, Run now and
+  remove). A run is no longer a chat: it has no chat id, is not in the chat list,
+  and is kept in the routine's history for 30 days. The nightly memory tidy is
+  now Dreaming (梦境整理), a built-in routine. The `bot:schedule-*` actions and
+  the `bot schedule` command keep their names. Existing routines move over once,
+  and the chats the old scheduled prompts and tidies opened are closed once.
+
 ## [0.3.1] - 2026-11-23
 
 ### Fixed

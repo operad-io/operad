@@ -33,6 +33,7 @@ describe("bots", () => {
       ["bot", true],
       ["bot-proposal", true],
       ["bot-tidy", true],
+      ["bot-routine", true],
     ]);
   });
 

@@ -1,13 +1,18 @@
 /**
- * Scheduled prompts of a bot. The bot plugin is its own source: it reads the
- * entries from its bot objects, fires the latest planned minute when it is due,
- * opens a chat with the prompt, and when the reply ends it records the result
- * and runs the same notify command a wait uses.
+ * Routines of a bot (ADR 0030 D10). The bot plugin is its own source: it reads
+ * the routine objects, fires the latest planned minute when it is due, starts a
+ * run with the prompt, and when the reply ends it records the result in the
+ * routine's history and runs the same notify command a wait uses.
  *
- * An entry lives on the bot object (`scheduled`), not in `config.json`: a
- * client's change is the owner's own edit and applies at once, and `serve` needs
- * no reload. The schedule is a five-field cron expression in the machine's local
- * time zone, with the catch-up rule of the cron source (ADR 0032 D11).
+ * A run keeps its reply and process in a record the chat plugin writes, but it
+ * is not a chat: it has an `R-` id, is in no chat list, and nothing a person
+ * reads calls it a chat.
+ *
+ * A routine is an object of its own (`bot-routine`, parent its bot), not a field
+ * of the bot and not in `config.json`: a client's change is the owner's own edit
+ * and applies at once, and `serve` needs no reload. The schedule is a
+ * five-field cron expression in the machine's local time zone, with the
+ * catch-up rule of the cron source (ADR 0032 D11).
  */
 
 import { messageOf } from "@operad-io/engine";
@@ -43,6 +48,12 @@ import { SETUP_INSTRUCTION } from "./setup.ts";
 /** The source's name for a scheduled message; a message from it is a background run. */
 export const SCHEDULE_SOURCE = "bot";
 
+/** The object type of a routine. */
+export const ROUTINE_TYPE = "bot-routine";
+
+/** How long a routine keeps its runs in its history (ADR 0030 D10). */
+export const ROUTINE_HISTORY_DAYS = 30;
+
 /** How often the source checks the clock. */
 const CHECK_INTERVAL_MS = 1_000;
 /** A gap much larger than the check interval means the machine slept or the clock jumped. */
@@ -61,10 +72,12 @@ export interface ScheduledLast {
   readonly schedule: string;
   /** True when the firing caught up after earlier planned minutes were skipped. */
   readonly skippedEarlier?: boolean | undefined;
-  /** The chat the firing opened. */
-  readonly chatId?: string | undefined;
+  /** The run the firing started. */
+  readonly runId?: string | undefined;
   /** A short summary of the reply, or why it could not start. */
   readonly result?: string | undefined;
+  /** True when the firing could not start or its reply failed. */
+  readonly failed?: boolean | undefined;
   /** True once the notify command was run for `result`. */
   readonly notified?: boolean | undefined;
   /** True when a person ran the entry now: `firedAt` is then the run's time, and `plannedAt` is untouched. */
@@ -91,7 +104,23 @@ export const SCHEDULE_QUIET_RESULT = "Nothing to report.";
 /** The line every scheduled prompt ends with: how to end quietly. */
 export const SCHEDULE_PREAMBLE = `If there is nothing new to report, reply with exactly ${SCHEDULE_QUIET_MARKER} and nothing else; the person is then not notified. Otherwise reply as usual.`;
 
-/** One scheduled prompt of a bot. */
+/** How one run of a routine ended. */
+export type RoutineRunStatus = "running" | "done" | "quiet" | "failed";
+
+/** One run in a routine's history. */
+export interface RoutineRun {
+  /** The id of the run's record, which holds its process and reply. */
+  readonly id: string;
+  /** When the run started, in epoch milliseconds. */
+  readonly at: number;
+  readonly status: RoutineRunStatus;
+  /** A short summary of the reply, or why it failed; absent while it runs. */
+  readonly result?: string | undefined;
+  /** True when a person ran it now. */
+  readonly manual?: boolean | undefined;
+}
+
+/** One routine of a bot. */
 export interface ScheduledPrompt {
   readonly name: string;
   /** A five-field cron expression in the machine's local time zone. */
@@ -105,6 +134,8 @@ export interface ScheduledPrompt {
   readonly recent?: readonly ScheduledRecent[] | undefined;
   /** When a person asked to run it now, until the source starts that run. */
   readonly runNow?: number | undefined;
+  /** The runs of the last 30 days, oldest first. */
+  readonly runs?: readonly RoutineRun[] | undefined;
 }
 
 /** The longest summary an entry keeps and a notification carries. */
@@ -125,11 +156,36 @@ function lastOf(value: unknown): ScheduledLast | undefined {
       : {}),
     schedule: value.schedule,
     ...(value.skippedEarlier === true ? { skippedEarlier: true } : {}),
-    ...(text(value.chatId) === undefined ? {} : { chatId: value.chatId as string }),
+    // A firing recorded before routines were objects named its chat.
+    ...(text(value.runId) === undefined
+      ? text(value.chatId) === undefined
+        ? {}
+        : { runId: value.chatId as string }
+      : { runId: value.runId as string }),
     ...(text(value.result) === undefined ? {} : { result: value.result as string }),
+    ...(value.failed === true ? { failed: true } : {}),
     ...(value.notified === true ? { notified: true } : {}),
     ...(value.manual === true ? { manual: true } : {}),
   };
+}
+
+function runsOf(value: unknown): readonly RoutineRun[] {
+  const found: RoutineRun[] = [];
+  if (!Array.isArray(value)) return found;
+  for (const item of value) {
+    if (!isRecord(item) || text(item.id) === undefined) continue;
+    if (typeof item.at !== "number" || !Number.isFinite(item.at)) continue;
+    const status = item.status;
+    if (status !== "running" && status !== "done" && status !== "quiet" && status !== "failed") continue;
+    found.push({
+      id: item.id as string,
+      at: item.at,
+      status,
+      ...(text(item.result) === undefined ? {} : { result: item.result as string }),
+      ...(item.manual === true ? { manual: true } : {}),
+    });
+  }
+  return found;
 }
 
 /** One scheduled prompt from stored data, or undefined when it is unusable. */
@@ -149,10 +205,12 @@ export function scheduledPromptOf(value: unknown): ScheduledPrompt | undefined {
       recent.push({ plannedAt: item.plannedAt, result: item.result as string });
     }
   }
+  const runs = runsOf(value.runs);
   return {
     name,
     schedule,
     prompt,
+    ...(runs.length === 0 ? {} : { runs }),
     ...(text(value.model) === undefined ? {} : { model: value.model as string }),
     ...(text(value.effort) === undefined ? {} : { effort: value.effort as string }),
     paused: value.paused === true,
@@ -162,16 +220,69 @@ export function scheduledPromptOf(value: unknown): ScheduledPrompt | undefined {
   };
 }
 
-/** The scheduled prompts written on a bot object, skipping an unusable entry. */
-export function scheduledPrompts(data: Readonly<Record<string, unknown>>): readonly ScheduledPrompt[] {
-  const raw = data.scheduled;
-  if (!Array.isArray(raw)) return [];
+/** The routine objects, every page. */
+async function allRoutines(store: ObjectStore): Promise<readonly StoredObject[]> {
+  const found: StoredObject[] = [];
+  let cursor: string | undefined;
+  do {
+    const page = await store.list(ROUTINE_TYPE, { ...(cursor === undefined ? {} : { cursor }) });
+    found.push(...page.objects);
+    cursor = page.next;
+  } while (cursor !== undefined);
+  return found;
+}
+
+/** True for a routine a person made or a bot proposed; false for a built-in one, or a removed one. */
+function isUserRoutine(object: StoredObject): boolean {
+  return object.data.removed !== true && object.data.builtin === undefined;
+}
+
+/** The routine objects of one bot that a person made, in id order. */
+export async function routineObjects(store: ObjectStore, bot: string): Promise<readonly StoredObject[]> {
+  return (await allRoutines(store)).filter((object) => object.data.bot === bot && isUserRoutine(object));
+}
+
+/** The routines of one bot that a person made, as entries. */
+export async function routinesOf(store: ObjectStore, bot: string): Promise<readonly ScheduledPrompt[]> {
   const found: ScheduledPrompt[] = [];
-  for (const value of raw) {
+  for (const object of await routineObjects(store, bot)) {
+    const entry = scheduledPromptOf(object.data);
+    if (entry !== undefined) found.push(entry);
+  }
+  return found;
+}
+
+/** The routine object of a bot with this name, when there is one. */
+export async function findRoutine(store: ObjectStore, bot: string, name: string): Promise<StoredObject | undefined> {
+  return (await routineObjects(store, bot)).find((object) => object.data.name === name);
+}
+
+async function nextRoutineId(store: ObjectStore): Promise<string> {
+  let highest = 0;
+  for (const object of await allRoutines(store)) {
+    const match = /^RT-(\d+)$/.exec(object.id);
+    if (match !== null) highest = Math.max(highest, Number(match[1]));
+  }
+  return `RT-${String(highest + 1).padStart(4, "0")}`;
+}
+
+/** The entries a bot object carried before routines were objects. */
+export function legacyScheduled(data: Readonly<Record<string, unknown>>): readonly ScheduledPrompt[] {
+  const found: ScheduledPrompt[] = [];
+  if (!Array.isArray(data.scheduled)) return found;
+  for (const value of data.scheduled) {
     const entry = scheduledPromptOf(value);
     if (entry !== undefined) found.push(entry);
   }
   return found;
+}
+
+/** Moves the entries a bot object still carries into routine objects of their own. */
+export async function migrateScheduled(store: ObjectStore, bot: string, data: Readonly<Record<string, unknown>>): Promise<void> {
+  for (const entry of legacyScheduled(data)) {
+    if ((await findRoutine(store, bot, entry.name)) !== undefined) continue;
+    await store.put(ROUTINE_TYPE, await nextRoutineId(store), { ...stored(entry), bot }, "migrate:bot/routine");
+  }
 }
 
 /** What a chat's schedule command asks a person to decide. */
@@ -215,14 +326,23 @@ function stored(entry: ScheduledPrompt): Record<string, JsonValue> {
       ? {}
       : { recent: entry.recent as unknown as JsonValue }),
     ...(entry.runNow === undefined ? {} : { runNow: entry.runNow }),
+    ...(entry.runs === undefined || entry.runs.length === 0
+      ? {}
+      : { runs: entry.runs as unknown as JsonValue }),
   };
+}
+
+/** The runs after one is added or updated; a run older than the history keeps is dropped. */
+export function withRun(runs: readonly RoutineRun[] | undefined, run: RoutineRun, now: number): readonly RoutineRun[] {
+  const oldest = now - ROUTINE_HISTORY_DAYS * DAY_MS;
+  return [...(runs ?? []).filter((item) => item.id !== run.id && item.at >= oldest), run];
 }
 
 /** The name a client uses to choose an entry; unique within one bot. */
 export function checkPromptName(name: string): string {
   const trimmed = name.trim();
-  if (trimmed.length === 0) throw new BotError("a scheduled prompt needs a name");
-  if (trimmed.length > 120) throw new BotError("a scheduled prompt's name is at most 120 characters");
+  if (trimmed.length === 0) throw new BotError("a routine needs a name");
+  if (trimmed.length > 120) throw new BotError("a routine's name is at most 120 characters");
   return trimmed;
 }
 
@@ -269,9 +389,9 @@ function recentText(result: string): string {
     : `${result.slice(0, SCHEDULE_RECENT_MAX - 1)}…`;
 }
 
-/** True while the last firing's chat has started and its result is not yet recorded. */
+/** True while the last firing's run has started and its result is not yet recorded. */
 function isReplying(last: ScheduledLast | undefined): boolean {
-  return last?.chatId !== undefined && last.result === undefined;
+  return last?.runId !== undefined && last.result === undefined;
 }
 
 /**
@@ -293,7 +413,7 @@ export function scheduledInstruction(entry: ScheduledPrompt): string {
   if (recent.length > 0) {
     const lines = recent.map((item) => `- ${localStamp(item.plannedAt)}: ${recentText(item.result)}`);
     parts.push(
-      `Earlier results of this scheduled prompt, oldest first; the person has already seen them, so do not repeat them:\n${lines.join("\n")}`,
+      `Earlier results of this routine, oldest first; the person has already seen them, so do not repeat them:\n${lines.join("\n")}`,
     );
   }
   parts.push(SCHEDULE_PREAMBLE);
@@ -301,9 +421,9 @@ export function scheduledInstruction(entry: ScheduledPrompt): string {
   return parts.join("\n\n");
 }
 
-/** The instruction of the firing of the named entry now recorded on a bot; undefined when it has none. */
-export function scheduledInstructionFor(data: Readonly<Record<string, unknown>>, name: string): string | undefined {
-  const entry = scheduledPrompts(data).find((item) => item.name === name);
+/** The instruction of the firing of the named routine now recorded on a bot; undefined when it has none. */
+export async function scheduledInstructionFor(store: ObjectStore, bot: string, name: string): Promise<string | undefined> {
+  const entry = scheduledPromptOf((await findRoutine(store, bot, name))?.data);
   return entry === undefined ? undefined : scheduledInstruction(entry);
 }
 
@@ -345,43 +465,6 @@ export function nextRun(entry: ScheduledPrompt, now: number): number | null {
   return null;
 }
 
-/** One scheduled prompt as a client reads it from a bot row, without parsing Markdown. */
-export interface ScheduledPromptView {
-  readonly name: string;
-  readonly schedule: string;
-  readonly prompt: string;
-  readonly model: string | null;
-  readonly effort: string | null;
-  readonly paused: boolean;
-  /** The next planned minute as an ISO time; null when paused or none is within two years. */
-  readonly nextRun: string | null;
-  /** The last reply's summary, or why it could not start; null before the first firing. */
-  readonly lastResult: string | null;
-  /** The chat the last firing opened; null before the first firing. */
-  readonly lastChatId: string | null;
-}
-
-/** The structured entries a bot row gives a client. */
-export function scheduledData(
-  entries: readonly ScheduledPrompt[],
-  now: number,
-): readonly ScheduledPromptView[] {
-  return entries.map((entry) => {
-    const next = nextRun(entry, now);
-    return {
-      name: entry.name,
-      schedule: entry.schedule,
-      prompt: entry.prompt,
-      model: entry.model ?? null,
-      effort: entry.effort ?? null,
-      paused: entry.paused,
-      nextRun: next === null ? null : new Date(next).toISOString(),
-      lastResult: entry.last?.result ?? null,
-      lastChatId: entry.last?.chatId ?? null,
-    };
-  });
-}
-
 /** A short, one-line summary of a reply. */
 export function replySummary(message: string): string {
   const oneLine = message.replace(/\s+/g, " ").trim();
@@ -393,7 +476,10 @@ export function replySummary(message: string): string {
 
 /** What a notification command is given. */
 export interface ScheduleNotice {
-  readonly chatId: string;
+  /** The routine's object id. */
+  readonly routineId: string;
+  /** The run's record id. */
+  readonly runId: string;
   readonly title: string;
   readonly summary: string;
 }
@@ -410,10 +496,10 @@ export async function notifyScheduledReply(
     line: command,
     cwd: home,
     env: {
-      OPERAD_ID: `${CHAT_TYPE}:${notice.chatId}`,
+      OPERAD_ID: `${ROUTINE_TYPE}:${notice.routineId}`,
       OPERAD_TITLE: notice.title,
       OPERAD_REASON: notice.summary,
-      OPERAD_LINK: objectLink(CHAT_TYPE, notice.chatId),
+      OPERAD_LINK: objectLink(ROUTINE_TYPE, notice.routineId),
     },
     timeoutMs: NOTIFY_TIMEOUT_MS,
     signal: new AbortController().signal,
@@ -433,7 +519,7 @@ async function botObject(store: ObjectStore, bot: string): Promise<StoredObject>
   return object;
 }
 
-/** Replaces one entry on the bot object, leaving the others and the bot's settings alone. */
+/** Replaces one routine of the bot, leaving the others and the bot's settings alone. */
 async function replaceEntry(
   store: ObjectStore,
   bot: string,
@@ -442,43 +528,25 @@ async function replaceEntry(
   cause: string,
 ): Promise<ScheduledPrompt | undefined> {
   return withBotLock(store, bot, async () => {
-  const object = await botObject(store, bot);
-  const entries = scheduledPrompts(object.data);
-  let changed: ScheduledPrompt | undefined;
-  const next: ScheduledPrompt[] = [];
-  for (const entry of entries) {
-    if (entry.name !== name) {
-      next.push(entry);
-      continue;
-    }
-    changed = change(entry);
-    if (changed !== undefined) next.push(changed);
-  }
-  if (changed === undefined) return undefined;
-  await store.put(
-    BOT_TYPE,
-    bot,
-    { ...object.data, scheduled: next.map(stored) as unknown as JsonValue[] },
-    cause,
-  );
-  return changed;
+    await botObject(store, bot);
+    const object = await findRoutine(store, bot, name);
+    const entry = scheduledPromptOf(object?.data);
+    if (object === undefined || entry === undefined) return undefined;
+    const changed = change(entry);
+    if (changed === undefined) return undefined;
+    await store.put(ROUTINE_TYPE, object.id, { ...stored(changed), bot }, cause);
+    return changed;
   });
 }
 
-/** Removes one entry from the bot object. */
+/** Removes one routine: its object stays, marked removed, and is in no list of routines. */
 async function removeEntry(store: ObjectStore, bot: string, name: string): Promise<boolean> {
   return withBotLock(store, bot, async () => {
-  const object = await botObject(store, bot);
-  const entries = scheduledPrompts(object.data);
-  const next = entries.filter((entry) => entry.name !== name);
-  if (next.length === entries.length) return false;
-  await store.put(
-    BOT_TYPE,
-    bot,
-    { ...object.data, scheduled: next.map(stored) as unknown as JsonValue[] },
-    "action:bot/schedule-remove",
-  );
-  return true;
+    await botObject(store, bot);
+    const object = await findRoutine(store, bot, name);
+    if (object === undefined) return false;
+    await store.put(ROUTINE_TYPE, object.id, { ...object.data, removed: true }, "action:bot/schedule-remove");
+    return true;
   });
 }
 
@@ -508,7 +576,7 @@ export async function applyScheduleChange(
   change: ScheduleChange,
 ): Promise<void> {
   if (change.action === "add") {
-    if (change.after === null) throw new BotError("the proposal has no scheduled prompt to add");
+    if (change.after === null) throw new BotError("the proposal has no routine to add");
     await addEntry(store, bot, change.after);
     return;
   }
@@ -516,7 +584,7 @@ export async function applyScheduleChange(
     const before = change.before;
     const after = change.after;
     if (before === null || after === null) {
-      throw new BotError("the proposal has no scheduled prompt to change");
+      throw new BotError("the proposal has no routine to change");
     }
     const changed = await replaceEntry(
       store,
@@ -528,37 +596,31 @@ export async function applyScheduleChange(
       "action:bot/schedule-edit",
     );
     if (changed === undefined) {
-      throw new BotError(`bot ${bot} has no scheduled prompt "${before.name}"`);
+      throw new BotError(`bot ${bot} has no routine "${before.name}"`);
     }
     return;
   }
   if (change.before === null) {
-    throw new BotError("the proposal has no scheduled prompt to remove");
+    throw new BotError("the proposal has no routine to remove");
   }
   if (!(await removeEntry(store, bot, change.before.name))) {
-    throw new BotError(`bot ${bot} has no scheduled prompt "${change.before.name}"`);
+    throw new BotError(`bot ${bot} has no routine "${change.before.name}"`);
   }
 }
 
-/** Adds one entry to the bot object. */
+/** Adds one routine to the bot. */
 async function addEntry(
   store: ObjectStore,
   bot: string,
   entry: ScheduledPrompt,
 ): Promise<ScheduledPrompt> {
   return withBotLock(store, bot, async () => {
-  const object = await botObject(store, bot);
-  const entries = scheduledPrompts(object.data);
-  if (entries.some((item) => item.name === entry.name)) {
-    throw new BotError(`bot ${bot} already has a scheduled prompt "${entry.name}"`);
-  }
-  await store.put(
-    BOT_TYPE,
-    bot,
-    { ...object.data, scheduled: [...entries, entry].map(stored) as unknown as JsonValue[] },
-    "action:bot/schedule-add",
-  );
-  return entry;
+    await botObject(store, bot);
+    if ((await findRoutine(store, bot, entry.name)) !== undefined) {
+      throw new BotError(`bot ${bot} already has a routine "${entry.name}"`);
+    }
+    await store.put(ROUTINE_TYPE, await nextRoutineId(store), { ...stored(entry), bot }, "action:bot/schedule-add");
+    return entry;
   });
 }
 
@@ -570,7 +632,7 @@ function entryArgs(required: boolean): ActionTypeDefinition["args"] {
         type: "string",
         minLength: 1,
         maxLength: 120,
-        ...(required ? {} : { description: "The scheduled prompt to change." }),
+        ...(required ? {} : { description: "The routine to change." }),
       },
       schedule: {
         type: "string",
@@ -581,15 +643,15 @@ function entryArgs(required: boolean): ActionTypeDefinition["args"] {
         type: "string",
         role: "note",
         minLength: 1,
-        description: "The first message of the new chat.",
+        description: "What the routine asks the agent each time it runs.",
       },
       model: {
         type: "string",
-        description: "The model the new chat uses; the bot's model when left out. An empty value clears it.",
+        description: "The model a run uses; the bot's model when left out. An empty value clears it.",
       },
       effort: {
         type: "string",
-        description: "The effort the new chat uses; the bot's effort when left out. An empty value clears it.",
+        description: "The effort a run uses; the bot's effort when left out. An empty value clears it.",
       },
     },
     ...(required ? { required: ["name", "schedule", "prompt"] } : { required: ["name"] }),
@@ -601,18 +663,141 @@ function nameArg(): ActionTypeDefinition["args"] {
   return {
     type: "object",
     properties: {
-      name: { type: "string", minLength: 1, description: "The scheduled prompt's name." },
+      name: { type: "string", minLength: 1, description: "The routine's name." },
     },
     required: ["name"],
     additionalProperties: false,
   };
 }
 
-/** The actions a client uses to manage a bot's scheduled prompts. */
+/** What `add` takes. */
+export interface AddInput {
+  readonly name: string;
+  readonly schedule: string;
+  readonly prompt: string;
+  readonly model?: string | undefined;
+  readonly effort?: string | undefined;
+  readonly paused?: boolean | undefined;
+}
+
+/** What `edit` takes: only what is given changes. */
+export interface EditInput {
+  readonly schedule?: string | undefined;
+  readonly prompt?: string | undefined;
+  readonly model?: string | undefined;
+  readonly effort?: string | undefined;
+}
+
+/** Adds a routine to a bot. */
+export async function addRoutine(store: ObjectStore, bot: string, input: AddInput): Promise<string> {
+  const entry: ScheduledPrompt = {
+    name: checkPromptName(input.name),
+    schedule: checkSchedule(input.schedule),
+    prompt: input.prompt.trim(),
+    ...(text(input.model) === undefined ? {} : { model: input.model as string }),
+    ...(text(input.effort) === undefined ? {} : { effort: input.effort as string }),
+    paused: input.paused === true,
+  };
+  if (entry.prompt.length === 0) throw new BotError("a routine needs a prompt");
+  await addEntry(store, bot, entry);
+  return `added routine "${entry.name}" to bot ${bot}`;
+}
+
+/** Changes a routine; what is left out stays, and an empty model or effort clears it. */
+export async function editRoutine(store: ObjectStore, bot: string, name: string, input: EditInput): Promise<string> {
+  const changed = await replaceEntry(
+    store,
+    bot,
+    name,
+    (entry) => {
+      const schedule = input.schedule === undefined ? entry.schedule : checkSchedule(input.schedule);
+      const prompt = input.prompt === undefined ? entry.prompt : input.prompt.trim();
+      if (prompt.length === 0) throw new BotError("a routine needs a prompt");
+      const model = input.model === undefined ? entry.model : text(input.model);
+      const effort = input.effort === undefined ? entry.effort : text(input.effort);
+      return {
+        ...entry,
+        schedule,
+        prompt,
+        ...(model === undefined ? { model: undefined } : { model }),
+        ...(effort === undefined ? { effort: undefined } : { effort }),
+        // A changed schedule keeps `last`: the poll sees its schedule is not the
+        // entry's, starts from a new baseline and keeps the run of a firing
+        // that still awaits its notification, so no missed time is caught up.
+      };
+    },
+    "action:bot/schedule-edit",
+  );
+  if (changed === undefined) throw new BotError(`bot ${bot} has no routine "${name}"`);
+  return `edited routine "${name}" of bot ${bot}`;
+}
+
+/** Pauses a routine. */
+export async function pauseRoutine(store: ObjectStore, bot: string, name: string): Promise<string> {
+  const changed = await replaceEntry(
+    store,
+    bot,
+    name,
+    (entry) => (entry.paused ? undefined : { ...entry, paused: true }),
+    "action:bot/schedule-pause",
+  );
+  if (changed === undefined) return `routine "${name}" is already paused`;
+  return `paused routine "${name}" of bot ${bot}`;
+}
+
+/** Resumes a paused routine. */
+export async function resumeRoutine(store: ObjectStore, bot: string, name: string): Promise<string> {
+  const changed = await replaceEntry(
+    store,
+    bot,
+    name,
+    (entry) => (entry.paused ? { ...entry, paused: false } : undefined),
+    "action:bot/schedule-resume",
+  );
+  if (changed === undefined) return `routine "${name}" is already running`;
+  return `resumed routine "${name}" of bot ${bot}`;
+}
+
+/** Asks the source to run a routine once now; its next timed run is unchanged. */
+export async function runRoutineNow(store: ObjectStore, bot: string, name: string): Promise<string> {
+  const current = scheduledPromptOf((await findRoutine(store, bot, name))?.data);
+  if (current !== undefined && isReplying(current.last)) {
+    throw new BotError(
+      `routine "${name}" of bot ${bot} is still running its previous run; run it now after that run ends`,
+    );
+  }
+  const changed = await replaceEntry(
+    store,
+    bot,
+    name,
+    (entry) => ({ ...entry, runNow: entry.runNow ?? Date.now() }),
+    "action:bot/schedule-run-now",
+  );
+  if (changed === undefined) throw new BotError(`bot ${bot} has no routine "${name}"`);
+  return `running routine "${name}" of bot ${bot} now; its next timed run is unchanged`;
+}
+
+/** Removes a routine. */
+export async function removeRoutine(store: ObjectStore, bot: string, name: string): Promise<string> {
+  if (!(await removeEntry(store, bot, name))) throw new BotError(`bot ${bot} has no routine "${name}"`);
+  return `removed routine "${name}" from bot ${bot}`;
+}
+
+const botUsable = (state: Readonly<Record<string, unknown>>): boolean => state.removed !== true;
+const botWhy = (object: StoredObject): string | undefined =>
+  object.data.removed === true ? `bot ${object.id} is no longer in the settings` : undefined;
+
+/**
+ * The actions on a bot that manage its routines. They keep the `schedule-*`
+ * names: the command line, the MCP tools and the clients call them by those
+ * names with the routine's name as an argument, and renaming them would break
+ * every one of those. A routine's own page has the same actions without the name.
+ */
 export const scheduleActions: readonly ActionTypeDefinition[] = [
   {
     name: "schedule-add",
     on: BOT_TYPE,
+    creates: ROUTINE_TYPE,
     args: {
       ...(entryArgs(true) as ActionArgsSchema),
       properties: {
@@ -620,159 +805,60 @@ export const scheduleActions: readonly ActionTypeDefinition[] = [
         paused: {
           type: "boolean",
           default: false,
-          description: "Start paused; it does not fire until resumed.",
+          description: "Start paused; it does not run until resumed.",
         },
       },
     },
-    when: (state) => state.removed !== true,
-    why: (object) =>
-      object.data.removed === true ? `bot ${object.id} is no longer in the settings` : undefined,
-    async run(ctx, args) {
-      const input = args as {
-        readonly name: string;
-        readonly schedule: string;
-        readonly prompt: string;
-        readonly model?: string;
-        readonly effort?: string;
-        readonly paused?: boolean;
-      };
-      const entry: ScheduledPrompt = {
-        name: checkPromptName(input.name),
-        schedule: checkSchedule(input.schedule),
-        prompt: input.prompt.trim(),
-        ...(text(input.model) === undefined ? {} : { model: input.model as string }),
-        ...(text(input.effort) === undefined ? {} : { effort: input.effort as string }),
-        paused: input.paused === true,
-      };
-      if (entry.prompt.length === 0) throw new BotError("a scheduled prompt needs a prompt");
-      await addEntry(ctx.store, ctx.object.id, entry);
-      return `scheduled prompt "${entry.name}" for bot ${ctx.object.id}`;
-    },
+    when: botUsable,
+    why: botWhy,
+    run: async (ctx, args) => addRoutine(ctx.store, ctx.object.id, args as unknown as AddInput),
   },
   {
     name: "schedule-edit",
     on: BOT_TYPE,
     args: entryArgs(false),
-    when: (state) => state.removed !== true,
-    why: (object) =>
-      object.data.removed === true ? `bot ${object.id} is no longer in the settings` : undefined,
-    async run(ctx, args) {
-      const input = args as {
-        readonly name: string;
-        readonly schedule?: string;
-        readonly prompt?: string;
-        readonly model?: string;
-        readonly effort?: string;
-      };
-      const name = checkPromptName(input.name);
-      const changed = await replaceEntry(
-        ctx.store,
-        ctx.object.id,
-        name,
-        (entry) => {
-          const schedule = input.schedule === undefined ? entry.schedule : checkSchedule(input.schedule);
-          const prompt = input.prompt === undefined ? entry.prompt : input.prompt.trim();
-          if (prompt.length === 0) throw new BotError("a scheduled prompt needs a prompt");
-          const model = input.model === undefined ? entry.model : text(input.model);
-          const effort = input.effort === undefined ? entry.effort : text(input.effort);
-          return {
-            ...entry,
-            schedule,
-            prompt,
-            // An empty value clears the field; leaving it out keeps the old one.
-            ...(model === undefined ? { model: undefined } : { model }),
-            ...(effort === undefined ? { effort: undefined } : { effort }),
-            // A changed schedule keeps `last`: the poll sees its schedule is not the
-            // entry's, starts from a new baseline and keeps the chat of a firing
-            // that still awaits its notification, so no missed time is caught up.
-          };
-        },
-        "action:bot/schedule-edit",
-      );
-      if (changed === undefined) throw new BotError(`bot ${ctx.object.id} has no scheduled prompt "${name}"`);
-      return `edited scheduled prompt "${name}" for bot ${ctx.object.id}`;
+    when: botUsable,
+    why: botWhy,
+    run: async (ctx, args) => {
+      const input = args as unknown as EditInput & { readonly name: string };
+      return editRoutine(ctx.store, ctx.object.id, checkPromptName(input.name), input);
     },
   },
   {
     name: "schedule-pause",
     on: BOT_TYPE,
     args: nameArg(),
-    when: (state) => state.removed !== true,
-    why: (object) =>
-      object.data.removed === true ? `bot ${object.id} is no longer in the settings` : undefined,
-    async run(ctx, args) {
-      const name = checkPromptName((args as { readonly name: string }).name);
-      const changed = await replaceEntry(
-        ctx.store,
-        ctx.object.id,
-        name,
-        (entry) => (entry.paused ? undefined : { ...entry, paused: true }),
-        "action:bot/schedule-pause",
-      );
-      if (changed === undefined) return `scheduled prompt "${name}" is already paused`;
-      return `paused scheduled prompt "${name}" for bot ${ctx.object.id}`;
-    },
+    when: botUsable,
+    why: botWhy,
+    run: async (ctx, args) =>
+      pauseRoutine(ctx.store, ctx.object.id, checkPromptName((args as { readonly name: string }).name)),
   },
   {
     name: "schedule-resume",
     on: BOT_TYPE,
     args: nameArg(),
-    when: (state) => state.removed !== true,
-    why: (object) =>
-      object.data.removed === true ? `bot ${object.id} is no longer in the settings` : undefined,
-    async run(ctx, args) {
-      const name = checkPromptName((args as { readonly name: string }).name);
-      const changed = await replaceEntry(
-        ctx.store,
-        ctx.object.id,
-        name,
-        (entry) => (entry.paused ? { ...entry, paused: false } : undefined),
-        "action:bot/schedule-resume",
-      );
-      if (changed === undefined) return `scheduled prompt "${name}" is already running`;
-      return `resumed scheduled prompt "${name}" for bot ${ctx.object.id}`;
-    },
+    when: botUsable,
+    why: botWhy,
+    run: async (ctx, args) =>
+      resumeRoutine(ctx.store, ctx.object.id, checkPromptName((args as { readonly name: string }).name)),
   },
   {
     name: "schedule-run-now",
     on: BOT_TYPE,
     args: nameArg(),
-    when: (state) => state.removed !== true,
-    why: (object) =>
-      object.data.removed === true ? `bot ${object.id} is no longer in the settings` : undefined,
-    async run(ctx, args) {
-      const name = checkPromptName((args as { readonly name: string }).name);
-      const current = scheduledPrompts(ctx.object.data).find((entry) => entry.name === name);
-      if (current !== undefined && isReplying(current.last)) {
-        throw new BotError(
-          `scheduled prompt "${name}" of bot ${ctx.object.id} is still replying to its previous firing (chat ${current.last?.chatId ?? ""}); run it now after that reply ends`,
-        );
-      }
-      const changed = await replaceEntry(
-        ctx.store,
-        ctx.object.id,
-        name,
-        (entry) => ({ ...entry, runNow: entry.runNow ?? Date.now() }),
-        "action:bot/schedule-run-now",
-      );
-      if (changed === undefined) throw new BotError(`bot ${ctx.object.id} has no scheduled prompt "${name}"`);
-      return `running scheduled prompt "${name}" of bot ${ctx.object.id} now; its next timed run is unchanged`;
-    },
+    when: botUsable,
+    why: botWhy,
+    run: async (ctx, args) =>
+      runRoutineNow(ctx.store, ctx.object.id, checkPromptName((args as { readonly name: string }).name)),
   },
   {
     name: "schedule-remove",
     on: BOT_TYPE,
     args: nameArg(),
-    when: (state) => state.removed !== true,
-    why: (object) =>
-      object.data.removed === true ? `bot ${object.id} is no longer in the settings` : undefined,
-    async run(ctx, args) {
-      const name = checkPromptName((args as { readonly name: string }).name);
-      if (!(await removeEntry(ctx.store, ctx.object.id, name))) {
-        throw new BotError(`bot ${ctx.object.id} has no scheduled prompt "${name}"`);
-      }
-      return `removed scheduled prompt "${name}" from bot ${ctx.object.id}`;
-    },
+    when: botUsable,
+    why: botWhy,
+    run: async (ctx, args) =>
+      removeRoutine(ctx.store, ctx.object.id, checkPromptName((args as { readonly name: string }).name)),
   },
 ];
 
@@ -787,23 +873,6 @@ export function markdownCode(value: string): string {
 /** A user's text shown as text in Markdown: the characters that format are escaped. */
 export function markdownText(value: string): string {
   return value.replace(/([\\`*_{}\[\]<>#|~!])/g, "\\$1").replace(/\r?\n/g, " ");
-}
-
-/** The lines a bot page shows for its scheduled prompts. */
-export function scheduledMarkdown(entries: readonly ScheduledPrompt[], now: number): string[] {
-  if (entries.length === 0) return ["Scheduled: none."];
-  const lines = ["Scheduled:"];
-  for (const entry of entries) {
-    const next = nextRun(entry, now);
-    const state = entry.paused ? " (paused)" : next === null ? "" : `, next ${localStamp(next)}`;
-    const last = entry.last;
-    const ended =
-      last?.result === undefined
-        ? ""
-        : `; last ${last.chatId === undefined ? "" : `chat ${last.chatId}: `}${markdownText(last.result)}`;
-    lines.push(`- ${markdownText(entry.name)} (${markdownCode(entry.schedule)}${state})${ended}`);
-  }
-  return lines;
 }
 
 interface ScheduledSource {
@@ -856,7 +925,7 @@ export class BotScheduleSource {
       for (const object of objects) {
         if (object.data.removed === true) continue;
         const bot = object.id;
-        for (const entry of scheduledPrompts(object.data)) {
+        for (const entry of await routinesOf(this.ctx.store, bot)) {
           if (entry.runNow !== undefined) {
             // The entry read here is stale after this; the next check handles its timed run.
             await this.runNow(bot, entry, now);
@@ -941,7 +1010,7 @@ export class BotScheduleSource {
         ...(entry.last?.result === undefined
           ? {}
           : { result: entry.last.result, ...(entry.last.notified === true ? { notified: true } : {}) }),
-        ...(entry.last?.chatId === undefined ? {} : { chatId: entry.last.chatId }),
+        ...(entry.last?.runId === undefined ? {} : { runId: entry.last.runId }),
         plannedAt: baseline,
         schedule: entry.schedule,
       });
@@ -982,7 +1051,7 @@ export class BotScheduleSource {
     // A firing started since the request was made still owns `last`: drop the request.
     if (isReplying(cleared.last)) {
       await this.chatWatches.log(
-        `scheduled prompt "${entry.name}" of bot ${bot}: run now dropped, the previous firing is still replying`,
+        `routine "${entry.name}" of bot ${bot}: run now dropped, the previous firing is still replying`,
       );
       return;
     }
@@ -1009,7 +1078,7 @@ export class BotScheduleSource {
     };
     await this.setLast(bot, entry.name, recorded);
     const title = `${entry.name} (${localDate(manual ? now : minute)})`.slice(0, 120);
-    let chatId: string | undefined;
+    let runId: string | undefined;
     try {
       const run = await this.ctx.client.act("bot:chat", `${BOT_TYPE}:${bot}`, {
         args: {
@@ -1019,10 +1088,11 @@ export class BotScheduleSource {
           ...(entry.model === undefined ? {} : { model: entry.model }),
           ...(entry.effort === undefined ? {} : { effort: entry.effort }),
         },
-        // The entry's name is the origin recorded on the new chat.
+        // The routine's name is the origin recorded on the run; an actor from
+        // this source makes the action start a run, not a chat.
         actor: { via: SCHEDULE_SOURCE, id: entry.name },
       });
-      chatId = run.opens?.startsWith(`${CHAT_TYPE}:`) === true
+      runId = run.opens?.startsWith(`${CHAT_TYPE}:`) === true
         ? run.opens.slice(CHAT_TYPE.length + 1)
         : undefined;
     } catch (error) {
@@ -1030,11 +1100,12 @@ export class BotScheduleSource {
       await this.setLast(bot, entry.name, {
         ...recorded,
         result: replySummary(`Could not start: ${message}`),
+        failed: true,
       });
       return;
     }
-    if (chatId === undefined) {
-      await this.chatWatches.log(`scheduled prompt "${entry.name}" of bot ${bot} opened no chat`);
+    if (runId === undefined) {
+      await this.chatWatches.log(`routine "${entry.name}" of bot ${bot} started no run`);
       return;
     }
     const changed = await replaceEntry(
@@ -1043,15 +1114,19 @@ export class BotScheduleSource {
       entry.name,
       (current) =>
         current.last?.plannedAt === minute
-          ? { ...current, last: { ...current.last, chatId } }
+          ? {
+              ...current,
+              last: { ...current.last, runId },
+              runs: withRun(current.runs, { id: runId, at: now, status: "running", ...(manual ? { manual: true } : {}) }, now),
+            }
           : undefined,
       "step:bot/scheduled",
     );
     if (changed === undefined) return;
-    await this.watch(bot, entry.name, manual ? now : minute, chatId);
+    await this.watch(bot, entry.name, manual ? now : minute, runId);
     if (skipped.length > 0) {
       await this.chatWatches.log(
-        `scheduled prompt "${entry.name}" of bot ${bot}: skipped ${skipped
+        `routine "${entry.name}" of bot ${bot}: skipped ${skipped
           .map((time) => new Date(time).toISOString())
           .join(", ")}; only the latest missed run is caught up`,
       );
@@ -1068,19 +1143,20 @@ export class BotScheduleSource {
     );
   }
 
-  private async watch(bot: string, name: string, plannedAt: number, chatId: string): Promise<void> {
-    const key = `${bot}\u0000${name}\u0000${plannedAt}\u0000${chatId}`;
+  private async watch(bot: string, name: string, plannedAt: number, runId: string): Promise<void> {
+    const key = `${bot}\u0000${name}\u0000${plannedAt}\u0000${runId}`;
     this.chatWatches.watchChatReply(
       key,
-      chatId,
+      runId,
       async (read) => {
-        const chat = await this.ctx.store.get(CHAT_TYPE, chatId);
-        if (chat === undefined) return undefined;
+        const record = await this.ctx.store.get(CHAT_TYPE, runId);
+        if (record === undefined) return undefined;
         const reply = [...read.messages].reverse().find((message) => message.role === "assistant");
         const failure = [...read.entries].reverse().find((item) => item.kind === "failure");
         // A failure after the reply means the run did not end quietly.
         const failedAfter = reply !== undefined && failure !== undefined && failure.sequence > reply.sequence;
         const quiet = reply !== undefined && !failedAfter && isQuietReply(reply.text);
+        const failed = reply === undefined || failedAfter;
         const result = quiet
           ? SCHEDULE_QUIET_RESULT
           : reply === undefined
@@ -1091,23 +1167,29 @@ export class BotScheduleSource {
               ? replySummary(failure.text ?? "The reply failed.")
               : replySummary(reply.text);
         if (result === undefined) return undefined;
-        const title = typeof chat.data.title === "string" ? chat.data.title : chatId;
-        return { result, title, quiet };
+        return { result, quiet, failed };
       },
-      async ({ result, title, quiet }) => {
+      async ({ result, quiet, failed }) => {
+        const now = this.ctx.clock();
+        const status: RoutineRunStatus = quiet ? "quiet" : failed ? "failed" : "done";
         await replaceEntry(
           this.ctx.store,
           bot,
           name,
           (entry) =>
-            entry.last?.chatId === chatId
+            entry.last?.runId === runId
               ? {
                   ...entry,
-                  last: { ...entry.last, result, notified: quiet },
+                  last: { ...entry.last, result, notified: quiet, ...(failed ? { failed: true } : {}) },
                   recent: [
                     ...(entry.recent ?? []).filter((item) => item.plannedAt !== plannedAt),
                     { plannedAt, result },
                   ].slice(-SCHEDULE_RECENT_COUNT),
+                  runs: withRun(
+                    entry.runs,
+                    { id: runId, at: entry.runs?.find((item) => item.id === runId)?.at ?? now, status, result, ...(entry.last.manual === true ? { manual: true } : {}) },
+                    now,
+                  ),
                 }
               : undefined,
           "step:bot/scheduled",
@@ -1115,10 +1197,11 @@ export class BotScheduleSource {
         // A quiet ending records its result and runs no notify command.
         if (quiet) return;
         try {
-          await this.notify({ chatId, title, summary: result });
+          const routine = await findRoutine(this.ctx.store, bot, name);
+          await this.notify({ routineId: routine?.id ?? "", runId, title: name, summary: result });
         } catch (error) {
           await this.chatWatches.log(
-            `scheduled prompt "${name}" of bot ${bot}: notify: ${messageOf(error)}`,
+            `routine "${name}" of bot ${bot}: notify: ${messageOf(error)}`,
           );
         }
         await replaceEntry(
@@ -1126,7 +1209,7 @@ export class BotScheduleSource {
           bot,
           name,
           (entry) =>
-            entry.last?.chatId === chatId
+            entry.last?.runId === runId
               ? { ...entry, last: { ...entry.last, notified: true } }
               : undefined,
           "step:bot/scheduled",
@@ -1139,10 +1222,10 @@ export class BotScheduleSource {
   private async resumeWatches(): Promise<void> {
     for (const object of await this.bots()) {
       if (object.data.removed === true) continue;
-      for (const entry of scheduledPrompts(object.data)) {
+      for (const entry of await routinesOf(this.ctx.store, object.id)) {
         const last = entry.last;
-        if (last?.chatId === undefined || last.notified === true) continue;
-        await this.watch(object.id, entry.name, last.manual === true && last.firedAt !== undefined ? last.firedAt : last.plannedAt, last.chatId);
+        if (last?.runId === undefined || last.notified === true) continue;
+        await this.watch(object.id, entry.name, last.manual === true && last.firedAt !== undefined ? last.firedAt : last.plannedAt, last.runId);
       }
     }
   }
@@ -1168,7 +1251,7 @@ export class BotScheduleSource {
     try {
       await this.ctx.client.list(BOT_TYPE);
     } catch (error) {
-      await this.chatWatches.log(`scheduled prompts: ${messageOf(error)}`);
+      await this.chatWatches.log(`routines: ${messageOf(error)}`);
     }
     await this.resumeWatches();
     await this.poll();

@@ -665,3 +665,6 @@ are append-only, so the old lines stay as history.
 |---|---|---|---|
 | T-0772-M1 | packages/chat/src/model.ts | `startsAfterNew` stayed true after a reply, so every later message carried the pointer | `/new > the first message after /new carries a pointer to the earlier record, and only that one` |
 | T-0772-M2 | packages/chat/src/model.ts | `startsAfterNew` ignored `chat.new`, so no message carried the pointer | the same test |
+
+| T-0768-M2 | packages/chat/src/model.ts | a run record took a chat number | `the record of a routine's run > takes an R- id of its own, leaves the chat numbers alone, and is in no chat list` |
+| T-0768-M3 | packages/chat/src/views.ts | a run record showed in the open chat list | `the record of a routine's run > takes an R- id of its own, leaves the chat numbers alone, and is in no chat list` |
