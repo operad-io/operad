@@ -7,6 +7,12 @@ the same version.
 
 ## [Unreleased]
 
+### Changed
+
+- `operad` with no command returns to the default bot's main chat (its Telegram
+  chat, else its latest open chat) instead of starting a new one; with no open
+  chat it starts one as before. `bot:chat` is how to start another.
+
 ## [0.3.1] - 2026-11-23
 
 ### Fixed

@@ -665,3 +665,11 @@ are append-only, so the old lines stay as history.
 |---|---|---|---|
 | T-0772-M1 | packages/chat/src/model.ts | `startsAfterNew` stayed true after a reply, so every later message carried the pointer | `/new > the first message after /new carries a pointer to the earlier record, and only that one` |
 | T-0772-M2 | packages/chat/src/model.ts | `startsAfterNew` ignored `chat.new`, so no message carried the pointer | the same test |
+
+## T-0769 — The bot's main chat
+
+| id | file | mutation | caught by |
+|---|---|---|---|
+| T-0769-M1 | packages/chat/src/model.ts | `mainChatOf` ignored a chat bound to a channel and took the newest | `the bot's main chat > a chat bound to Telegram is the main chat even when a newer one is open` (packages/bot/test/main-chat.test.ts) |
+| T-0769-M2 | packages/chat/src/model.ts | `mainChatOf` counted a closed chat | `the bot's main chat > the most recent open chat is the main chat, and closing it falls back to the one before` and the Telegram test |
+| T-0769-M3 | packages/chat/src/model.ts | `mainChatOf` counted a chat a scheduled prompt opened | `the bot's main chat > a chat a scheduled prompt opened is not the main chat` |

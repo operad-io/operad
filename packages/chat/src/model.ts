@@ -804,6 +804,30 @@ export function chatData(data: Readonly<Record<string, unknown>>): ChatData {
   };
 }
 
+/**
+ * The chat a client with no chosen chat returns to, on one parent (a bot): the
+ * newest open chat bound to a channel when there is one, else the newest open
+ * chat; a chat a scheduled prompt opened is never the main one. Newest is the
+ * largest id. Undefined when the parent has no open chat. The routine delivery
+ * reads the same rule.
+ */
+export async function mainChatOf(store: ObjectStore, parent: string): Promise<string | undefined> {
+  let bound: string | undefined;
+  let latest: string | undefined;
+  let cursor: string | undefined;
+  do {
+    const page = await store.list(CHAT_TYPE, { where: { parent }, ...(cursor === undefined ? {} : { cursor }) });
+    for (const object of page.objects) {
+      const data = chatData(object.data);
+      if (data.parent !== parent || data.closed || data.scheduled !== undefined) continue;
+      if (latest === undefined || object.id > latest) latest = object.id;
+      if (data.channels.length > 0 && (bound === undefined || object.id > bound)) bound = object.id;
+    }
+    cursor = page.next;
+  } while (cursor !== undefined);
+  return bound ?? latest;
+}
+
 function isCostQuality(value: unknown): value is CostQuality {
   return value === "exact" || value === "estimated" || value === "incomplete";
 }
