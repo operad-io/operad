@@ -6,6 +6,8 @@ import { FlowError, validateFlow } from "../flow/validate.ts";
 import type { JsonValue } from "../log/types.ts";
 import { validateActionArgs } from "./action-schema.ts";
 import { readDeclaredFlows, writeDeclaredFlow } from "./declared-flows.ts";
+import { HOME_FLOW_OWNER, loadHomeFlows } from "./home-flows.ts";
+import type { HomeFlowRefusal } from "./home-flows.ts";
 import { readFile } from "node:fs/promises";
 import { AccessError, AskTimeoutError, messageOf, PluginError, StepNotLoadedError } from "./errors.ts";
 import { defaultOperadHome } from "./home.ts";
@@ -298,6 +300,9 @@ export class PluginRegistry {
     string,
     { readonly plugin: string; readonly flow: FlowDefinition }
   >();
+  /** The flows of `<home>/flows`, by name, and the files refused. */
+  private homeFlowMap: ReadonlyMap<string, FlowDefinition> = new Map();
+  private homeFlowRefusals: readonly HomeFlowRefusal[] = [];
   private readonly refusalList: PluginRefusal[] = [];
   private readonly settingsByPlugin: ReadonlyMap<
     string,
@@ -730,6 +735,11 @@ export class PluginRegistry {
       })),
     );
     const names = new Set(staticFlows.map((item) => item.flow.name));
+    const fromHome = [...this.homeFlowMap.values()].map((flow) => ({
+      plugin: HOME_FLOW_OWNER,
+      flow,
+      source: undefined,
+    }));
     const generated = [...this.declaredFlows.values()]
       .filter((item) => !names.has(item.flow.name))
       .map((item) => ({
@@ -737,7 +747,29 @@ export class PluginRegistry {
         flow: item.flow,
         source: this.sourceByPlugin.get(item.plugin),
       }));
-    return [...staticFlows, ...generated];
+    return [...staticFlows, ...generated, ...fromHome];
+  }
+
+  /**
+   * Reads the flow files of `<home>/flows`, replacing what an earlier read
+   * found. A file that does not load is refused with its reason and the other
+   * files still load; the refusals are returned and kept for `homeFlowProblems`.
+   */
+  async loadHomeFlows(): Promise<readonly HomeFlowRefusal[]> {
+    this.homeFlowMap = new Map();
+    const found = await loadHomeFlows(
+      this.home,
+      this.stepTypes(),
+      (name) => this.flow(name) !== undefined,
+    );
+    this.homeFlowMap = new Map(found.flows.map((item) => [item.flow.name, item.flow]));
+    this.homeFlowRefusals = found.refused;
+    return found.refused;
+  }
+
+  /** The flow files of the home the last read refused. */
+  homeFlowProblems(): readonly HomeFlowRefusal[] {
+    return this.homeFlowRefusals;
   }
 
   /**
@@ -792,7 +824,8 @@ export class PluginRegistry {
       const flow = plugin.flows.find((item) => item.name === name);
       if (flow !== undefined) return { plugin: plugin.name, flow };
     }
-    return undefined;
+    const home = this.homeFlowMap.get(name);
+    return home === undefined ? undefined : { plugin: HOME_FLOW_OWNER, flow: home };
   }
 
   /** The result names a step type declares, or undefined when it is unknown. */

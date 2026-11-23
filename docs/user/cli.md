@@ -52,7 +52,7 @@ and `operad help` print the whole table.
 | `operad show [<id>]` | `--section <id>`, `--page <label or number>`, `--cursor <c>`, `--full`, `--raw`, `--json`, `--repo <name>` | With an id: prints the row, its parent, its children, the section names and the available actions, then the first section (or `--section`). With no id: the ten objects that changed last and `operad show <id>`. |
 | `operad history <id>` | `--json` | Prints the steps of a run, or every run of an object, in the [History](#the-history-section) form. A bare id that several object types own is refused as ambiguous. |
 | `operad running` | `--json` | Lists the runs in progress: object, step, step time, title, run age and queued time. Prints `nothing is running` when empty. |
-| `operad flows` | `--json` | Lists the loaded flows, the plugin each belongs to, and why one cannot start. Prints `no flows loaded` when empty. |
+| `operad flows` | `--json` | Lists the loaded flows (including the files of [`<home>/flows`](home-flows.md), as `home:<file>`), the plugin each belongs to (`home` for those), and why one cannot start. Prints `no flows loaded` when empty. |
 | `operad plugin list` | none | Lists the configured plugins with their version and `enabled` or `disabled`. |
 | `operad plugin add <package>` | none | Installs an npm plugin into the home's plugin directory with its install scripts off. `<package>` is a valid npm name with an exact `@version`, or no version for the latest. Runs the same check as `operad plugin check`, then adds it to `config.json` turned off. Prints the package, its version, the plugin's declared name and version, and the `operad plugin enable` line. Refuses a name npm does not allow, a version that is not exact, a package that is not an operad plugin, and a declared name a configured plugin already uses. |
 | `operad plugin enable <name>` | none | Enables a plugin at the next command; a shipped plugin that is not in the config is added. Also enables the shipped plugins it needs that are off (`dev` needs `pool` and `shell`). Prints the lines a package install prints while it runs, then one `<name>: enabled` line for each plugin it turned on, the needed ones first; one already on gets no line. Disabling is per plugin: `plugin disable pool` leaves `dev` on. Enabling `claude` installs its package; enabling `pi` installs operad's own pinned pi when `PATH` has no `pi`. A failed download says so, and running the command again retries it. |
@@ -217,7 +217,7 @@ again).
 ## Changed code
 
 `serve` and each run's process keep running the code they loaded only until the
-files change. `serve` watches the kernel's code (`engine`, `cli`), each loaded
+files change. `serve` watches the kernel's code (`engine`, `cli`), the flow files of the home, each loaded
 plugin's package (source, flows, schemas) and the workspace packages that
 package depends on. After the files have been quiet for a second it starts a
 fresh process to check that the new code loads. If it does, `serve` stops the
