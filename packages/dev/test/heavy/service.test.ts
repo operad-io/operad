@@ -5,7 +5,7 @@ import { addPlan, addRepository, addTask, cancelPlan, cancelTask, confirmPlan, c
 import { idOfKey, briefBody, listAll, repositoryData, storeKey, taskData, type RepositoryData } from "../../src/model.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot, setTaskPhase, addRework, changesBody } from "../support.ts";
 import { gitOrThrow, silentGit } from "../git-support.ts";
-import { DEV_SETTINGS_SCHEMA } from "../../src/settings.ts";
+import { DEV_SETTINGS_SCHEMA, readDevSettings } from "../../src/settings.ts";
 
 afterAll(cleanupTempRoots);
 guardLockHandles();
@@ -68,7 +68,7 @@ describe("dev repositories", () => {
     expect(await listRepositories(store)).toHaveLength(0);
   });
 
-  test("add refuses a directory that is not a git work tree, or has no remote", async () => {
+  test("add refuses a directory that is not a git work tree", async () => {
     const { root, store } = await setup();
     const plain = join(root, "plain");
     Bun.spawnSync({ cmd: ["mkdir", "-p", plain] });
@@ -76,14 +76,20 @@ describe("dev repositories", () => {
       addRepository(store, { path: plain }),
     ).rejects.toThrow(/git work tree/);
 
+    // A refused add writes nothing: no registration and no settings file.
+    expect(await findRepository(store, "plain")).toBeUndefined();
+    expect(existsSync(join(plain, ".operad", "dev.json"))).toBe(false);
+  });
+
+  test("a work tree with no remote is added, and its settings name no remote", async () => {
+    const { root, store } = await setup();
     const noRemote = join(root, "no-remote");
     Bun.spawnSync({ cmd: ["git", "init", "-q", noRemote] });
-    await expect(
-      addRepository(store, { path: noRemote }),
-    ).rejects.toThrow(/has no remote/);
-    // A refused add writes nothing: no registration and no settings file.
-    expect(await findRepository(store, "no-remote")).toBeUndefined();
-    expect(existsSync(join(noRemote, ".operad", "dev.json"))).toBe(false);
+    await addRepository(store, { path: noRemote });
+    expect(await findRepository(store, "no-remote")).toBeDefined();
+    const written = JSON.parse(readFileSync(join(noRemote, ".operad", "dev.json"), "utf8")) as Record<string, unknown>;
+    expect("remote" in written).toBe(false);
+    expect((await readDevSettings(noRemote)).remote).toBeUndefined();
   });
 
   test("a remote-named setting is not a remote", async () => {
@@ -93,7 +99,8 @@ describe("dev repositories", () => {
     // `remote.pushDefault` belongs to the `remote` section but names no remote:
     // the fallback must not take it for one.
     gitOrThrow(path, ["config", "remote.pushDefault", "origin"]);
-    await expect(addRepository(store, { path })).rejects.toThrow(/has no remote/);
+    await addRepository(store, { path });
+    expect((await readDevSettings(path)).remote).toBeUndefined();
   });
 
   test("the current directory selects its repository, or --repo names one", async () => {

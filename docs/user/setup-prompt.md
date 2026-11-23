@@ -14,7 +14,7 @@ Start it in any of these ways:
 
 The bot reads the repository and runs its checks under the chat's access level, so it asks as any chat does (see [access](access.md)); Setup Dev gives it no extra permission. It does not write `.operad/dev.json` itself. It proposes, and you see one pending item for the repository. `Review` shows the plugins that would be turned on (`dev`, `shell` and `pool`, those that are off), the `.operad/dev.json` that would be written and, when there is one, the file it replaces. `approve` turns the plugins on, writes the file and registers the repository, so `operad dev repo list` shows it a moment later, after `serve` reloads. `reject` changes nothing.
 
-The repository must be the root of a git work tree that has a remote. Every key the bot may write is described in [dev](dev.md). Read what it proposes before you approve it: the checks in `gate.commands` judge whether a change is good enough to reach review, so they should be the ones you trust. Commit `.operad/dev.json` afterwards; operad reads it from the main clone.
+The repository must be the root of a git work tree. It may have no remote: merges then stay in the local main branch. Every key the bot may write is described in [dev](dev.md). Read what it proposes before you approve it: the checks in `gate.commands` judge whether a change is good enough to reach review, so they should be the ones you trust. Commit `.operad/dev.json` afterwards; operad reads it from the main clone.
 
 This is the prompt the bot is given, with the bot and the directory filled in:
 
@@ -29,7 +29,7 @@ Reference, if you need a key's details: https://operad.io/docs/dev/ (the full ke
 and https://operad.io/llms.txt.
 
 1. Look at the repository. Run `git remote -v` and find the main branch name in <repository directory>.
-   The repository needs a git remote; if it has none, say so and stop. Check which agents
+   A repository with no git remote is fine: leave `remote` out of the file. Check which agents
    are on PATH: `claude`, `pi`, `radian`. When none is, operad's own pi is the agent.
 
 2. Find this repo's checks. Read CI config (.github/workflows, .gitlab-ci.yml, ...), the
@@ -48,7 +48,7 @@ and https://operad.io/llms.txt.
 
    {
      "name": "<repo name>",
-     "remote": "<remote>",
+     "remote": "<remote, left out when the repository has none>",
      "mainBranch": "<main branch>",
      "workers": { "<agent>": { "use": "<agent>/agent", "args": [] } },
      "prepare": [ ... ],

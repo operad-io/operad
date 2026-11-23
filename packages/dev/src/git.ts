@@ -183,3 +183,36 @@ export function branchExists(
       : `refs/remotes/${remote}/${branch}`;
   return git(cwd, ["show-ref", "--verify", "--quiet", ref]).ok;
 }
+
+// The two settings that name a repository's base branch.
+export interface BaseSettings {
+  // Undefined when the repository has no remote.
+  readonly remote?: string | undefined;
+  readonly mainBranch: string;
+}
+
+// The name a task branch starts from and merges into: `<remote>/<main>`, or
+// the local main branch when the repository has no remote.
+export function baseName(settings: BaseSettings): string {
+  return settings.remote === undefined
+    ? settings.mainBranch
+    : `${settings.remote}/${settings.mainBranch}`;
+}
+
+// The full ref of `baseName`.
+export function baseRef(settings: BaseSettings): string {
+  return settings.remote === undefined
+    ? `refs/heads/${settings.mainBranch}`
+    : `refs/remotes/${settings.remote}/${settings.mainBranch}`;
+}
+
+// Fetches the remote; a repository with no remote has nothing to fetch, which
+// counts as a fetch that worked.
+export function fetchRemote(
+  cwd: string,
+  settings: BaseSettings,
+  args: readonly string[] = ["--prune"],
+): GitResult {
+  if (settings.remote === undefined) return { ok: true, out: "", err: "" };
+  return git(cwd, ["fetch", ...args, settings.remote]);
+}

@@ -47,7 +47,7 @@ import { appendChange } from "./model.ts";
 import { reviewTestHooks } from "./clock.ts";
 export { reviewTestHooks };
 import { modelErrorIn, modelWaitsForPerson, type ModelErrorInfo } from "./model-error.ts";
-import { commitOf, git } from "./git.ts";
+import { baseName, commitOf, fetchRemote, git } from "./git.ts";
 import {
   briefText,
   cancelledStep,
@@ -101,6 +101,7 @@ export function branchHead(
   const branch = workBranch(workName);
   const local = commitOf(repositoryPath, branch);
   if (local !== undefined) return local;
+  if (settings.remote === undefined) return undefined;
   return commitOf(repositoryPath, `refs/remotes/${settings.remote}/${branch}`);
 }
 
@@ -110,8 +111,7 @@ function mergeBase(
   settings: DevSettings,
   sha: string,
 ): string | undefined {
-  const main = `${settings.remote}/${settings.mainBranch}`;
-  const result = git(repositoryPath, ["merge-base", main, sha]);
+  const result = git(repositoryPath, ["merge-base", baseName(settings), sha]);
   return result.ok && result.out.length > 0 ? result.out : undefined;
 }
 
@@ -180,11 +180,7 @@ export async function runVerify(
   const task = context.task;
   const attempt = attemptOf(ctx, task);
   const previous = attempt.verify;
-  git(context.repository.path, [
-    "fetch",
-    "--prune",
-    context.settings.remote,
-  ]);
+  fetchRemote(context.repository.path, context.settings);
   const sha = branchHead(
     context.repository.path,
     context.settings,
@@ -254,7 +250,9 @@ export async function runVerify(
 
   if (sha === undefined) {
     return failed(
-      `no branch "${workBranch(context.workName)}" or "${context.settings.remote}/${workBranch(context.workName)}" to verify`,
+      context.settings.remote === undefined
+        ? `no branch "${workBranch(context.workName)}" to verify`
+        : `no branch "${workBranch(context.workName)}" or "${context.settings.remote}/${workBranch(context.workName)}" to verify`,
     );
   }
   const prepared = recreateGateWorktree(
@@ -2099,11 +2097,7 @@ export async function runReview(
     });
   }
 
-  git(context.repository.path, [
-    "fetch",
-    "--prune",
-    context.settings.remote,
-  ]);
+  fetchRemote(context.repository.path, context.settings);
   const base = mergeBase(context.repository.path, context.settings, sha);
   if (base === undefined) {
     const record: ReviewRecord = {
@@ -2112,7 +2106,7 @@ export async function runReview(
       sha,
       round,
       reason: "no_merge_base",
-      message: `cannot find the merge base of ${context.settings.remote}/${context.settings.mainBranch} and ${sha}`,
+      message: `cannot find the merge base of ${baseName(context.settings)} and ${sha}`,
     };
     return finish(record, "failed", {
       reason: "no_merge_base",

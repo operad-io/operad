@@ -280,7 +280,7 @@ describe("operad command", () => {
     expect(list.text()).toContain("memory");
   });
 
-  test("repo add refuses a directory with no remote and writes nothing", async () => {
+  test("repo add accepts a directory with no remote", async () => {
     const { root, home } = await makeNamedHome({
       chat: { module: chatPluginPath },
       dev: { module: devPluginPath },
@@ -290,14 +290,13 @@ describe("operad command", () => {
 
     const output = capture();
     expect(await main(["repo", "add", noRemote], { home, io: output.io })).toBe(
-      1,
+      0,
     );
-    expect(output.errors()).toContain("has no remote");
-    expect(existsSync(join(noRemote, ".operad", "dev.json"))).toBe(false);
+    expect(existsSync(join(noRemote, ".operad", "dev.json"))).toBe(true);
 
     const list = capture();
     expect(await main(["repo", "list"], { home, io: list.io })).toBe(0);
-    expect(list.text()).toContain("no repositories");
+    expect(list.text()).toContain("no-remote");
   });
 
   test("flows lists the loaded flows and their plugin", async () => {

@@ -383,8 +383,9 @@ is running` when no `serve` holds the home.
 ## dev commands
 
 `operad dev repo add <path> [--name <name>]` registers a directory that is a git
-work tree with a remote. It refuses, and writes nothing, a directory that is not
-the root of a git work tree, that has no remote, whose name is already
+work tree; a repository with no remote is fine, and its merges stay in its local
+main branch. It refuses, and writes nothing, a directory that is not
+the root of a git work tree, whose name is already
 registered and not removed, or whose path is already registered under another
 active name, and prints the reason. It writes `.operad/dev.json` when the
 repository has none. A name whose repository was removed is registered again at

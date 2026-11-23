@@ -147,20 +147,19 @@ describe("registering a repository through dev:repo-add over HTTP", () => {
     });
   });
 
-  test("a git work tree with no remote is refused in the command's words", async () => {
+  test("a git work tree with no remote is added", async () => {
     await withRig(async (rig) => {
       const root = await tempRoot();
       const path = join(root, "no-remote");
       mkdirSync(path, { recursive: true });
       gitOrThrow(path, ["init", "-q", "-b", "main"]);
-      const refused = await rig.act({
+      const added = await rig.act({
         action: "dev:repo-add",
         args: { path },
         confirmed: true,
       });
-      expect(refused.status).toBe(422);
-      expect(await message(refused)).toContain(`"${path}" has no remote`);
-      expect(await rig.rows()).toEqual([]);
+      expect(added.status).toBe(200);
+      expect((await rig.rows()).length).toBe(1);
     });
   });
 

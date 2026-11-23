@@ -144,7 +144,7 @@
       "minLength": 1
     },
     "remote": {
-      "description": "The git remote task branches are fetched from and pushed to.",
+      "description": "The git remote task branches are fetched from and pushed to. Leave it out when the repository has no remote: the local main branch is then the base, nothing is fetched or pushed, and a merge only moves the local main branch. A repository that has the default remote and no `remote` setting uses it.",
       "type": "string",
       "minLength": 1,
       "default": "origin"
@@ -599,7 +599,7 @@
             "if [ -e \"$OPERAD_WORKTREE-gate\" ]; then git worktree remove --force \"$OPERAD_WORKTREE-gate\"; fi",
             "git worktree prune",
             "if git show-ref --verify --quiet \"refs/heads/work/$OPERAD_TASK\"; then git branch -D \"work/$OPERAD_TASK\"; fi",
-            "if git ls-remote --exit-code --heads \"$OPERAD_REMOTE\" \"work/$OPERAD_TASK\" >/dev/null; then git push \"$OPERAD_REMOTE\" --delete \"work/$OPERAD_TASK\"; else [ $? -eq 2 ]; fi"
+            "if [ -z \"$OPERAD_REMOTE\" ]; then :; elif git ls-remote --exit-code --heads \"$OPERAD_REMOTE\" \"work/$OPERAD_TASK\" >/dev/null; then git push \"$OPERAD_REMOTE\" --delete \"work/$OPERAD_TASK\"; else [ $? -eq 2 ]; fi"
           ]
         }
       },
@@ -610,7 +610,7 @@
           "if [ -e \"$OPERAD_WORKTREE-gate\" ]; then git worktree remove --force \"$OPERAD_WORKTREE-gate\"; fi",
           "git worktree prune",
           "if git show-ref --verify --quiet \"refs/heads/work/$OPERAD_TASK\"; then git branch -D \"work/$OPERAD_TASK\"; fi",
-          "if git ls-remote --exit-code --heads \"$OPERAD_REMOTE\" \"work/$OPERAD_TASK\" >/dev/null; then git push \"$OPERAD_REMOTE\" --delete \"work/$OPERAD_TASK\"; else [ $? -eq 2 ]; fi"
+          "if [ -z \"$OPERAD_REMOTE\" ]; then :; elif git ls-remote --exit-code --heads \"$OPERAD_REMOTE\" \"work/$OPERAD_TASK\" >/dev/null; then git push \"$OPERAD_REMOTE\" --delete \"work/$OPERAD_TASK\"; else [ $? -eq 2 ]; fi"
         ]
       }
     },
