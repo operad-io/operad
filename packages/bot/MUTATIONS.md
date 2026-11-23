@@ -420,4 +420,4 @@ changes for bots, in the order they were recorded. The root
 
 | id | file | mutation | failing test |
 |---|---|---|---|
-| T-0746-M1 | packages/bot/src/schedule.ts | the lateness line ignored that earlier minutes were skipped | `scheduledInstruction > a firing in its own minute after skipped minutes still says it is a catch-up` |
+| T-0746-M1 | packages/bot/src/schedule.ts | the lateness condition dropped `last.skippedEarlier === true`, so a firing in its own minute after skipped minutes had no lateness line (run: 1 fail, 32 pass) | `scheduledInstruction > a firing in its own minute after skipped minutes still says it is a catch-up` |
