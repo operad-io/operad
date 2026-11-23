@@ -211,4 +211,5 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0778-M4 | packages/memory/src/commit.ts | the notes the wiki commit changed were left out of `wrote` | `a bot run is recorded in git > names the notes the run wrote with a one-line summary, and the one it removed, which has no summary` |
+
 | T-0779-M6 | packages/memory/src/search/sources.ts | the index read the marked messages | `messages of a stretch that is not remembered stay out of what the full-text index reads` |

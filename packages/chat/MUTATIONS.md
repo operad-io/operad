@@ -729,6 +729,7 @@ are append-only, so the old lines stay as history.
 | T-0778-M1 | packages/chat/src/notes.ts | a tool call that failed counted as a read of the note it named | `a reply shows the memory it wrote and used > names the notes that rode on the message and those read through the memory tools` |
 | T-0778-M2 | packages/chat/src/reply.ts | the after step was not marked as run, so it ran again when the reply step ended | `a reply shows the memory it wrote and used > names the notes the run wrote, in the reply data and the markdown` |
 | T-0778-M3 | packages/chat/src/reply.ts | the after step ran in a round that left messages to answer | `the step a chat's refresh data names after a reply > runs once for a run that takes more than one round, not once per round` |
+
 | T-0779-M1 | packages/chat/src/reply.ts | the reply's profile did not deny writes to the bot's memory during a stretch | `/private > the reply's profile leaves the bot's memory readable and not writable, only while it is on` |
 | T-0779-M2 | packages/chat/src/reply.ts | the memory flush was still given after a stretch ended, while the session held it | `the memory flush before a compaction > is given to a session with no stretch, skipped while it is on, and skipped after it until /new` |
 | T-0779-M3 | packages/chat/src/index.ts | a message sent during a stretch was not marked | `/private > messages and their answers are marked; those before and after the stretch are not` |

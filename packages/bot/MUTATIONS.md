@@ -503,5 +503,6 @@ changes for bots, in the order they were recorded. The root
 | T-0786-M2 | packages/bot/src/schedule.ts | `droppedRuns` also named runs inside the 30 days | `routine history > a run that withRun drops has no record either; a newer one is untouched` |
 | T-0786-M4 | packages/bot/src/schedule.ts | a run's start did not forget the runs it dropped from the history | `scheduled prompts > a run that leaves the history when a run starts or ends loses its record; a newer one keeps it` |
 | T-0786-M5 | packages/bot/src/schedule.ts | a run's end did not forget the runs it dropped from the history | `scheduled prompts > a run that leaves the history when a run starts or ends loses its record; a newer one keeps it` |
+
 | T-0779-M4 | packages/bot/src/tidy.ts | Dreaming read the marked messages | `Dreaming and a stretch that is not remembered > the chats the check reads leave out marked messages, and a chat that holds only those is not read` |
 | T-0779-M5 | packages/bot/src/index.ts | the bot's settings did not name its memory directories | `the directories a stretch that is not remembered keeps read-only > the bot's settings name its memory directory and the wiki` |
