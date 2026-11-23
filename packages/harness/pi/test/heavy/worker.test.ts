@@ -2095,7 +2095,7 @@ test("parseInput refuses an image that is not a path with an image media type", 
   expect(parseInput({ ...base, images: [{ path: "/a.pdf", mediaType: "application/pdf" }] }).ok).toBe(false);
 });
 
-// Compaction (ADR 0023 D13). The fake model's window is 128,000 tokens and each
+// Compaction (ADR 0023 D12). The fake model's window is 128,000 tokens and each
 // of its messages ends a context of 17 tokens, so a share of 0.0001 is passed
 // and a share of 0.5 is not.
 const FLUSH = "Write what you must remember, then say ok.";

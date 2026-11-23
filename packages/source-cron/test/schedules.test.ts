@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   loadTriggerRules,
@@ -429,6 +429,53 @@ describe("command routines", () => {
       run(home, ["add", "--command", "echo hi", "--schedule", "0 3 * * *"], now),
     ).rejects.toThrow("operad plugin enable shell");
     expect(() => readFileSync(join(home, "triggers.json"), "utf8")).toThrow();
+  });
+
+  test("--cwd without --command, and --command with --flow or --params, are refused and write nothing", async () => {
+    const home = await scheduleHome();
+    const now = { value: Date.parse("2026-01-01T07:00:00Z") };
+    await expect(
+      run(home, ["add", "--flow", "shell:command", "--cwd", "/work", "--schedule", "0 3 * * *"], now, withShell),
+    ).rejects.toThrow("--cwd needs --command");
+    await expect(
+      run(home, ["add", "--command", "a", "--flow", "shell:command", "--schedule", "0 3 * * *"], now, withShell),
+    ).rejects.toThrow("--command does not take --flow or --params");
+    await expect(
+      run(home, ["add", "--command", "a", "--params", "{}", "--schedule", "0 3 * * *"], now, withShell),
+    ).rejects.toThrow("--command does not take --flow or --params");
+    expect(() => readFileSync(join(home, "triggers.json"), "utf8")).toThrow();
+  });
+
+  test("to-flow refuses a bad name, and a routine that runs no command", async () => {
+    const home = await scheduleHome();
+    const now = { value: Date.parse("2026-01-01T07:00:00Z") };
+    await run(home, ["add", "--command", "echo a", "--schedule", "0 3 * * *"], now, withShell);
+    const id = ((await run(home, ["list", "--json"], now, withShell)) as ScheduledFlow[])[0]?.id ?? "";
+    await expect(run(home, ["to-flow", id, "--name", "../x"], now, withShell)).rejects.toThrow("--name");
+    expect(existsSync(join(home, "flows"))).toBe(false);
+    const done = await run(home, ["to-flow", id], now, withShell);
+    expect(String(done)).toContain(`home:routine-${id}`);
+    expect(readFileSync(join(home, "flows", `routine-${id}.flow.ts`), "utf8")).toContain('"echo a"');
+    // The routine now runs a flow, not a command.
+    const next = ((await run(home, ["list", "--json"], now, withShell)) as ScheduledFlow[])[0]?.id ?? "";
+    await expect(run(home, ["to-flow", next], now, withShell)).rejects.toThrow("does not run a command");
+  });
+
+  test("to-flow leaves no file behind when the rules cannot be written, so a retry works", async () => {
+    const home = await scheduleHome();
+    const now = { value: Date.parse("2026-01-01T07:00:00Z") };
+    await run(home, ["add", "--command", "echo a", "--schedule", "0 3 * * *"], now, withShell);
+    const id = ((await run(home, ["list", "--json"], now, withShell)) as ScheduledFlow[])[0]?.id ?? "";
+    mkdirSync(join(home, "flows"), { recursive: true });
+    chmodSync(home, 0o500);
+    try {
+      await expect(run(home, ["to-flow", id, "--name", "mine"], now, withShell)).rejects.toThrow();
+    } finally {
+      chmodSync(home, 0o700);
+    }
+    expect(existsSync(join(home, "flows", "mine.flow.ts"))).toBe(false);
+    await run(home, ["to-flow", id, "--name", "mine"], now, withShell);
+    expect(existsSync(join(home, "flows", "mine.flow.ts"))).toBe(true);
   });
 
   test("two command routines at one time get different objects", async () => {

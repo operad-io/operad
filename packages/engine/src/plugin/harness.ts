@@ -45,7 +45,6 @@ export interface AgentTimings {
   readonly totalMs: number;
 }
 
-/** What every harness `agent` step records as its facts. */
 /** What a compaction of a harness session did. */
 export interface AgentCompaction {
   readonly reason: "threshold" | "manual";
@@ -57,6 +56,7 @@ export interface AgentCompaction {
   readonly flushed: boolean;
 }
 
+/** What every harness `agent` step records as its facts. */
 export interface AgentResultData {
   readonly exitCode: number | null;
   readonly signal: string | null;

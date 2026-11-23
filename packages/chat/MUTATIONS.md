@@ -758,3 +758,10 @@ Each row was applied to the source, `bun test test/segments.test.ts` was run, an
 | T-0775-M15 | packages/chat/src/views.ts | a `date:` after the last item was not refused | `reading the transcript from a segment, a date or a message > date:YYYY-MM-DD starts at the first thing on or after that day` |
 | T-0775-M16 | packages/chat/src/reply.ts | the chat's cost was not brought up to date after the title call | `segments of a long chat > the title call is paid like a reply: the chat's cost counts it as soon as it is made` |
 | T-0775-M21 | packages/chat/src/views.ts | the divider showed `Segment <n> · <title>` with no date instead of the title and the date | `segments of a long chat > a /new and a compaction each start a segment; the transcript marks it with its date and a generated title` |
+| T-0790-M1 | packages/chat/src/deliver.ts | a delivery's message data left out `routineId` | `a delivered result > the transcript's data names the routine and the run of a delivery, and the header stays` |
+| T-0790-M2 | packages/chat/src/model.ts | reading a stored delivery dropped its `routineId` | `a delivered result > the transcript's data names the routine and the run of a delivery, and the header stays` |
+
+The rows above reused ids that other packages hold for T-0790 (T-0790-M1, T-0790-M2); they are renumbered below as T-0790-M3, T-0790-M4 (the lines above stay, rows are append-only).
+
+| T-0790-M3 | packages/chat/src/deliver.ts | a delivery's message data left out `routineId` | `a delivered result > the transcript's data names the routine and the run of a delivery, and the header stays` |
+| T-0790-M4 | packages/chat/src/model.ts | reading a stored delivery dropped its `routineId` | `a delivered result > the transcript's data names the routine and the run of a delivery, and the header stays` |

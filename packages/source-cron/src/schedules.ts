@@ -2,7 +2,7 @@
 
 import { messageOf } from "@operad-io/engine";
 import { createHash } from "node:crypto";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { writeJsonAtomicSync } from "@operad-io/engine/platform";
 import {
@@ -462,7 +462,13 @@ export function routineToFlow(home: string, id: string, nameArg: string | undefi
     }
     throw new ScheduleError(`cannot write ${file}: ${String(error)}`);
   }
-  writeRules(home, replace(rules, id, () => converted));
+  try {
+    writeRules(home, replace(rules, id, () => converted));
+  } catch (error) {
+    // The routine is unchanged, so the file made for it goes too; a retry is not refused as existing.
+    rmSync(file, { force: true });
+    throw error;
+  }
   baselineCronRule(home, converted, now);
   return `wrote ${file}; the routine (${convertedId}) now runs home:${name}`;
 }

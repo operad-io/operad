@@ -684,7 +684,7 @@ export async function runWorker(
     };
   };
 
-  // After a turn (ADR 0023 D13): when the context is over the share of the
+  // After a turn (ADR 0023 D12): when the context is over the share of the
   // window the input names, or the input asks for it, one silent turn lets the
   // agent write what it should keep, then pi compacts the session. A failed
   // flush or compaction never fails the reply.

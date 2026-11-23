@@ -1934,7 +1934,7 @@ async function replyOnce(
         // a task keeps pi's retry off and uses dev's own waits and fallbacks.
         ...(chat.harness === "pi" ? { retry: true } : {}),
         // pi compacts when the context nears the window, after a silent turn
-        // that lets a bot write to its memory first (ADR 0023 D13). A
+        // that lets a bot write to its memory first (ADR 0023 D12). A
         // `/compact` asks for it now.
         ...(chat.harness === "pi"
           ? {
