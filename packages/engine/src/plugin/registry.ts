@@ -1834,8 +1834,9 @@ export class PluginRegistry {
           });
         }
       } catch (error) {
-        // Work that ends after the drain belongs to a store that is closing.
-        if (this.inFlight.draining) return [];
+        // Work that ends after the drain belongs to a store that is closing:
+        // stop quietly and keep what earlier plugins already gave.
+        if (this.inFlight.draining) return items;
         this.log(`plugin "${plugin.name}": standing failed: ${messageOf(error)}`);
       }
     }
