@@ -51,7 +51,7 @@ function git(cwd: string, ...args: string[]): string {
 
 describe("the file list for the first commit", () => {
   test("is made without writing anything into the folder, honours the text, and lists nested repositories apart", () => {
-    const dir = folder({ "a.txt": "a", "src/b.ts": "b", "node_modules/x/y.js": "y", ".env": "SECRET=1" });
+    const dir = folder({ "a.txt": "a", "src/b.ts": "b", "node_modules/x/y.js": "y", ".env": "SECRET=1", ".operad-worktrees/t/f": "w", ".radian-sandbox/g": "g" });
     Bun.spawnSync({ cmd: ["git", "init", "-q", join(dir, "vendored")] });
     writeFileSync(join(dir, "vendored", "f"), "f");
     const before = readdirSync(dir).sort();
