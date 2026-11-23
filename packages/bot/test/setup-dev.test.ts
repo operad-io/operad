@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync } from "node:fs";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { createViews, guideBody } from "@operad-io/engine";
 import { PROPOSAL_TYPE, proposalData, readPiped, renderGuide } from "../src/index.ts";
 import { cleanupRoots, rig } from "./support.ts";
@@ -54,17 +54,24 @@ describe("Setup Dev", () => {
     expect(prompt).toContain("verb `setup-dev`");
   });
 
-  test("the action opens a chat whose first message is the prepared prompt", async () => {
+  test("the action opens a chat that shows its title and gives the agent the prepared prompt", async () => {
     const r = await rig();
     const path = repository(r);
     const text = String(await r.act("bot", "default", "setup-dev", { path }));
     const chat = /C-\d+/.exec(text)?.[0];
     if (chat === undefined) throw new Error(`no chat in ${text}`);
     const messages = (await r.store.facts().filter((fact) => fact.object?.id === chat && fact.type === "chat.message"))
-      .map((fact) => String((fact.data as { text?: unknown }).text));
+      .map((fact) => fact.data as { text?: unknown; instruction?: unknown });
     expect(messages).toHaveLength(1);
-    expect(messages[0]).toContain(`Set up operad's dev for the repository at ${path}`);
-    expect(messages[0]).toContain("arguments `default`");
+    const title = `Setup Dev (${basename(path)})`;
+    expect(messages[0]?.text).toBe(title);
+    expect(String(messages[0]?.instruction)).toContain(`Set up operad's dev for the repository at ${path}`);
+    expect(String(messages[0]?.instruction)).toContain("arguments `default`");
+    await r.reply(chat);
+    const sent = String(r.calls[0]?.params.prompt ?? "");
+    expect(sent).toContain(`${title}\n\n`);
+    expect(sent).toContain(String(messages[0]?.instruction));
+    expect(sent.indexOf(title)).toBeLessThan(sent.indexOf("Set up operad's dev"));
   });
 
   test("a proposal turns nothing on and writes nothing; its review shows what approve does", async () => {

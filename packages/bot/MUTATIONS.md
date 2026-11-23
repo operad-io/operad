@@ -447,3 +447,10 @@ changes for bots, in the order they were recorded. The root
 |---|---|---|---|
 | T-0753-M1 | packages/bot/src/schedule.ts | `isReplying` always returned false, so run now overwrote the replying firing's `last` | `run now is refused while the previous firing's chat is still replying, and keeps that firing's result` |
 | T-0753-M2 | packages/bot/src/schedule.ts | the restart path watched a manual run under `plannedAt` instead of `firedAt` | `a manual run's watch resumes after a restart under the run's own time` |
+
+## T-0755 — Setup Dev's prompt is hidden
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0755-M1 | packages/bot/src/index.ts | Setup Dev sent the prompt as the message's visible text again, with no hidden instruction | `Setup Dev > the action opens a chat that shows its title and gives the agent the prepared prompt` |
+| T-0755-M2 | packages/bot/src/index.ts | the Setup <plugin> action sent the guide as the visible text again | `Setup <plugin> (ADR 0010 D7) > the action opens a chat titled Setup and the name that shows the title and gives the agent the guide` |

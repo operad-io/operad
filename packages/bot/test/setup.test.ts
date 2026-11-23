@@ -76,15 +76,19 @@ describe("Setup <plugin> (ADR 0010 D7)", () => {
     expect(prompt).toContain("verb `setup`");
   });
 
-  test("the action opens a chat titled Setup and the name whose first message is the guide", async () => {
+  test("the action opens a chat titled Setup and the name that shows the title and gives the agent the guide", async () => {
     const r = await rig();
     const text = String(await r.act("bot", "default", "setup", { plugin: "dev", target: "/work/repo" }));
     const chat = /C-\d+/.exec(text)?.[0];
     if (chat === undefined) throw new Error(`no chat in ${text}`);
-    const first = await firstMessage(r, chat);
-    expect(first).toContain("Setup Dev. What the plugin's own check finds missing now:");
-    expect(first).toContain("the repository at /work/repo");
+    expect(await firstMessage(r, chat)).toBe("Setup Dev (repo)");
+    const sent = (await r.store.facts().filter((fact) => fact.object?.id === chat && fact.type === "chat.message"))
+      .map((fact) => String((fact.data as { instruction?: unknown }).instruction))[0] ?? "";
+    expect(sent).toContain("Setup Dev. What the plugin's own check finds missing now:");
+    expect(sent).toContain("the repository at /work/repo");
     expect((await r.store.get("chat", chat))?.data.title).toBe("Setup Dev (repo)");
+    await r.reply(chat);
+    expect(String(r.calls[0]?.params.prompt ?? "")).toContain(sent);
   });
 
   test("/setup in a bot chat sends the guide to that chat, and records the command", async () => {
