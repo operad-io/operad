@@ -70,6 +70,7 @@ this table.
 | `useOwnSettings` | boolean | no | load the owner's own pi settings and resources (ADR 0023 D3); absent or false keeps the explicit, in-memory child |
 | `retry` | boolean | no | retry a failed model request with pi's own bounded backoff; absent or false keeps it off. A chat reply sets it; a task does not |
 | `compact` | `{at, flush?, now?, only?}` | no | compact the context after the turn when it reaches the share `at` (above 0, at most 1) of the model's window, after one silent `flush` turn; `now` compacts whatever the size and `only` runs no prompt. Absent means pi never compacts. A chat reply sets it (ADR 0023 D12) |
+| `prune` | `{cacheSecs?, keepTurns?, minChars?}` | no | overrides for pruning old tool results from what the model is sent (ADR 0023 D13): the cache lifetime in seconds (default the model's `promptCache` tier, else 300), the assistant turns kept whole (3), the characters a prune must free (20,000). Pruning is on without it |
 | `keep` | object `{ socket, meta, token, scope, key, timeoutMs }` | no | the step sets this for a chat reply whose worker may stay: where it listens, its record, its token, the chat and the configuration hash, and how long it stays. A worker without it runs one reply and exits |
 | `access` | object | no | the access profile; `denyPaths` and `denyCommands` (arrays of strings) are enforced in the `tool_call` hook by `@operad-io/access-match`, other fields are ignored; absent means nothing is denied |
 
