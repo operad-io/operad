@@ -1009,6 +1009,7 @@ export default createChatPlugin();
 
 export * from "./model.ts";
 export * from "./notes.ts";
+export * from "./deliver.ts";
 export * from "./command.ts";
 export * from "./queue.ts";
 export * from "./reply.ts";

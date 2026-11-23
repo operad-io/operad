@@ -695,6 +695,29 @@ are append-only, so the old lines stay as history.
 | T-0769-M2 | packages/chat/src/model.ts | `mainChatOf` counted a closed chat | `the bot's main chat > the most recent open chat is the main chat, and closing it falls back to the one before` and the Telegram test |
 | T-0769-M3 | packages/chat/src/model.ts | `mainChatOf` counted a chat a scheduled prompt opened | `the bot's main chat > a chat a scheduled prompt opened is not the main chat` |
 
+## T-0766 — pi compacts a long chat
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0766-M8 | packages/chat/src/reply.ts | a `/compact` request was not marked taken, so a failed compaction was tried again by the next round | `/compact > a compaction run is not 'writing' once it is done, and a failed one is not tried again by the next round` |
+| T-0766-M9 | packages/chat/src/reply.ts | no line said the context was compacted | `automatic compaction of a pi chat > a compacted reply leaves one short line after it, and the next message carries the notes whole again` |
+| T-0766-M10 | packages/chat/src/index.ts | `/compact` was offered on a chat of another agent | `/compact > it is offered, and listed by /help, only on a pi chat` |
+| T-0766-M11 | packages/chat/src/model.ts | a finished compaction run still counted as a reply being written | `/compact > a compaction run that is done is no longer a reply being written` |
+| T-0766-M12 | packages/chat/src/reply.ts | a chat without memory notes also got the flush turn | `automatic compaction of a pi chat > a pi reply asks for compaction at the share; a bot chat adds the memory flush turn, a chat without notes does not` |
+| T-0766-M13 | packages/chat/src/reply.ts | a `/compact` typed during a reply was not taken when it ended | `/compact > a /compact typed during a reply is taken by the next round of that same flow` |
+| T-0780-M1 | packages/chat/src/reply.ts | a chat whose compacted context was still full was answered and compacted again | `a chat too full to compact > when the compaction leaves the context over the share, the next reply fails with one plain line and the agent is not called` |
+| T-0780-M2 | packages/chat/src/model.ts | a compaction was never judged still full | `a chat too full to compact > two compactions never run in a row: with no reply that added context between, the agent is not asked again` |
+| T-0780-M3 | packages/chat/src/model.ts | `/new` did not end the full state | `a chat too full to compact > /new ends it: the next message goes to a fresh session` |
+| T-0780-M4 | packages/chat/src/model.ts | every compaction counted as full | `a chat too full to compact > a compaction that fits does not stop the chat` |
+
+## T-0770 — A plugin delivers a result into a chat
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0770-M4 | packages/chat/src/model.ts | a delivery was carried again after a reply had seen it | `a delivered result > rides on the next message as its summary, not its whole text, and only once` |
+| T-0770-M5 | packages/chat/src/reply.ts | the prompt left out the delivered results | `a delivered result > rides on the next message as its summary, not its whole text, and only once` and `a failed run says so in the header and the carried line` |
+| T-0770-M6 | packages/chat/src/deliver.ts | a delivery of one run was recorded twice | `a delivered result > is recorded once for one run` |
+
 ## T-0775 — Segments of a long chat
 
 Each row was applied to the source, `bun test test/segments.test.ts` was run, and the source was restored.

@@ -490,3 +490,11 @@ changes for bots, in the order they were recorded. The root
 | T-0777-M1 | packages/bot/src/tidy.ts | a note's date was the tidy's date, not the file's | `dates in the tidy prompt > the work takes today from the injected clock and a note's date from its file` |
 | T-0777-M2 | packages/bot/src/tidy.ts | the prompt did not say what today is | `dates in the tidy prompt > the prompt names today, each note's date, and the rules for dating facts` |
 | T-0777-M3 | packages/bot/src/tidy.ts | the prompt let a replaced fact be deleted | `dates in the tidy prompt > the prompt names today, each note's date, and the rules for dating facts` |
+
+## T-0770 — A routine's result reaches the main chat
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0770-M1 | packages/bot/src/schedule.ts | a quiet ending was delivered too | `a routine's result reaches the bot's main chat > nothing to report is not delivered and stays a line in the routine's history` |
+| T-0770-M2 | packages/bot/src/delivery.ts | the delivery's summary was the whole result | `a routine's result reaches the bot's main chat > what rides on the main chat's next message is the summary, not the whole result` |
+| T-0770-M3 | packages/bot/src/schedule.ts | a failed run was not delivered | `a routine's result reaches the bot's main chat > a failure is always delivered, as failed` |

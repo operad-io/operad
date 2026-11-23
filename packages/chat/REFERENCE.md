@@ -192,6 +192,14 @@ a chat with memory notes adds the flush turn's text; when the step's data says
 `compacted`, one `chat.command` line says so (`compact (automatic)` after a
 reply, `compact` after the command) and the notes ride whole on the next message.
 
+Each compaction also records a `chat.compact` fact of kind `compacted` whose
+`full` is true when the context it left is at or over `COMPACT_AT` of the
+window (`stillFull`; false when the window or the size after is unknown). While
+the latest such fact since the last `/new` is full (`chatTooFull`), a reply with a
+message waiting fails with reason `full` and the line `CHAT_TOO_FULL_LINE` before
+any agent is started, so two compactions never run without `/new` or a fitting
+compaction between them.
+
 ## `chat:status <chat>`
 
 Reads the chat's facts and asks the run control whether the latest run is still
@@ -320,7 +328,7 @@ the last finished reply's context; a new session leaves it out until the next
 reply. The chat's object view carries the same `context`. Every read also
 carries `data.queued` and `data.queuedCount`, the messages a run has not taken.
 
-Segments (ADR 0026 D19): each stretch that `/new` or a compaction starts is a
+Segments (ADR 0026 D20): each stretch that `/new` or a compaction starts is a
 segment. The Markdown puts `### Segment <n> · <date time, UTC> · <title>` before
 the first item of every segment but the first, and `data.segments` lists them
 (`number`, `at`, `kind`, `title`, `cursor`) once there are two or more. The

@@ -35,12 +35,17 @@ import {
   BRIEF_FACT,
   briefDue,
   briefToCarry,
+  deliveriesToCarry,
+  deliveryBlock,
   attemptEndedOfFact,
   chatFacts,
   COMMAND_FACT,
   COMPACT_AT,
   COMPACT_FACT,
   COMPACT_FLUSH,
+  CHAT_TOO_FULL_LINE,
+  chatTooFull,
+  stillFull,
   compactRequested,
   type CommandData,
   IMAGE_TYPES,
@@ -1273,6 +1278,11 @@ async function recordTaken(ctx: StepContext, chat: string, runId: string, ids: r
   });
 }
 
+/** Records that the session was compacted, and whether its context is still over the share of the window. */
+async function recordCompacted(ctx: StepContext, chat: string, full: boolean): Promise<void> {
+  await ctx.facts.append({ type: COMPACT_FACT, object: chatRef(chat), data: { kind: "compacted", full, runId: ctx.runId } });
+}
+
 /** Ends a reply as failed, after recording why in the chat. */
 async function failedReply(
   ctx: StepContext,
@@ -1585,6 +1595,12 @@ async function replyOnce(
     return { result: "done", data: { answered: 0 } };
   }
 
+  // A context that was still over the share right after its compaction would be
+  // compacted again by every reply: the reply fails instead, and `/new` ends it.
+  if (pending.length > 0 && chatTooFull(read.facts)) {
+    return failedReply(ctx, object.id, "full", CHAT_TOO_FULL_LINE, pending[0]?.id);
+  }
+
   const runStep = ctx.runStep;
   const oldest = pending[0]?.id;
   // A `/compact` with nothing to answer is a run of its own: no prompt, no reply.
@@ -1863,6 +1879,7 @@ async function replyOnce(
     live.notes === undefined ? [] : notesToAttach(noteContents, chat.noteHashes, session);
   const noteText = carried.length === 0 ? undefined : noteBlock(carried);
   const briefText = briefToCarry(messages, (locked as ChatRead | undefined)?.facts ?? read.facts);
+  const deliveryText = deliveryBlock(deliveriesToCarry(messages, (locked as ChatRead | undefined)?.facts ?? read.facts));
   const messagePrompt = promptFor(
     pending.map((message) => ({ ...message, text: skillMessage(message.text, skills, loadsSkills) })),
     new Set(images.map((image) => image.path)),
@@ -1871,7 +1888,7 @@ async function replyOnce(
   const pointer = startsAfterNew(read.facts, messages) ? earlierRecordPointer(object.id) : undefined;
   const prompt = compactOnly
     ? "compact"
-    : [context, noteText, pointer, briefText, messagePrompt]
+    : [context, noteText, pointer, briefText, deliveryText, messagePrompt]
         .filter((part): part is string => part !== undefined && part.length > 0)
         .join("\n\n");
   if (compactAsked) {
@@ -1990,6 +2007,11 @@ async function replyOnce(
     // message carries the notes whole again, as after any compaction.
     const sessionDone = typeof data.sessionId === "string" && data.sessionId.length > 0 ? data.sessionId : session;
     await recordCompactionLine(ctx, object.id, chat.harness, compaction, true);
+    if (compaction !== undefined) {
+      const onlyContext = replyContextOf(data.context);
+      const onlyWindow = onlyContext?.window ?? (chat.model === undefined ? undefined : ctx.harnessModels?.(chat.harness)?.windows?.[chat.model]);
+      await recordCompacted(ctx, object.id, stillFull(compaction.after ?? onlyContext?.used, onlyWindow));
+    }
     await ctx.facts.append({ type: COMPACT_FACT, object: chatRef(object.id), data: { kind: "done", runId: ctx.runId } });
     await syncChat(ctx, object.id, sessionDone, undefined, compaction === undefined ? undefined : { ...(sessionDone === undefined ? {} : { session: sessionDone }), files: {} });
     return { result: "done", data: { answered: 0, compacted: compaction !== undefined } };
@@ -2040,7 +2062,10 @@ async function replyOnce(
   };
   await ctx.facts.append({ type: MESSAGE_FACT, object: chatRef(object.id), data: reply });
   // After the reply, one short line says the context was compacted.
-  if (compaction !== undefined) await recordCompactionLine(ctx, object.id, chat.harness, compaction, compactAsked);
+  if (compaction !== undefined) {
+    await recordCompactionLine(ctx, object.id, chat.harness, compaction, compactAsked);
+    await recordCompacted(ctx, object.id, stillFull(compaction.after ?? replyContext?.used, window));
+  }
 
   // The chat's own reference follows; read again, so a change made meanwhile stays.
   await syncChat(ctx, object.id, sessionId, live.context === undefined ? undefined : live.cwd);
