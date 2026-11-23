@@ -274,7 +274,7 @@ export default definePlugin({
   name: "cron",
   kind: "source",
   version: pkg.version,
-  commands: [scheduledCommand(), scheduledCommand({ name: "scheduled" })],
+  commands: [scheduledCommand()],
   start(ctx) {
     const source = new CronSource(ctx);
     void source.poll();

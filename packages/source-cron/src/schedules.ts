@@ -346,17 +346,13 @@ function oneId(parsed: ParsedArgs): string {
   return id;
 }
 
-/**
- * The `routines` command: list, add, edit, pause, resume and remove. The old
- * name `scheduled` is the same command (`name` given), kept for clients that
- * still send it.
- */
+/** The `routines` command: list, add, edit, pause, resume and remove. */
 export function scheduledCommand(
-  options: { readonly now?: (() => number) | undefined; readonly name?: string | undefined } = {},
+  options: { readonly now?: (() => number) | undefined } = {},
 ): CommandDefinition {
   const now = options.now ?? Date.now;
   return {
-    name: options.name ?? "routines",
+    name: "routines",
     args: "list [--json] | add --flow <flow> --schedule <expression> [--params <json>] [--object <id>] [--mode <mode>] | edit <id> [--flow <flow>] [--schedule <expression>] [--params <json>] [--object <id>] [--mode <mode>] | pause <id> | resume <id> | remove <id>",
     async run(ctx, argv) {
       const [sub, ...rest] = argv;

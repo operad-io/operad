@@ -10,7 +10,8 @@ the same version.
 ### Changed
 
 - Scheduled flows are Routines too: `operad routines list|add|edit|pause|resume|remove`
-  is the command for them, and its output says "routine". Config keys such as
+  is the command for them, and its output says "routine". `operad scheduled`
+  is removed; there is no alias. Config keys such as
   `schedule` and the cron source's ids are unchanged.
 - Scheduled prompts are now Routines (Chinese 定时任务): each is an object of its
   own under its bot, with a row (name, bot, next run, last result) and a page

@@ -112,22 +112,18 @@ describe("operad routines", () => {
     expect(cleared?.params).toBeUndefined();
   });
 
-  test("the old name scheduled is the same command", async () => {
+  test("the old name scheduled is gone, with no alias", async () => {
     const home = await makeScheduledHome();
-    const empty = capture();
-    expect(await main(["scheduled", "list"], { home, io: empty.io })).toBe(0);
-    expect(empty.text()).toContain("no routines");
-    expect(
-      await main(["scheduled", "add", "--flow", "plugin-one", "--schedule", "0 8 * * *"], {
-        home,
-        io: capture().io,
-      }),
-    ).toBe(0);
-    const listed = capture();
-    expect(await main(["routines", "list", "--json"], { home, io: listed.io })).toBe(0);
-    expect(JSON.parse(listed.text())).toHaveLength(1);
+    const short = capture();
+    expect(await main(["scheduled", "list"], { home, io: short.io })).toBe(2);
+    expect(short.errors()).toContain('unknown command "scheduled"');
     const viaPlugin = capture();
-    expect(await main(["cron", "scheduled", "list", "--json"], { home, io: viaPlugin.io })).toBe(0);
-    expect(JSON.parse(viaPlugin.text())).toHaveLength(1);
+    expect(await main(["cron", "scheduled", "list"], { home, io: viaPlugin.io })).toBe(2);
+    const empty = capture();
+    expect(await main(["routines", "list"], { home, io: empty.io })).toBe(0);
+    expect(empty.text()).toContain("no routines");
+    const listed = capture();
+    expect(await main(["cron", "routines", "list", "--json"], { home, io: listed.io })).toBe(0);
+    expect(JSON.parse(listed.text())).toEqual([]);
   });
 });
