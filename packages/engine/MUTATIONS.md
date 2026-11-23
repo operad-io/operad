@@ -1446,3 +1446,8 @@ resume window`. Rows are append-only, so the old lines stay as history.
 |---|---|---|---|
 | T-0762-flaky-log-backend-sqlite-two-processes-racing-st-M1 | `packages/engine/src/platform/sqlite-open.ts` | `waitForWriter` used a plain immediate transaction again, so one busy timeout ended the wait even while the other writer kept committing | `switching to WAL keeps waiting while the other writer keeps committing` |
 | T-0781-M1 | packages/engine/src/views/presentation.ts | the plain list (the `all` filter) kept rows in an unlisted state | `a run record is in no list > not in open, closed or all, in the tree, and still read by its id` |
+| T-0784-M1 | packages/engine/src/plugin/registry.ts | `flow(name)` no longer looked in the flows of the home, so a routine or run could not find `home:<file>` | `a flow file of the home loads as home:<file> and can call a plugin's step` |
+| T-0784-M2 | packages/engine/src/plugin/home-flows.ts | a file that did not load ended the whole read instead of being refused alone | `a bad file is refused with its name and the other files still load` |
+| T-0784-M3 | packages/engine/src/loop/code-watch.ts | the home's flows directory was left out of the code roots, so `serve` did not reload on a change to it | `the flows directory is code a process watches` |
+| T-0784-M4 | packages/engine/src/plugin/context.ts | a refused flow file went to the load problems, which keep older code on reload | `flows in the home > a refused file is not a load problem that keeps older code` (cli) |
+| T-0784-M5 | packages/engine/src/plugin/registry.ts | a read again did not clear the earlier flows first, so each file clashed with itself | `a read again after a change takes up the new files and drops the removed ones` |
