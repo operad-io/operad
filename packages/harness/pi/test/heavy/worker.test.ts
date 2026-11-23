@@ -2201,6 +2201,106 @@ test("parseInput refuses a compact share outside (0, 1]", () => {
   expect(parseInput({ ...base, compact: { at: 0.5, flush: 3 } }).ok).toBe(false);
 });
 
+// Pruning old tool results (T-0767). Four turns each print 30,000 characters;
+// the clock moves FAKE_PRUNE_CLOCK_STEP ms at every reading, so that is the gap
+// the context hook sees before a model call, and 300,000 ms is the default
+// cache lifetime.
+const BIG_OUTPUT = "head -c 30000 /dev/zero | tr '\\0' x";
+const FOUR_BIG_TURNS: unknown[] = [
+  ...[1, 2, 3, 4].map(() => ({ text: "", toolCall: { name: "bash", arguments: { command: BIG_OUTPUT } } })),
+  { text: "done" },
+];
+
+// The messages of the last model call, as the fake model received them.
+function lastCallMessages(file: string): Array<{ role: string; content: unknown }> {
+  const calls = readFileSync(file, "utf8").split("\n").filter((line) => line.length > 0);
+  return JSON.parse(calls.at(-1) ?? "[]") as Array<{ role: string; content: unknown }>;
+}
+
+function resultTexts(messages: Array<{ role: string; content: unknown }>): string[] {
+  return messages
+    .filter((message) => message.role === "toolResult")
+    .map((message) => JSON.stringify(message.content));
+}
+
+test("after the cache lifetime, old tool results reach the model as a placeholder and the session keeps them", async () => {
+  const s = setup();
+  const contexts = join(s.dir, "contexts.jsonl");
+  const run = await runFake(s, FOUR_BIG_TURNS, s.input, { FAKE_CONTEXT_FILE: contexts, FAKE_PRUNE_CLOCK_STEP: "400000" });
+  expect(last(run)["result"]).toBe("done");
+  const results = resultTexts(lastCallMessages(contexts));
+  expect(results).toHaveLength(4);
+  // Only the first result is before the last three assistant turns.
+  expect(results[0]).toContain("[bash result removed from the context");
+  expect(results[0]).not.toContain("xxxxxxxxxx");
+  for (const kept of results.slice(1)) expect(kept).toContain("xxxxxxxxxx");
+  expect(run.stderr).toContain("pruned 1 old tool results");
+  // What the person sees is unchanged: the session file holds every result whole.
+  const sessionFile = String(last(run)["sessionId"]);
+  expect(readFileSync(sessionFile, "utf8").match(/x{30000}/g)).toHaveLength(4);
+});
+
+test("before the cache lifetime nothing is pruned", async () => {
+  const s = setup();
+  const contexts = join(s.dir, "contexts.jsonl");
+  const run = await runFake(s, FOUR_BIG_TURNS, s.input, { FAKE_CONTEXT_FILE: contexts, FAKE_PRUNE_CLOCK_STEP: "1000" });
+  expect(last(run)["result"]).toBe("done");
+  for (const text of resultTexts(lastCallMessages(contexts))) expect(text).toContain("xxxxxxxxxx");
+  expect(run.stderr).not.toContain("pruned");
+});
+
+test("below the minimum savings nothing is pruned even after the cache lifetime", async () => {
+  const s = setup();
+  const contexts = join(s.dir, "contexts.jsonl");
+  const run = await runFake(s, FOUR_BIG_TURNS, { ...s.input, prune: { minChars: 40_000 } }, {
+    FAKE_CONTEXT_FILE: contexts,
+    FAKE_PRUNE_CLOCK_STEP: "400000",
+  });
+  expect(last(run)["result"]).toBe("done");
+  for (const text of resultTexts(lastCallMessages(contexts))) expect(text).toContain("xxxxxxxxxx");
+});
+
+test("prune.cacheSecs sets the cache lifetime", async () => {
+  const s = setup();
+  const contexts = join(s.dir, "contexts.jsonl");
+  const run = await runFake(s, FOUR_BIG_TURNS, { ...s.input, prune: { cacheSecs: 100_000 } }, {
+    FAKE_CONTEXT_FILE: contexts,
+    FAKE_PRUNE_CLOCK_STEP: "400000",
+  });
+  expect(last(run)["result"]).toBe("done");
+  for (const text of resultTexts(lastCallMessages(contexts))) expect(text).toContain("xxxxxxxxxx");
+});
+
+test("parseInput checks the prune overrides", () => {
+  const base = { prompt: "p", cwd: "/c", authPath: "/a", modelsPath: "/m", agentDir: "/d", sessionDir: "/s" };
+  expect(parseInput({ ...base, prune: { cacheSecs: 60, keepTurns: 2, minChars: 0 } }).ok).toBe(true);
+  expect(parseInput({ ...base, prune: { keepTurns: 0 } }).ok).toBe(false);
+  expect(parseInput({ ...base, prune: { keepTurns: 1.5 } }).ok).toBe(false);
+  expect(parseInput({ ...base, prune: { minChars: -1 } }).ok).toBe(false);
+  expect(parseInput({ ...base, prune: { cacheSecs: "5" } }).ok).toBe(false);
+  expect(parseInput({ ...base, prune: 3 }).ok).toBe(false);
+});
+
+test("a resumed session is pruned by the time of its last message, not by a fresh process", async () => {
+  const s = setup();
+  const first = await runFake(s, FOUR_BIG_TURNS);
+  expect(last(first)["result"]).toBe("done");
+  const resume = { ...s.input, prompt: "again", resumeSession: last(first)["sessionId"] };
+  const contexts = join(s.dir, "contexts.jsonl");
+  // The clock of the second process starts an hour after the first turns.
+  const hourLater = String(Date.now() + 3_600_000);
+  const second = await runFake(s, [{ text: "x" }], resume, { FAKE_CONTEXT_FILE: contexts, FAKE_PRUNE_CLOCK_BASE: hourLater });
+  expect(last(second)["result"]).toBe("done");
+  expect(second.stderr).toContain("pruned 2 old tool results");
+  const results = resultTexts(lastCallMessages(contexts));
+  expect(results[0]).toContain("[bash result removed from the context");
+  expect(results[1]).toContain("[bash result removed from the context");
+  expect(results[2]).toContain("xxxxxxxxxx");
+  // A second process right after the first finds a live cache.
+  const soon = await runFake(s, [{ text: "x" }], resume, { FAKE_PRUNE_CLOCK_BASE: String(Date.now() + 1000) });
+  expect(soon.stderr).not.toContain("pruned");
+});
+
 test("the compaction's summary keeps the lists of files the session read and modified", async () => {
   const s = setup();
   const readPath = join(s.input["cwd"] as string, "notes-read.txt");
