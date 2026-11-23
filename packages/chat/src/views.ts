@@ -600,16 +600,19 @@ function jsonBytes(value: unknown): number {
  * The transcript's data, cut to fit its budget: tool output text first, then
  * the other reply text, and at last the oldest reply blocks. A read that still
  * did not fit would be refused, so this always answers within the budget.
+ * Every reply is measured once and a running total is kept, so the work is
+ * linear in the size of the page; `measure` is a seam for tests.
  */
-function replyData(
+export function replyData(
   replies: readonly ReplyBlock[],
   maxBytes: number,
   base: Readonly<Record<string, JsonValue>> = {},
+  measure: (value: unknown) => number = jsonBytes,
 ): Readonly<Record<string, JsonValue>> {
   const data = (shown: readonly ReplyBlock[], extra: Readonly<Record<string, JsonValue>> = base) =>
     ({ ...extra, replies: shown }) as unknown as Readonly<Record<string, JsonValue>>;
   const whole = data(replies);
-  if (jsonBytes(whole) <= maxBytes) return whole;
+  if (measure(whole) <= maxBytes) return whole;
   // A tool's output is the largest part and the least useful to a structured
   // client, so it goes first, keeping its line count and `truncated`.
   const blanked = replies.map((reply) => ({
@@ -625,7 +628,13 @@ function replyData(
       }),
     })),
   }));
-  if (jsonBytes(data(blanked)) <= maxBytes) return data(blanked);
+  // The page's size is the wrapper (the base and an empty list), each reply,
+  // and the commas between replies; each part is measured once.
+  const overhead = measure(data([]));
+  const sizes = blanked.map((reply) => measure(reply));
+  let sum = sizes.reduce((total, size) => total + size, 0);
+  const sizeOf = (count: number, inner: number): number => overhead + inner + Math.max(0, count - 1);
+  if (sizeOf(blanked.length, sum) <= maxBytes) return data(blanked);
   // Thinking, text, input and answer text are shortened next, the oldest reply
   // first and whole reply by whole reply: a reply is cut only when every older
   // one is already at the smallest cap, so the newest stays whole the longest.
@@ -634,20 +643,23 @@ function replyData(
     const original = blanked[at];
     if (original === undefined) continue;
     for (const cap of [512, 128, 32, 0]) {
-      cuts[at] = cutReply(original, cap);
-      if (jsonBytes(data(cuts)) <= maxBytes) return data(cuts);
+      const cut = cutReply(original, cap);
+      const size = measure(cut);
+      sum += size - (sizes[at] ?? 0);
+      sizes[at] = size;
+      cuts[at] = cut;
+      if (sizeOf(cuts.length, sum) <= maxBytes) return data(cuts);
     }
   }
   // Even empty text leaves too much structure: the oldest replies go.
   for (let drop = 1; drop <= cuts.length; drop += 1) {
-    const kept = cuts.slice(drop);
-    if (jsonBytes(data(kept)) <= maxBytes) return data(kept);
+    sum -= sizes[drop - 1] ?? 0;
+    if (sizeOf(cuts.length - drop, sum) <= maxBytes) return data(cuts.slice(drop));
   }
-  const empty = data([]);
-  if (jsonBytes(empty) <= maxBytes) return empty;
   // The base is the only thing left; it is small in every caller but is cut
   // last rather than letting the read be refused.
-  return (jsonBytes({ replies: [] }) <= maxBytes ? { replies: [] } : {}) as Readonly<Record<string, JsonValue>>;
+  if (overhead <= maxBytes) return data([]);
+  return (measure({ replies: [] }) <= maxBytes ? { replies: [] } : {}) as Readonly<Record<string, JsonValue>>;
 }
 
 /** Text cut to fit a byte budget, ending with an ellipsis when it was longer. */

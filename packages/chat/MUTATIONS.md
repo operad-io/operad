@@ -627,3 +627,9 @@ are append-only, so the old lines stay as history.
 |---|---|---|---|
 | T-0758-M1 | packages/chat/src/views.ts | `replyData` cut every reply on the page by the same cap again, newest first-equal with the oldest | `a page over the size cap cuts the oldest replies first > the newest replies stay whole, older ones are cut and marked, and the whole read has every text` |
 | T-0758-M2 | packages/chat/src/views.ts | a shortened answer text was not marked `cut` | the same test |
+
+## T-0758 rework — a linear `replyData`
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0758-M3 | packages/chat/src/views.ts | the running total added a cut reply's new size without subtracting its old size | `replyData over its budget > the incremental total equals the real size: the result is the first fit, within one reply of the budget` (also the cut-mark and linear tests, in `reply-data.test.ts`) |
