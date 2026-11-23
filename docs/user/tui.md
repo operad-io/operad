@@ -9,8 +9,10 @@ description: The terminal client: themes, live updates, states and leaving.
 terminal, no token. It never opens the store and never loads a plugin.
 
 `operad` with no command is the short way in: it creates the home when it has
-none, starts `serve` when none answers, and opens the default bot's new chat
-with the cursor in its input. The first message creates the chat.
+none, starts `serve` when none answers, and opens the default bot's main chat: the chat bound to
+Telegram when there is one, else the latest open chat. With no open chat it
+opens a new chat with the cursor in its input, and the first message creates it.
+To start another chat, use `bot:chat` on the bot.
 
 ## Why it exists
 
