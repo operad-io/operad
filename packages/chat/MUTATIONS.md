@@ -639,3 +639,13 @@ are append-only, so the old lines stay as history.
 | id | file | mutation | caught by |
 |---|---|---|---|
 | T-0759-M1 | packages/chat/src/views.ts | a shortened tool input was not marked `cut` | `replyData over its budget > a cut reply marks its thinking, text, tool input and input message, and the newest stays whole` (and the older tool-input test) |
+
+## T-0761 — reply previews
+
+| id | file | mutation | caught by |
+|---|---|---|---|
+| T-0761-M1 | packages/chat/src/views.ts | the first pass already cut answers to the preview | `older replies keep a non-empty answer preview while their thinking and tool input are emptied first` |
+| T-0761-M2 | packages/chat/src/views.ts | the first pass cut input messages below the preview | the same test, and `the preview floor is broken only when nothing else is left` |
+| T-0761-M3 | packages/chat/src/views.ts | no line-end preference in `shorten` | `the preview cuts at a line end when one is near and never inside a code point` |
+| T-0761-M4 | packages/chat/src/views.ts | no guard against ending on a lone high surrogate | the same test |
+| T-0761-M5 | packages/chat/src/views.ts | the second pass cut answers to 64 bytes, under the preview | the line-end test and `the preview floor is broken only when nothing else is left` |

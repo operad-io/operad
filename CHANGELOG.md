@@ -7,6 +7,12 @@ the same version.
 
 ## [Unreleased]
 
+### Fixed
+
+- In a long chat, the oldest replies are no longer cut to nothing: each keeps the
+  first two lines of its answer, and the thinking, tool input and other text
+  are shortened first.
+
 ## [0.3.0] - 2026-11-23
 
 The release lets `dev` work in a folder without git until the first task, adds

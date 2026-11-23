@@ -164,11 +164,16 @@ keeping its line count and setting `truncated`; only then is `markdown`
 shortened. When even the tail, data and the truncation note do not fit, the call
 is a `400` naming `--full`. A read with `full=true` leaves the data whole.
 
-When `data.replies` is over its share of the cap, a chat shortens the free text
-(thinking, text, tool input, input and answer) of the oldest reply first and
-goes on reply by reply towards the newest; a reply is touched only after every
-older one is at the smallest size, so the newest reply, and a running one, stay
-whole the longest. Every text that was shortened carries `"cut": true` on its
+When `data.replies` is over its share of the cap, a chat shortens in three
+passes, each the oldest reply first and going on reply by reply towards the
+newest. First everything that is not an answer: thinking, text, tool input and
+the input messages (an input message keeps a preview of about 200 bytes).
+Then answers, oldest first, down to a preview of about 200 bytes (two lines)
+cut at a line or sentence end when one is near and never inside a character,
+ending with `…`. Only when every reply is at that preview and the page is still
+over its share does a chat go below it, and then drop the oldest replies, so
+every older reply keeps the start of its answer for as long as possible and the
+newest reply, and a running one, stay whole the longest. Every text that was shortened carries `"cut": true` on its
 block or item (an input or answer message, a thinking or text item, a tool item
 for its `input`). To read a cut reply whole, read the same page again with
 `full=true` (same `cursor`, or none for the first page; a reply cut in an
