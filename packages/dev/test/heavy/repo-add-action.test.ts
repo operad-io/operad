@@ -129,10 +129,13 @@ describe("registering a repository through dev:repo-add over HTTP", () => {
     });
   });
 
-  test("a directory that is not a git work tree is refused in the command's words", async () => {
+  test("a subfolder of a git work tree is refused in the command's words, naming the root", async () => {
     await withRig(async (rig) => {
       const root = await osTempRoot();
-      const plain = join(root, "plain");
+      const top = join(root, "top");
+      mkdirSync(top, { recursive: true });
+      Bun.spawnSync({ cmd: ["git", "init", "-q", top] });
+      const plain = join(top, "plain");
       mkdirSync(plain, { recursive: true });
       const refused = await rig.act({
         action: "dev:repo-add",
@@ -141,7 +144,7 @@ describe("registering a repository through dev:repo-add over HTTP", () => {
       });
       expect(refused.status).toBe(422);
       expect(await message(refused)).toContain(
-        `"${plain}" is not a git work tree`,
+        `"${plain}" is inside the git repository at`,
       );
       expect(await rig.rows()).toEqual([]);
     });

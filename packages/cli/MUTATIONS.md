@@ -424,3 +424,9 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 |---|---|---|---|
 | T-0741-M1 | packages/cli/src/serve-stop.ts | `serve stop` ignored the supervisor file and signalled only the lock holder, so a stop during a reload signalled nothing and the supervisor started the next serve | `operad serve stop > a stop while a reload is in flight leaves no serve: the supervisor does not start the next one` |
 | T-0749-M1 | packages/cli/src/serve-stop.ts | the supervisor record was trusted without checking its pid still runs a serve, so a reused pid was taken as the supervisor | `operad serve stop > a supervisor record whose pid is now another process is dropped, not signalled` |
+
+## T-0730 — doctor says git is not installed
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0730-M1 | packages/cli/src/doctor.ts | the git line was added when git is installed instead of when it is not | `operad doctor > git not installed is an ok line with a note, and an installed git adds no line` |

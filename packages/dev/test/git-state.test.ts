@@ -1,5 +1,6 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import {
+  chmodSync,
   mkdirSync,
   mkdtempSync,
   realpathSync,
@@ -10,7 +11,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { realGitFinderHost } from "@operad-io/engine/platform";
-import { gitStateOf } from "../src/git-state.ts";
+import { GitStateError, gitStateOf } from "../src/git-state.ts";
 
 const scratch = realpathSync(mkdtempSync(join(tmpdir(), "git-state-")));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
@@ -69,6 +70,21 @@ describe("gitStateOf", () => {
     const file = join(scratch, "plain-file");
     writeFileSync(file, "x");
     expect(() => state(file)).toThrow("not a folder");
+  });
+
+  test("a folder git refuses is an error with git's message, not no repository", () => {
+    const dir = folder();
+    const bin = join(scratch, `refusing-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(bin);
+    const real = Bun.which("git");
+    writeFileSync(
+      join(bin, "git"),
+      `#!/bin/sh\ncase "$*" in *"rev-parse --show-toplevel"*) echo 'fatal: detected dubious ownership in repository at /x' >&2; exit 128;; esac\nexec '${real}' "$@"\n`,
+    );
+    chmodSync(join(bin, "git"), 0o755);
+    const env = { ...WITH_IDENTITY, PATH: `${bin}:${WITH_IDENTITY.PATH ?? ""}` };
+    expect(() => state(dir, env)).toThrow(/dubious ownership/);
+    expect(() => state(dir, env)).toThrow(GitStateError);
   });
 
   test("no repository", () => {

@@ -48,6 +48,14 @@ describe("operad doctor", () => {
     );
   });
 
+  test("git not installed is an ok line with a note, and an installed git adds no line", async () => {
+    const without = await runDoctor(healthy({ gitInstalled: () => false }));
+    expect(without.ok).toBe(true);
+    expect(formatDoctor(without)).toContain("ok       git is not installed: chat works without it, and a task needs it\n");
+    const installed = await runDoctor(healthy({ gitInstalled: () => true }));
+    expect(installed.checks.some((check) => check.id === "git")).toBe(false);
+  });
+
   test("dev on with pool off: the setup problem ends with the command to type", async () => {
     const prompt =
       "plugin pool is not loaded and dev runs its workers through it: run `operad plugin enable pool` and restart serve";

@@ -454,3 +454,11 @@ changes for bots, in the order they were recorded. The root
 |---|---|---|---|
 | T-0755-M1 | packages/bot/src/index.ts | Setup Dev sent the prompt as the message's visible text again, with no hidden instruction | `Setup Dev > the action opens a chat that shows its title and gives the agent the prepared prompt` |
 | T-0755-M2 | packages/bot/src/index.ts | the Setup <plugin> action sent the guide as the visible text again | `Setup <plugin> (ADR 0010 D7) > the action opens a chat titled Setup and the name that shows the title and gives the agent the guide` |
+
+## T-0730 — Setup Dev for a folder without git
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0730-M1 | packages/bot/src/setup-dev.ts | a subfolder of a repository was accepted | `Setup Dev > it refuses a subfolder of a repository naming the root, text that is not a JSON object and a registered repository` |
+| T-0730-M2 | packages/bot/src/setup-dev.ts | the proposal for a folder with no repository kept the text's `workIn` | `Setup Dev without git > a folder with no git is proposed, and the file written works in place with no remote` |
+| T-0730-M3 | packages/bot/src/setup-dev.ts | a folder git refused was taken for one with no repository | `Setup Dev without git > a repository git refuses is refused with git's message, not set up as a folder` |

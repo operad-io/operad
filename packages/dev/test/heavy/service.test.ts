@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, readFileSync } from "node:fs";
-import { join } from "node:path";
+import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { delimiter, join } from "node:path";
+import { realGitFinderHost } from "@operad-io/engine/platform";
 import { addPlan, addRepository, addTask, cancelPlan, cancelTask, confirmPlan, confirmTask, devTestHooks, editTaskBrief, findRepository, getPlan, getTask, listRepositories, removeRepository, resolveRepository, setAuto, setPriority, updateTask } from "../../src/service.ts";
 import { idOfKey, briefBody, listAll, repositoryData, storeKey, taskData, type RepositoryData } from "../../src/model.ts";
 import { cleanupTempRoots, guardLockHandles, makeGitRepository, storeAt, tempRoot, setTaskPhase, addRework, changesBody } from "../support.ts";
@@ -68,17 +69,44 @@ describe("dev repositories", () => {
     expect(await listRepositories(store)).toHaveLength(0);
   });
 
-  test("add refuses a directory that is not a git work tree", async () => {
+  test("a folder with no git is added as it is, working in place with no remote", async () => {
     const { root, store } = await setup();
     const plain = join(root, "plain");
     Bun.spawnSync({ cmd: ["mkdir", "-p", plain] });
-    await expect(
-      addRepository(store, { path: plain }),
-    ).rejects.toThrow(/git work tree/);
+    const data = await addRepository(store, { path: plain });
+    expect(data.name).toBe("plain");
+    expect(await findRepository(store, "plain")).toBeDefined();
+    const written = JSON.parse(readFileSync(join(plain, ".operad", "dev.json"), "utf8")) as Record<string, unknown>;
+    expect(written.workIn).toBe("branch");
+    expect("remote" in written).toBe(false);
+    // Nothing made it a repository.
+    expect(existsSync(join(plain, ".git"))).toBe(false);
+  });
 
-    // A refused add writes nothing: no registration and no settings file.
-    expect(await findRepository(store, "plain")).toBeUndefined();
-    expect(existsSync(join(plain, ".operad", "dev.json"))).toBe(false);
+  test("with no git program a folder is added too, and git is not run", async () => {
+    const { root, store } = await setup();
+    const repo = join(root, "no-program");
+    Bun.spawnSync({ cmd: ["git", "init", "-q", repo] });
+    await addRepository(store, {
+      path: repo,
+      finder: { ...realGitFinderHost(), platform: "linux", env: { PATH: "" }, which: () => null },
+    });
+    const written = JSON.parse(readFileSync(join(repo, ".operad", "dev.json"), "utf8")) as Record<string, unknown>;
+    expect(written.workIn).toBe("branch");
+    expect(readFileSync(join(repo, ".git", "info", "exclude"), "utf8")).not.toContain(".operad-worktrees/");
+  });
+
+  test("a subfolder of a repository is refused, naming the root", async () => {
+    const { root, store } = await setup();
+    const top = join(root, "top");
+    Bun.spawnSync({ cmd: ["git", "init", "-q", top] });
+    const sub = join(top, "sub");
+    Bun.spawnSync({ cmd: ["mkdir", "-p", sub] });
+    await expect(addRepository(store, { path: sub })).rejects.toThrow(
+      new RegExp(`inside the git repository at "[^"]*top"; add "[^"]*top" instead`),
+    );
+    expect(await findRepository(store, "sub")).toBeUndefined();
+    expect(existsSync(join(sub, ".operad", "dev.json"))).toBe(false);
   });
 
   test("a work tree with no remote is added, and its settings name no remote", async () => {
@@ -659,6 +687,35 @@ describe("dev per-repository ids", () => {
   });
 });
 
+/** A `git` first on PATH that refuses `rev-parse --show-toplevel` as git does for a repository owned by someone else. */
+function refusingGit(root: string): { restore(): void } {
+  const real = Bun.which("git");
+  if (real === undefined) throw new Error("git is not on PATH");
+  const bin = join(root, `refusing-git-${Math.random().toString(36).slice(2)}`);
+  mkdirSync(bin, { recursive: true });
+  writeFileSync(
+    join(bin, "git"),
+    [
+      "#!/bin/sh",
+      'case "$*" in *"rev-parse --show-toplevel"*)',
+      "  echo 'fatal: detected dubious ownership in repository at /somewhere' >&2",
+      "  exit 128;;",
+      "esac",
+      `exec '${real}' "$@"`,
+      "",
+    ].join("\n"),
+  );
+  chmodSync(join(bin, "git"), 0o755);
+  const previous = process.env.PATH;
+  process.env.PATH = `${bin}${delimiter}${previous ?? ""}`;
+  return {
+    restore() {
+      if (previous === undefined) delete process.env.PATH;
+      else process.env.PATH = previous;
+    },
+  };
+}
+
 describe("git that succeeds without printing", () => {
   test("repo add runs a query again when git exits 0 and prints nothing", async () => {
     const root = await tempRoot();
@@ -684,8 +741,46 @@ describe("git that succeeds without printing", () => {
         /is not a git work tree: .*output was empty/,
       );
       expect(stub.calls()).toBe(5);
+      expect(await findRepository(store, "mute")).toBeUndefined();
+      expect(existsSync(join(path, ".operad", "dev.json"))).toBe(false);
     } finally {
       stub.restore();
+    }
+  });
+
+  test("a repository git refuses (dubious ownership) is refused with git's message, not added as a folder", async () => {
+    const root = await tempRoot();
+    const path = await makeGitRepository(root, "dubious");
+    const store = storeAt(root);
+    const stub = refusingGit(root);
+    try {
+      await expect(addRepository(store, { path })).rejects.toThrow(
+        /is not a git work tree: fatal: detected dubious ownership in repository/,
+      );
+      expect(await findRepository(store, "dubious")).toBeUndefined();
+      expect(existsSync(join(path, ".operad", "dev.json"))).toBe(false);
+    } finally {
+      stub.restore();
+    }
+  });
+
+  test("git's message in another language is still read as no repository", async () => {
+    const root = await tempRoot();
+    const plain = join(root, "plain-lang");
+    mkdirSync(plain);
+    const store = storeAt(root);
+    const previous = { LANG: process.env.LANG, LC_ALL: process.env.LC_ALL, LANGUAGE: process.env.LANGUAGE };
+    process.env.LANG = "de_DE.UTF-8";
+    process.env.LC_ALL = "de_DE.UTF-8";
+    process.env.LANGUAGE = "de";
+    try {
+      await addRepository(store, { path: plain });
+      expect(await findRepository(store, "plain-lang")).toBeDefined();
+    } finally {
+      for (const [key, value] of Object.entries(previous)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
     }
   });
 

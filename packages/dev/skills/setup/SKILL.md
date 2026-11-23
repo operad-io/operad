@@ -12,9 +12,12 @@ to you in.
 Reference, if you need a key's details: https://operad.io/docs/dev/ (the full key table)
 and https://operad.io/llms.txt.
 
-1. Look at the repository. Run `git remote -v` and find the main branch name in {target}.
-   A repository with no git remote is fine: leave `remote` out of the file. Check which agents
-   are on PATH: `claude`, `pi`, `radian`. When none is, operad's own pi is the agent.
+1. Look at the folder. If {target} has a `.git` entry, run `git remote -v` and find the
+   main branch name there. A folder with no git, a machine without the git program, and a
+   repository with no git remote are all fine: do not run `git` in a folder that is not a
+   repository, do not ask me about git, and leave `remote` out of the file. If {target} is
+   inside another git repository, tell me that repository's folder and stop. Check which
+   agents are on PATH: `claude`, `pi`, `radian`. When none is, operad's own pi is the agent.
 
 2. Find this repo's checks. Read CI config (.github/workflows, .gitlab-ci.yml, ...), the
    Makefile, package.json scripts, pyproject, Cargo.toml or whatever applies. Choose the
@@ -27,7 +30,8 @@ and https://operad.io/llms.txt.
    are not there. Put the install step in `prepare` (for example
    `bun install --frozen-lockfile` or `npm ci`), only if the repo needs one.
 
-4. Ask me which way to work, before you write the file. Say it in my language and in plain
+4. Ask me which way to work, before you write the file. Skip this question when {target} is
+   not a git repository: choose the first way without asking. Say it in my language and in plain
    words, about what changes for me; do not use the words clone, worktree or concurrency, and
    do not ask me to know them. Offer two ways:
    - In my folder: the agent makes a new branch in this folder and works there, one thing at
