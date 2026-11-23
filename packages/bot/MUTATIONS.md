@@ -499,3 +499,5 @@ changes for bots, in the order they were recorded. The root
 | T-0770-M2 | packages/bot/src/delivery.ts | the delivery's summary was the whole result | `a routine's result reaches the bot's main chat > what rides on the main chat's next message is the summary, not the whole result` |
 | T-0770-M3 | packages/bot/src/schedule.ts | a failed run was not delivered | `a routine's result reaches the bot's main chat > a failure is always delivered, as failed` |
 | T-0781-M4 | packages/bot/src/tidy.ts | the tidy launch did not make the instructions read-only | `Run and Skip > Run starts the tidy after no chat is replying and leaves no pending item when it finishes` |
+| T-0786-M1 | packages/bot/src/schedule.ts | `forgetRuns` removed nothing, so a dropped run kept its record | `routine history > runs older than 30 days are removed; the last results on the routine stay` |
+| T-0786-M2 | packages/bot/src/schedule.ts | `droppedRuns` also named runs inside the 30 days | `routine history > a run that withRun drops has no record either; a newer one is untouched` |
