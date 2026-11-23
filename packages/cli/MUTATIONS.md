@@ -436,3 +436,9 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0787-M7 | packages/cli/src/serve-close.ts | the serve context closed the stores without draining the views first, so standing work in flight met a closed store | `a serve context waits for standing work in flight before it closes the stores` |
+
+## T-0791 — serve closes its context through one function
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0791-M2 | packages/cli/src/main.ts | serve closed the plugin store inline instead of calling `closeServeContext` | `serve ends its context through closeServeContext, not an inline close` |

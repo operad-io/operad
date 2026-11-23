@@ -1,4 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   MemoryPluginStore,
@@ -53,4 +54,10 @@ test("a serve context waits for standing work in flight before it closes the sto
   expect(storeClosed).toBe(true);
   expect(await pending).toMatchObject([{ runId: "bot:ready" }]);
   expect(logs).toEqual([]);
+});
+
+test("serve ends its context through closeServeContext, not an inline close (T-0791)", () => {
+  const source = readFileSync(join(import.meta.dir, "..", "src", "main.ts"), "utf8");
+  expect(source).toContain("await closeServeContext(context, closePluginStore);");
+  expect(source).not.toMatch(/closePluginStore\(\s*context\.registry\.store\s*\)/);
 });

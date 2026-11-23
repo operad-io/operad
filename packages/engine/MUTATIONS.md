@@ -1460,3 +1460,9 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0787-M4 | packages/engine/src/views/presentation.ts | the drain did not wait for resolves in flight | `a resolve in flight is waited for, and a late one is dropped without a log line` |
 | T-0787-M5 | packages/engine/src/http/server.ts | stop did not wait for requests in flight | `a stop waits for a request in flight, and a request that meets the closed store is answered, not logged` |
 | T-0787-M6 | packages/engine/src/http/server.ts | a request that met the closed store was logged as a failure | `a stop waits for a request in flight, and a request that meets the closed store is answered, not logged` |
+
+## T-0791 — a late standing failure keeps the items already read
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0791-M1 | packages/engine/src/plugin/registry.ts | a standing failure after the drain returned an empty list again | `a late failure keeps the items earlier plugins already gave` |
