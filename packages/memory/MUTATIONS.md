@@ -202,3 +202,6 @@ the row fields.
 | T-0776-M7 | packages/memory/src/cases/propose.ts | the correction pattern matched `no` without a boundary, so "Nothing else" was a correction | `proposing cases from the chat record > a correction is found with its question and context; thanks is not one` |
 | T-0776-M8 | packages/memory/src/cases/score.ts | `programAnswerer` ignored the program's exit code | `running the set > a program that fails stops the run` |
 | T-0776-M9 | packages/memory/src/cases/propose.ts | approving an already approved proposal wrote the case again instead of refusing | `proposing cases from the chat record > approving with phrases writes a case the runner can load; the item leaves pending` |
+
+| T-0781-M2 | packages/memory/src/search/service.ts | a run record was indexed as a chat | `the full-text index > the record of a routine's run is not a chat hit` |
+| T-0781-M3 | packages/memory/src/commit.ts | a tidy run's commit did not put the instructions back | `a tidy run never changes the instructions > an edit, a rewrite after a mode change and a delete are all put back before the commit` |

@@ -438,8 +438,17 @@ function normalizeObjects(
 
     const filters = normalizeFilters(entry.filters, `${at}[${index}]: filters`);
 
+    const unlisted = entry.unlistedStates;
+    if (
+      unlisted !== undefined &&
+      (!Array.isArray(unlisted) || unlisted.some((state) => typeof state !== "string" || state.length === 0))
+    ) {
+      throw new PluginError(`${at}[${index}]: unlistedStates: must be an array of state names`);
+    }
+
     objects.push({
       name,
+      ...(unlisted === undefined ? {} : { unlistedStates: unlisted as readonly string[] }),
       ...(entry.answeredAutomatically === undefined
         ? {}
         : {

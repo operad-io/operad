@@ -717,3 +717,4 @@ are append-only, so the old lines stay as history.
 | T-0770-M4 | packages/chat/src/model.ts | a delivery was carried again after a reply had seen it | `a delivered result > rides on the next message as its summary, not its whole text, and only once` |
 | T-0770-M5 | packages/chat/src/reply.ts | the prompt left out the delivered results | `a delivered result > rides on the next message as its summary, not its whole text, and only once` and `a failed run says so in the header and the carried line` |
 | T-0770-M6 | packages/chat/src/deliver.ts | a delivery of one run was recorded twice | `a delivered result > is recorded once for one run` |
+| T-0781-M5 | packages/chat/src/index.ts | the chat type declared no unlisted state, so a run record showed in `all` | `a run record is in no list > not in open, closed or all, in the tree, and still read by its id` |

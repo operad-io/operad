@@ -867,6 +867,11 @@ export class Views {
     this.lastRunEnds.clear();
   }
 
+  /** True when a row of this type in this state is in no list. */
+  private unlisted(type: string, state: string): boolean {
+    return this.registry.objectType(type)?.unlistedStates?.includes(state) === true;
+  }
+
   /** The filter a list of this type uses when the caller names none. */
   defaultFilterOf(type: string): string | undefined {
     return typeFilters(this.registry.objectType(type))?.default;
@@ -1019,6 +1024,7 @@ export class Views {
           const inLevel =
             accepted === undefined ? rowParent === undefined : rowParent !== undefined && accepted.has(rowParent);
           if (!inLevel) continue;
+          if (this.unlisted(name, row.state)) continue;
           if (chosen === undefined || filterShows(chosen, row.state)) {
             shown.push({ t, id: object.id, row });
           } else {
@@ -1159,6 +1165,7 @@ export class Views {
       }
       for (const object of page.objects) {
         const row = this.listRow(owner.plugin, type, object, flags, withScope);
+        if (this.unlisted(type, row.state)) continue;
         if (filterShows(chosen, row.state)) shown.push({ id: object.id, row });
         else {
           hidden += 1;
@@ -1235,9 +1242,9 @@ export class Views {
     }
     const flags = await this.allRunFlags();
     const withScope = await this.scopeShown(owner.plugin, type, owner.views);
-    const rows = page.objects.map((object) =>
-      this.listRow(owner.plugin, type, object, flags, withScope),
-    );
+    const rows = page.objects
+      .map((object) => this.listRow(owner.plugin, type, object, flags, withScope))
+      .filter((row) => !this.unlisted(type, row.state));
     return { rows, ...(page.next === undefined ? {} : { next: page.next }) };
   }
 
