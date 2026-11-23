@@ -107,6 +107,7 @@ import {
   retryWhileBusy,
   serveStage,
 } from "./serve-guard.ts";
+import { closeServeContext } from "./serve-close.ts";
 import {
   BIND_FAILED_EXIT,
   codeChecker,
@@ -3554,15 +3555,7 @@ export async function main(
           try {
             return await commandServe(context, io, lock, isSupervised, retryBind);
           } finally {
-            // Clean up the old plugin store when a serve context ends. An idle
-            // handle does not block writers; the busy timeout here came from
-            // other processes committing while a log write waited.
-            // Work of this context that still reads the stores is waited for
-            // (bounded) before they close; later work is dropped.
-            await context.views.drain();
-            await context.views.close();
-            closePluginStore(context.registry.store);
-            await context.log.close();
+            await closeServeContext(context, closePluginStore);
           }
         } finally {
           unguard();
