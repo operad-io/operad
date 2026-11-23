@@ -1439,3 +1439,9 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0728-M2 | packages/engine/src/platform/git-program.ts | the Windows places were not looked at when PATH has no git | `findGit > Windows: the usual places are looked at when PATH has no git` |
 | T-0728-M3 | packages/engine/src/platform/git-program.ts | the first answer was kept in a module variable, so a git installed later was not found | `findGit > a git program put on PATH later is found on the next call` |
 | T-0728-M4 | packages/engine/src/platform/git-program.ts | `xcode-select` was run by name through PATH instead of `/usr/bin/xcode-select` | `findGit > macOS: xcode-select runs by absolute path, so a fake earlier on PATH is not used` |
+
+## T-0762-flaky-log-backend-sqlite-two-processes-racing-st — the WAL switch waits while the other writer commits
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0762-flaky-log-backend-sqlite-two-processes-racing-st-M1 | `packages/engine/src/platform/sqlite-open.ts` | `waitForWriter` used a plain immediate transaction again, so one busy timeout ended the wait even while the other writer kept committing | `switching to WAL keeps waiting while the other writer keeps committing` |
