@@ -928,10 +928,20 @@ export class BotTidySource {
         if (!committed) {
           // A run that ended (cancelled, failed or quiet) without its commit
           // still gives the instructions back; the commit, if it comes, restores them.
-          if (stoppedRunAfter(read.facts, -1) !== undefined || lastReplyOutcome(read.messages, read.entries).kind !== "none") {
-            unlockInstructions(memoryDir);
-          }
-          return undefined;
+          const outcome = lastReplyOutcome(read.messages, read.entries);
+          const cancelled = stoppedRunAfter(read.facts, -1) !== undefined || outcome.kind === "stopped";
+          if (cancelled || outcome.kind !== "none") unlockInstructions(memoryDir);
+          // A cancelled or failed run makes no commit: its card ends here, not never.
+          if (!cancelled && outcome.kind !== "failed") return undefined;
+          const stored = await this.ctx.store.get(CHAT_TYPE, chatId);
+          if (stored === undefined) return undefined;
+          const failure = [...read.entries].reverse().find((item) => item.kind === "failure");
+          const reply = [...read.messages].reverse().find((message) => message.role === "assistant");
+          return {
+            stored,
+            replyText: reply?.text,
+            failureText: failure?.text ?? "The run was cancelled before it changed the memory.",
+          };
         }
         const stored = await this.ctx.store.get(CHAT_TYPE, chatId);
         if (stored === undefined) return undefined;

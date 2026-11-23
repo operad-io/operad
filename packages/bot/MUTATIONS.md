@@ -517,3 +517,5 @@ changes for bots, in the order they were recorded. The root
 | T-0792-M1 | packages/bot/src/tidy.ts | a cancelled run with no commit left the instructions read-only | `the instructions after a tidy run > a cancelled run, with no commit, makes the file writable again` |
 | T-0792-M2 | packages/bot/src/tidy.ts | a failed run with no commit left the instructions read-only | `the instructions after a tidy run > a failed run, with no commit, makes the file writable again` |
 | T-0792-M3 | packages/bot/src/tidy.ts | serve start did not make the instructions writable when no run was going | `the instructions after a tidy run > serve start makes the file writable when no tidy run is going` |
+| T-0794-M1 | packages/bot/src/tidy.ts | a cancelled or failed run with no commit left its tidy card `running` | `the instructions after a tidy run > a cancelled run, with no commit, makes the file writable again` |
+| T-0794-M2 | packages/bot/src/tidy.ts | serve start did not watch a card left `running`, so it stayed `running` after its run was cancelled | `the instructions after a tidy run > serve start ends a running card whose run was cancelled` |
