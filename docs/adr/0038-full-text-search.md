@@ -66,4 +66,4 @@ A `read` of a note ends with a `Backlinks` section when other notes link to it. 
 
 ### D10: A stretch that is not remembered is not indexed
 
-A chat message marked as part of a stretch that is not remembered (ADR 0026 D23) is not indexed, so a bot cannot read it back through search. The owner decided this on 2026-11-23.
+A chat message marked as part of a stretch that is not remembered (ADR 0026 D23) is not indexed, so a bot cannot read it back through search.
