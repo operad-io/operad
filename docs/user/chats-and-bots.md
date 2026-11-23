@@ -190,7 +190,7 @@ person chose stays. The row shows the level when it
 is not the chat's starting level. In a repository whose `workIn` is `branch` ("A
 branch in this folder") a repository chat works in the main clone, on the branch
 that is checked out, at its level: `edits` and `full` write there, no worktree is
-offered and no `work/chat-<id>` branch is made, and `plan` stays read-only. With
+offered and no `work/chat-<id>` branch is made, and `plan` stays read-only. While a task holds the folder (running, waiting for you, ready to merge or paused), a reply is read-only and the chat says a task holds the folder. With
 `worktree` ("A separate worktree", the default) the rest of this paragraph
 applies. A repository chat that still works in the main
 clone and is raised to `edits` or `full` first opens `work/chat-<id>` and moves

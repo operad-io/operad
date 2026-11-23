@@ -168,4 +168,16 @@ describe("the Setup Dev page", () => {
       renderGuide(guideBody(guide), "default", "<repository directory>"),
     );
   });
+
+  test("the guide asks which way to work in plain words and writes workIn", () => {
+    const guide = readFileSync(join(import.meta.dir, "../../dev/skills/setup/SKILL.md"), "utf8");
+    const body = renderGuide(guideBody(guide), "default", "/repo");
+    const ask = body.slice(body.indexOf("Ask me which way to work"), body.indexOf("Write the `.operad/dev.json`"));
+    expect(ask).toContain("new branch in this folder");
+    expect(ask).toContain("own separate folder");
+    expect(ask).toContain("do not use the words clone, worktree or concurrency");
+    expect(ask).toContain("choose the first");
+    expect(body).toContain('"workIn": "<branch or worktree, from my answer>"');
+    expect(body).toContain('`"branch"` for the first way and `"worktree"` for the second');
+  });
 });
