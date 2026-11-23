@@ -5,8 +5,8 @@
 <img alt="operad" src="docs/assets/logo-dark.png#gh-dark-mode-only" width="320">
 </p>
 
-<p align="center"><b>编码 agent 的开放编排层。</b><br>
-让任何 agent 走一条经过验证的流程：计划、开发、检查、评审、合并。</p>
+<p align="center"><b>agent 任务的代数。</b><br>
+桌面应用加开源内核，让 agent 走一条经过验证的流程：计划、开发、检查、评审、合并。</p>
 
 <p align="center">
 <a href="https://www.npmjs.com/package/@operad-io/cli"><img alt="npm" src="https://img.shields.io/npm/v/@operad-io/cli?label=%40operad-io%2Fcli"></a>
@@ -14,6 +14,10 @@
 <a href="https://operad.io/zh/"><img alt="website: operad.io" src="https://img.shields.io/badge/website-operad.io-5672b3"></a>
 <a href="https://x.com/zyinghai"><img alt="X: @zyinghai" src="https://img.shields.io/badge/%40zyinghai-000000?logo=x&logoColor=white"></a>
 </p>
+
+<p align="center"><a href="https://github.com/operad-io/operad/releases/download/v0.3.1/operad-0.3.1-arm64.dmg"><b>下载 macOS 版</b></a>（Apple 芯片） · <a href="#安装">安装命令行</a></p>
+
+<p align="center"><img alt="operad 桌面应用：一个计划、它的任务和各自的状态" src="docs/assets/desktop-plan.png" width="820"></p>
 
 ---
 

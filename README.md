@@ -5,8 +5,8 @@
 <img alt="operad" src="docs/assets/logo-dark.png#gh-dark-mode-only" width="320">
 </p>
 
-<p align="center"><b>An open orchestration layer for coding agents.</b><br>
-Run any agent through verified flows: plan, work, verify, review, merge.</p>
+<p align="center"><b>The algebra of agent work.</b><br>
+A desktop app and an open kernel that run agents through verified flows: plan, work, verify, review, merge.</p>
 
 <p align="center">
 <a href="https://www.npmjs.com/package/@operad-io/cli"><img alt="npm" src="https://img.shields.io/npm/v/@operad-io/cli?label=%40operad-io%2Fcli"></a>
@@ -14,6 +14,10 @@ Run any agent through verified flows: plan, work, verify, review, merge.</p>
 <a href="https://operad.io"><img alt="website: operad.io" src="https://img.shields.io/badge/website-operad.io-5672b3"></a>
 <a href="https://x.com/zyinghai"><img alt="X: @zyinghai" src="https://img.shields.io/badge/%40zyinghai-000000?logo=x&logoColor=white"></a>
 </p>
+
+<p align="center"><a href="https://github.com/operad-io/operad/releases/download/v0.3.1/operad-0.3.1-arm64.dmg"><b>Download for macOS</b></a> (Apple Silicon) · <a href="#install">Install the CLI</a></p>
+
+<p align="center"><img alt="The operad desktop app: one plan, its tasks and their states" src="docs/assets/desktop-plan.png" width="820"></p>
 
 ---
 
