@@ -608,6 +608,7 @@ const setupDevAction: ActionTypeDefinition = {
     const repo = (args as { readonly path: string }).path.trim();
     if (repo.length === 0) throw new BotError("setup-dev needs the repository's directory");
     const where = isAbsolute(repo) ? repo : resolve(ctx.cwd, repo);
+    const title = `Setup Dev (${basename(where)})`;
     const id = await openChat({
       store: ctx.store,
       home: ctx.home,
@@ -617,10 +618,11 @@ const setupDevAction: ActionTypeDefinition = {
       models: ctx.models,
       efforts: ctx.efforts,
       bot: ctx.object.id,
-      title: `Setup Dev (${basename(where)})`,
+      title,
       cause: "action:bot/setup-dev",
     });
-    const sent = await sendMessage(ctx, id, await setupDevPrompt(ctx.setup, ctx.object.id, where));
+    // The person sees the chat's title; the prompt is the agent's hidden instruction.
+    const sent = await sendMessage(ctx, id, title, undefined, [], await setupDevPrompt(ctx.setup, ctx.object.id, where));
     return { text: `opened chat ${id}; ${sent}`, opens: `chat:${id}` };
   },
 };
@@ -651,6 +653,7 @@ const setupAction: ActionTypeDefinition = {
     const target = given.target?.trim() ?? "";
     const where = target.length === 0 ? "" : isAbsolute(target) ? target : resolve(ctx.cwd, target);
     const prompt = await setupPrompt(ctx.setup, ctx.object.id, plugin, where);
+    const title = `${setupTitle(plugin)}${where.length === 0 ? "" : ` (${basename(where)})`}`;
     const id = await openChat({
       store: ctx.store,
       home: ctx.home,
@@ -660,10 +663,10 @@ const setupAction: ActionTypeDefinition = {
       models: ctx.models,
       efforts: ctx.efforts,
       bot: ctx.object.id,
-      title: `${setupTitle(plugin)}${where.length === 0 ? "" : ` (${basename(where)})`}`,
+      title,
       cause: "action:bot/setup",
     });
-    const sent = await sendMessage(ctx, id, prompt);
+    const sent = await sendMessage(ctx, id, title, undefined, [], prompt);
     return { text: `opened chat ${id}; ${sent}`, opens: `chat:${id}` };
   },
 };
