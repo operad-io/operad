@@ -348,4 +348,4 @@ name is used instead. Messages already recorded get a changed name too.
 `plugins.chat.settings.awayMinutes` (default 240; 0 turns it off): a message
 written after this many minutes without the person's message or command is
 followed by one `recap` message listing the routine results and the replies that
-came meanwhile (ADR 0026 D21). It is not sent to the model.
+came meanwhile (ADR 0026 D20). It is not sent to the model.
