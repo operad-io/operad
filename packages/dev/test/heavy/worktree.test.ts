@@ -32,7 +32,7 @@ import {
   makeRemote,
   type RemoteSetup,
 } from "../git-support.ts";
-import { taskContext } from "../../src/steps.ts";
+import { looseTaskContext, taskContext } from "../../src/steps.ts";
 import {
   cleanupTempRoots,
   guardLockHandles,
@@ -446,6 +446,35 @@ describe("dev/worktree", () => {
     writeFileSync(file, JSON.stringify({ maxAutoRework: 9 }));
     expect((await taskContext(captured)).settings.maxAutoRework).toBe(3);
     expect((await taskContext(captured, true)).settings.maxAutoRework).toBe(9);
+  });
+
+  test("a step that can retry reads the recorded dev.json too, and a recorded text this build refuses falls back to the file (T-0757)", async () => {
+    const state = await fixture();
+    const file = join(state.remote.repository, ".operad", "dev.json");
+    mkdirSync(join(state.remote.repository, ".operad"), { recursive: true });
+    writeFileSync(file, JSON.stringify({ maxAutoRework: 3 }));
+    let captured: StepContext | undefined;
+    stepTestHooks.beforeGuardedWrite = (ctx) => {
+      captured = ctx;
+    };
+    try {
+      await runWorktree(state, "run-1");
+    } finally {
+      stepTestHooks.beforeGuardedWrite = undefined;
+    }
+    if (captured === undefined) throw new Error("no step context captured");
+    writeFileSync(file, JSON.stringify({ maxAutoRework: 9 }));
+    expect((await looseTaskContext(captured)).settings?.maxAutoRework).toBe(3);
+
+    // A recorded text that does not parse as settings: the file is read instead.
+    const stored = await taskDataOf(state);
+    await state.store.put(
+      "task",
+      state.taskKey,
+      { ...stored, attempt: { ...stored.attempt, settingsText: "{ not json" } },
+      "test",
+    );
+    expect((await taskContext(captured)).settings.maxAutoRework).toBe(9);
   });
 
   test("a conflicting merge leaves the worktree mid-merge", async () => {

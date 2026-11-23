@@ -32,7 +32,8 @@ library, such as an Obsidian vault, and edit it there.
 The directory is created when it is missing. When git is on the computer it is
 made a git repository if it is not one, with no question; without git it stays a
 plain folder, the wiki works the same and keeps no history, and it becomes a
-repository the next time a bot uses it after git is installed. A directory that is already a git repository is used as it is: it is
+repository the next time a bot uses it after git is installed.
+A directory that is already a git repository is used as it is: it is
 never initialised again and its files are never restructured. So pointing the
 setting at an existing vault keeps that vault's history, branches and layout.
 

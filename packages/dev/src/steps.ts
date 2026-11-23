@@ -158,11 +158,8 @@ export async function taskContext(
   const parts = await taskParts(ctx);
   const recorded = parts.task.attempt?.settingsText;
   if (!fresh && typeof recorded === "string") {
-    return {
-      ...parts,
-      settings: devSettingsFromText(parts.repository.path, recorded),
-      settingsText: recorded,
-    };
+    const settings = recordedSettings(parts.repository.path, recorded);
+    if (settings !== undefined) return { ...parts, settings, settingsText: recorded };
   }
   const start = startBranchOf(parts.task.attempt);
   if (fresh && parts.task.attempt?.inPlace === true && start !== undefined) {
@@ -181,7 +178,20 @@ export async function taskContext(
   return { ...parts, settings: read.settings, settingsText: read.text };
 }
 
-/** A task context whose settings may be missing: a step that can retry reads it. */
+/**
+ * The settings an attempt recorded. A text that this build no longer accepts
+ * gives undefined, and the caller reads the file instead.
+ */
+function recordedSettings(repositoryPath: string, text: string): DevSettings | undefined {
+  try {
+    return devSettingsFromText(repositoryPath, text);
+  } catch (error) {
+    if (error instanceof DevError) return undefined;
+    throw error;
+  }
+}
+
+/** A task context whose settings may be missing:a step that can retry reads it. */
 export type LooseTaskContext = Omit<TaskContext, "settings"> & {
   readonly settings?: DevSettings | undefined;
   /** Why the settings could not be read, when `settings` is absent. */
@@ -196,6 +206,11 @@ export async function looseTaskContext(
   ctx: StepContext,
 ): Promise<LooseTaskContext> {
   const parts = await taskParts(ctx);
+  const recorded = parts.task.attempt?.settingsText;
+  if (typeof recorded === "string") {
+    const settings = recordedSettings(parts.repository.path, recorded);
+    if (settings !== undefined) return { ...parts, settings, settingsText: recorded };
+  }
   try {
     return { ...parts, settings: await readDevSettings(parts.repository.path) };
   } catch (error) {

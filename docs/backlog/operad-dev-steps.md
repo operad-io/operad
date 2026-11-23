@@ -1,6 +1,6 @@
 # operad-dev-steps：dev 从单线程一步一步走到并行
 
-- 状态：方向和待决 1 至 7 owner 已定（2026-11-22）；「提议的形状」按已定修正过；ADR 0020、0028 的改动和新决定 0039 还没写进 docs/adr：草稿在 tag `draft/dev-steps-adr`，T-0716 至 T-0721 各自带上自己那部分，和代码一起合并
+- 状态：方向和待决 1 至 7 owner 已定（2026-11-22）；「提议的形状」按已定修正过；新决定 0039 和 ADR 0020、0028 的改动已写进 docs/adr，随 T-0716 至 T-0721 的代码一起合并
 - 涉及 ADR：0039（`workIn`，待写）、0028 D3（仓库对话在主 clone 只读）、0020 D3 和 D4（dev 在开头加 worktree、结尾加 integrate；改动只经 integrate 到 main）、0020 D9（`commit`）、0021（并发）、0025（访问档）。只读了 0020 和 0028 的正文，其余是估计，开工前核对
 - 涉及：`operad-first-run.md`（`Setup Dev`）；`operad-setup-guides.md`（每一步由 bot 提议）；`operad-desktop.md` 待决 4（owner 2026-11-22 已定：没有 remote 的仓库可以加，合并不推送）；`operad-dev-flows.md`
 - 来源：owner 2026-11-22 的讨论

@@ -226,7 +226,8 @@ Every theme defines the same tokens: `text`, `weak` (secondary text), `rule`
 `operad tui` uses the terminal size: at 100 columns or wider the list and the
 object pane sit side by side, and below 100 columns the list fills the screen
 and an open object replaces it until `escape`. The header counts Pending and
-Running and then names every plugin that has a tab. A plugin whose objects
+Running and then names every plugin that has a tab, by the title of its list
+(Projects for `dev`). A plugin whose objects
 belong under settings gets no tab: its objects are listed in the `:` palette's
 settings area, one group per type, and open from there as from Pending,
 Running or a group heading in another tab. The right pane says
