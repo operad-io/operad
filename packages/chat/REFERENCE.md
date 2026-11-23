@@ -149,7 +149,11 @@ own: `pi` creates a new session file, `claude` starts without `resume`, `codex`
 starts a thread (`thread/start`, not `thread/resume`) and `radian` runs without
 `--resume`. The transcript stays, the `context` view is empty until the next
 reply, and the bot's memory notes ride on that reply as on any new session.
-Refused while a reply is being written.
+With a `goal`, the `chat.new` fact carries it and the old session's reference, and a reply round
+builds a brief first: one call resuming the old session (read-only, no tools), recorded as a
+`chat.brief` fact with its cost and as one `/new` tool line. The brief and the goal ride on the
+first reply of the new session only; a failed call leaves the goal alone. Refused while a reply is
+being written.
 
 ## `chat:retry <chat>`
 
