@@ -310,6 +310,8 @@ export interface ReviewRecord {
   readonly model?: string | null;
   /** Which round (first or rework) ran and which block each setting came from. */
   readonly reviewSettings?: ReviewSettingsUsed | null;
+  /** The fix level in force when the round ran. */
+  readonly fixLevel?: string | null;
   /** When an unavailable round may run again, in epoch milliseconds. */
   readonly retryAt?: number | null;
   /** Every run of this round, in order. */
