@@ -51,6 +51,71 @@ export interface CommitInfo {
   readonly paths: readonly string[];
   /** The commit's subject. */
   readonly message: string;
+  /** The notes the commit changed, each with a one-line summary. */
+  readonly files: readonly WrittenNote[];
+}
+
+/** One note a commit changed: its file, named from the repository's label, and a one-line summary. */
+export interface WrittenNote {
+  readonly file: string;
+  readonly summary: string;
+}
+
+/** The longest summary kept for a note. */
+const SUMMARY_MAX = 120;
+
+function cutSummary(text: string): string {
+  const chars = [...text];
+  return chars.length <= SUMMARY_MAX ? text : `${chars.slice(0, SUMMARY_MAX - 1).join("")}…`;
+}
+
+/** The one line that says what a note is: its frontmatter `description`, `summary` or `title`, else its first heading or line. */
+export function noteSummary(text: string): string {
+  const lines = text.replace(/\r\n/g, "\n").split("\n");
+  let start = 0;
+  if ((lines[0] ?? "").trim() === "---") {
+    const end = lines.findIndex((line, index) => index > 0 && line.trim() === "---");
+    if (end > 0) {
+      start = end + 1;
+      for (const key of ["description", "summary", "title"]) {
+        for (const line of lines.slice(1, end)) {
+          const trimmed = line.trim();
+          if (!trimmed.toLowerCase().startsWith(`${key}:`)) continue;
+          const value = trimmed.slice(key.length + 1).trim().replace(/^["']|["']$/g, "").trim();
+          if (value.length > 0) return cutSummary(value);
+        }
+      }
+    }
+  }
+  for (const line of lines.slice(start)) {
+    const clean = line.replace(/^#+\s*/, "").trim();
+    if (clean.length > 0) return cutSummary(clean);
+  }
+  return "";
+}
+
+/** The notes a staged change touches, with a summary of each note as it now is; a deleted note says so. */
+function stagedNotes(repository: Repository, paths: string, label: string): readonly WrittenNote[] {
+  const listed = memoryGit(repository.root, ["diff", "--cached", "--name-status", "--no-renames", "-z", "--", paths]);
+  if (!listed.ok) return [];
+  const parts = listed.out.split("\0").filter((part) => part.length > 0);
+  const notes: WrittenNote[] = [];
+  for (let index = 0; index + 1 < parts.length; index += 2) {
+    const status = parts[index] ?? "";
+    const path = parts[index + 1] ?? "";
+    if (!path.endsWith(".md")) continue;
+    const inside = paths === "." ? path : path.slice(paths.length + 1);
+    let summary = "";
+    if (!status.startsWith("D")) {
+      try {
+        summary = noteSummary(readFileSync(join(repository.root, path), "utf8"));
+      } catch {
+        summary = "";
+      }
+    }
+    notes.push({ file: `${label}/${inside}`, summary });
+  }
+  return notes;
 }
 
 /** A note whose frontmatter says it came from untrusted content. */
@@ -132,7 +197,7 @@ export function commitChanges(
   repository: Repository,
   directory: string,
   message: string,
-  options: { readonly allowEmpty?: boolean | undefined } = {},
+  options: { readonly allowEmpty?: boolean | undefined; readonly label?: string | undefined } = {},
 ): CommitInfo | undefined {
   if (!repository.tracked) return undefined;
   const paths = pathIn(repository.root, directory);
@@ -145,6 +210,7 @@ export function commitChanges(
   if (!added.ok) {
     throw new Error(`git add in ${repository.root} failed: ${added.err || "git wrote nothing"}`);
   }
+  const files = stagedNotes(repository, paths, options.label ?? paths);
   const committed = memoryGit(repository.root, [
     ...COMMIT_IDENTITY,
     "commit",
@@ -158,7 +224,7 @@ export function commitChanges(
   if (!committed.ok) {
     throw new Error(`git commit in ${repository.root} failed: ${committed.err || "git wrote nothing"}`);
   }
-  return { root: repository.root, paths: [paths], message };
+  return { root: repository.root, paths: [paths], message, files };
 }
 
 /** What one bot run changed, as the step reports it. */
@@ -168,6 +234,8 @@ export interface MemoryCommitData {
   readonly memory: CommitInfo | null;
   readonly wiki: CommitInfo | null;
   readonly unindexed: readonly string[];
+  /** The notes this run wrote, in the memory and in the wiki, each with a one-line summary. */
+  readonly wrote: readonly WrittenNote[];
 }
 
 /** The bot and chat a commit step was called for. */
@@ -229,16 +297,17 @@ export async function commitBotRun(
           message = `${message}\n\n${TIDY_APPEND_ONLY_NOTE}`;
         }
       }
-      const memory = commitChanges(repository, memoryDir, message, { allowEmpty: bot.tidy });
+      const memory = commitChanges(repository, memoryDir, message, { allowEmpty: bot.tidy, label: "memory" });
       const wiki = ensureWiki(home, settings);
       const wikiIndex = stripUntrustedFromIndex(wiki.directory);
-      const wikiCommit = commitChanges(wiki, wiki.directory, commitMessage("wiki", bot.bot, bot.chat));
+      const wikiCommit = commitChanges(wiki, wiki.directory, commitMessage("wiki", bot.bot, bot.chat), { label: "wiki" });
       return {
         bot: bot.bot,
         chat: bot.chat,
         memory: memory ?? null,
         wiki: wikiCommit ?? null,
         unindexed: [...new Set([...index.removed, ...wikiIndex.removed])],
+        wrote: [...(memory?.files ?? []), ...(wikiCommit?.files ?? [])],
       };
     },
     { label: "memory" },
