@@ -276,7 +276,8 @@ async function chatsToCheck(
     if (chat.parent !== `${BOT_TYPE}:${bot}`) continue;
     if (chat.scheduled?.entry === TIDY_ORIGIN) continue;
     const messages = allMessages(store, object.id)
-      .filter((message) => since === undefined || message.at >= since)
+      // A message of a stretch that is not remembered never reaches Dreaming.
+      .filter((message) => message.private !== true && (since === undefined || message.at >= since))
       .map((message) => ({
         role: message.role,
         text: cut(message.text, 1_500),

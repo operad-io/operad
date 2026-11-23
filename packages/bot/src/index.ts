@@ -24,6 +24,7 @@ import {
   botDir,
   defaultBotHomeMigrated,
   ensureBotMemory,
+  memoryDir,
   migrateDefaultBotDir,
   readBots,
   repositoryPaths,
@@ -33,7 +34,7 @@ import {
   type BotSettings,
   type ResolvedBot,
 } from "./bot.ts";
-import { MEMORY_COMMIT_STEP, memoryNotes } from "@operad-io/memory";
+import { MEMORY_COMMIT_STEP, memoryNotes, wikiDirectoryOfHome } from "@operad-io/memory";
 import { createBot, knownMcpServers, knownSkills } from "./create.ts";
 import { LOGIN_EVENT, LOGIN_SOURCE, loginAction, loginFlow, loginItems, runLogin as runLoginStep } from "./login.ts";
 import { chatSetupAction, runSetup, setupDevPrompt, setupPrompt, setupTitle } from "./setup.ts";
@@ -725,6 +726,8 @@ export async function runSettings(ctx: StepContext, params: unknown): Promise<Pl
         // The memory index and the person's instructions ride on the message,
         // whole when this session has not seen them, under ADR 0026 D18.
         notes: memoryNotes(join(bot.cwd, "memory")) as unknown as JsonValue,
+        // What a stretch that is not remembered may read and may not write.
+        memoryPaths: [memoryDir(bot.cwd), wikiDirectoryOfHome(ctx.home)],
         // The memory plugin records what this reply wrote, once the round ends.
         ...(ctx.stepLoaded !== undefined && ctx.stepLoaded(MEMORY_COMMIT_STEP) ? { after: MEMORY_COMMIT_STEP } : {}),
         // A run of a routine is not a chat: it proposes no schedule and sets no follow-up.
