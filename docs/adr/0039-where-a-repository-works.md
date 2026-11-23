@@ -42,3 +42,17 @@ When a `branch` task is cancelled, `dev` first stops its run, then switches the 
 `dev` reads `.operad/dev.json` once when an attempt starts and records what it read; the attempt uses the record and does not read the file again. In `branch` mode the main clone is on the task branch while the attempt runs, so a second read would give the task branch's version of the file; the record keeps the attempt on one configuration.
 
 For a task whose earlier attempt worked in the main clone, the file `dev` reads when the next attempt starts is the one in the commit of the recorded start branch (`git show <start>:.operad/dev.json`), not the one on the task branch the clone is on; when that commit has no such file, the file in the clone is read. The settings editor refuses to save `dev.json` while a `branch` task holds the clone, and says which task.
+
+### D7: A folder needs git only to create a task
+
+A folder is added, chatted with and changed by a chat without git, and on a machine without the git program. `dev` reads the folder's git state each time (it is never stored) and the state decides what is allowed:
+
+| State | What it is | Add, chat, change files | Create a task |
+|---|---|---|---|
+| no program | the git program is not installed (on macOS, only its stub) | yes | refused; the bot walks the person through installing git |
+| no repository | git is installed; the folder is in no work tree | yes | refused until git is set up there |
+| subfolder | the folder is inside another work tree | refused, naming the repository's root; there are no chat-only subfolders | not reachable |
+| no commit | a work tree root with no commit | yes | refused until the first commit |
+| ready | a work tree root with a commit | yes | yes |
+
+A folder with no program or no repository is registered with `workIn` `"branch"` and no `remote`; nothing about git is asked before a task is created. The `init` check skips a folder that is not ready and never reports git as missing; `operad doctor` shows an `ok` line, not a problem, when git is not installed. A subfolder is refused by `operad dev repo add`, the `dev:repo-add` action and Setup Dev alike, with the root named.
