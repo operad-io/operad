@@ -42,6 +42,7 @@ export async function deliverResult(
       source: { kind: delivery.from.via, ref: null },
       delivery: {
         routine: delivery.routine,
+        ...(delivery.routineId === undefined || delivery.routineId.length === 0 ? {} : { routineId: delivery.routineId }),
         runId: delivery.runId,
         summary: delivery.summary,
         ...(delivery.failed === true ? { failed: true } : {}),

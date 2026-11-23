@@ -608,6 +608,32 @@ function liveReply(
   };
 }
 
+/** The deliveries recorded in the chunks shown, as the transcript's data names them. */
+function deliveriesData(chunks: readonly Chunk[]): JsonValue[] {
+  const found: JsonValue[] = [];
+  for (const chunk of chunks) {
+    for (const fact of chunk.facts) {
+      const message = fact.type === MESSAGE_FACT ? messageFrom(fact) : undefined;
+      const delivery = message?.delivery;
+      if (message === undefined || delivery === undefined) continue;
+      found.push({
+        id: message.id,
+        at: message.at,
+        routine: delivery.routine,
+        ...(delivery.routineId === undefined ? {} : { routineId: delivery.routineId }),
+        runId: delivery.runId,
+        ...(delivery.failed === true ? { failed: true } : {}),
+      });
+    }
+  }
+  return found;
+}
+
+function withDeliveries(base: Readonly<Record<string, JsonValue>>, chunks: readonly Chunk[]): Readonly<Record<string, JsonValue>> {
+  const deliveries = deliveriesData(chunks);
+  return deliveries.length === 0 ? base : { ...base, deliveries };
+}
+
 function jsonBytes(value: unknown): number {
   return Buffer.byteLength(JSON.stringify(value), "utf8");
 }
@@ -1477,7 +1503,7 @@ async function load(
     const data = replyData(
       replies.map((reply) => reply.block),
       Math.max(0, limit - Buffer.byteLength(markdown, "utf8") - Buffer.byteLength(liveContent.tail ?? "", "utf8")),
-      queueData,
+      withDeliveries(queueData, chunks),
     );
     return {
       markdown,
@@ -1514,7 +1540,7 @@ async function load(
   const data = replyData(
     pageReplies.map((reply) => reply.block),
     Math.max(0, limit - Buffer.byteLength(markdown, "utf8") - Buffer.byteLength(liveContent.tail ?? "", "utf8")),
-    queueData,
+    withDeliveries(queueData, pageChunks),
   );
 
   // The table of contents: the cursor each page starts at, the first one without.
