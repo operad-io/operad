@@ -123,6 +123,7 @@ for what waits, and `operad history <id>` for what a run did.
 | `no repository "<name>"` | The repository is not registered. | `operad dev repo add <path> [--name <name>]`. |
 | `repository "<name>" was removed` | The repository was removed. | Move the folder if needed, then `operad dev repo add <path> --name <name>`; see [dev](dev.md#moving-a-repositorys-folder). |
 | `"<dir>" is inside the git repository at "<root>"; add "<root>" instead` | The folder is a subfolder of a git repository; a subfolder cannot be added alone. | `operad dev repo add <root>`. A folder with no git at all can be added. |
+| `Creating a task needs git, and git is not installed on this machine…`, `This folder is not under git yet…`, `Git is set up here but has no commit yet…` | A task needs git and a first commit; chatting in the folder does not. | Ask the bot to set up git here; it installs git when needed (each command is a pending item you approve) and proposes the first commit. See [Set up git here](chats-and-bots.md#set-up-git-here). |
 | `no plan "<plan>"` | The plan id is wrong or not in this repository. | `operad list plan --repo <name>`. |
 | `no task "<task>"` | The task id is wrong. | `operad list task --repo <name>`. |
 | `a task cannot follow itself` | `--after` names the task itself. | Remove that `--after`. |

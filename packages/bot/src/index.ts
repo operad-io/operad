@@ -46,6 +46,7 @@ import {
   runSettingCommand,
   runScheduleCommand,
   runSetupDev,
+  runSetupGit,
   runSkillCommand,
 } from "./proposals.ts";
 import {
@@ -853,6 +854,11 @@ export function createBotPlugin() {
         run: runSetupDev,
       },
       {
+        name: "setup-git",
+        args: "<bot> <folder> [< {gitignore, identity}]",
+        run: runSetupGit,
+      },
+      {
         name: "setup",
         args: "<bot> <plugin> [target]",
         run: runSetup,
@@ -904,6 +910,7 @@ export * from "./create.ts";
 export * from "./login.ts";
 export * from "./proposals.ts";
 export * from "./setup-dev.ts";
+export * from "./setup-git.ts";
 export * from "./setup.ts";
 export * from "./schedule.ts";
 export * from "./follow-up.ts";

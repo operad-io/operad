@@ -37,6 +37,7 @@ import { runLine } from "@operad-io/engine/platform";
 import { BOT_TYPE, BotError } from "./bot.ts";
 import { followUps, removeFollowUp, withBotLock, type FollowUp } from "./follow-up.ts";
 import { SETUP_DEV_INSTRUCTION } from "./setup-dev.ts";
+import { SETUP_GIT_INSTRUCTION } from "./setup-git.ts";
 import { SETUP_INSTRUCTION } from "./setup.ts";
 
 /** The source's name for a scheduled message; a message from it is a background run. */
@@ -322,7 +323,7 @@ export function followUpInstruction(chat: string): string {
 
 /** The text and place a bot chat starts with. */
 export function scheduledChatContext(chat: string): { readonly text: string; readonly where: string } {
-  const line = `${SCHEDULE_INSTRUCTION} ${followUpInstruction(chat)} ${SETUP_DEV_INSTRUCTION} ${SETUP_INSTRUCTION}`;
+  const line = `${SCHEDULE_INSTRUCTION} ${followUpInstruction(chat)} ${SETUP_DEV_INSTRUCTION} ${SETUP_GIT_INSTRUCTION} ${SETUP_INSTRUCTION}`;
   return { text: line, where: line };
 }
 

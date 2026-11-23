@@ -384,7 +384,7 @@ repository's `path` on the machine that runs `serve`, and optionally a `name`,
 and it asks for confirmation. The action and the command call the same code:
 the action adds what the command adds, writes the same `.operad/dev.json`, and
 refuses with the command's words (inside another git repository, already
-registered). A folder without git can be added: git is needed only to create a task. Its answer is the command's line, `added <name> (<path>)`, and the
+registered). A folder without git can be added: git is needed only to create a task, and then the bot proposes [Set up git here](chats-and-bots.md#set-up-git-here). Its answer is the command's line, `added <name> (<path>)`, and the
 new repository then appears with `GET /v1/objects?type=repo`.
 
 ```json
