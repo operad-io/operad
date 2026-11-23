@@ -425,6 +425,8 @@ form needs no parsing of the bot section's Markdown. Each entry is:
 }
 ```
 
+`bot:schedule-run-now` on the bot, argument `name`, runs an entry once now, as a timed firing does, and leaves its next timed run unchanged; the chat opens within a second of the answer, and `lastChatId` and `lastResult` show it. An unknown name is refused with `422` and a reason.
+
 `model` and `effort` are `null` when the entry leaves them to the bot. `nextRun`
 is an ISO time, or `null` when the entry is paused or has no next run within two
 years. `lastResult` and `lastChatId` are `null` before the entry first fires.

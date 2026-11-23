@@ -548,6 +548,77 @@ describe("scheduled prompts", () => {
     }
   });
 
+  test("run now fires the entry once like a timed firing, records its result, and leaves the next timed run alone", async () => {
+    const r = await rig();
+    const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });
+    const notices: ScheduleNotice[] = [];
+    const clock = { value: Date.parse("2026-01-01T07:00:10Z") };
+    const source = sourceFor(r, views as unknown as ClientApi, clock, notices);
+    try {
+      await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "Collect the news." });
+      await source.begin();
+      const readEntry = async (): Promise<ScheduledPrompt> => {
+        const bot = await r.store.get("bot", "default");
+        const found = scheduledPrompts(bot?.data ?? {}).find((item) => item.name === "Morning");
+        if (found === undefined) throw new Error("no entry");
+        return found;
+      };
+      const before = await readEntry();
+      const nextBefore = nextRun(before, clock.value);
+
+      await r.act("bot", "default", "bot/schedule-run-now", { name: "Morning" });
+      const first = await fireAndAnswer(r, source, clock, "2026-01-01T07:30:10Z", "Three items.", 1);
+      const chat = await r.store.get(CHAT_TYPE, first.id);
+      expect(chat?.data.title).toBe("Morning (2026-01-01)");
+      expect(chat?.data.scheduled).toEqual({ bot: "default", entry: "Morning" });
+      expect(first.prompt).toContain("Collect the news.");
+      expect(first.prompt).toContain(SCHEDULE_PREAMBLE);
+      expect(notices.map((notice) => notice.summary)).toEqual(["Three items."]);
+      const after = await readEntry();
+      expect(after.runNow).toBeUndefined();
+      expect(after.last?.chatId).toBe(first.id);
+      expect(after.last?.result).toBe("Three items.");
+      expect(after.last?.plannedAt).toBe(before.last?.plannedAt ?? -1);
+      expect(after.recent?.map((item) => item.result)).toEqual(["Three items."]);
+      expect(nextRun(after, clock.value)).toBe(nextBefore);
+
+      // A request is one firing, not a standing one.
+      clock.value = Date.parse("2026-01-01T07:40:10Z");
+      await source.poll();
+      expect(await chats(r)).toHaveLength(1);
+      // The timed run still comes at eight, with the run-now result in its prompt and no lateness line.
+      const timed = await fireAndAnswer(r, source, clock, "2026-01-01T08:05:10Z", "Four items.", 2);
+      expect(timed.prompt).toContain("Three items.");
+      expect(timed.prompt).toContain("5 minutes late");
+      expect(await chats(r)).toHaveLength(2);
+      // A run now after a late timed run is not itself late.
+      await r.act("bot", "default", "bot/schedule-run-now", { name: "Morning" });
+      const again = await fireAndAnswer(r, source, clock, "2026-01-01T08:10:10Z", "Five items.", 3);
+      expect(again.prompt).toContain("Four items.");
+      expect(again.prompt).not.toContain("late");
+      expect(await chats(r)).toHaveLength(3);
+    } finally {
+      views.close();
+    }
+  });
+
+  test("run now of an unknown entry is refused with a reason and opens no chat", async () => {
+    const r = await rig();
+    const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });
+    const source = sourceFor(r, views as unknown as ClientApi, { value: Date.parse("2026-01-01T07:00:10Z") }, []);
+    try {
+      await add(r, { name: "Morning", schedule: "0 8 * * *", prompt: "At eight." });
+      await source.begin();
+      await expect(r.act("bot", "default", "bot/schedule-run-now", { name: "Nope" })).rejects.toThrow(
+        'has no scheduled prompt "Nope"',
+      );
+      await source.poll();
+      expect(await chats(r)).toHaveLength(0);
+    } finally {
+      views.close();
+    }
+  });
+
   test("a catch-up firing adds the planned time and how late it is to the prompt", async () => {
     const r = await rig();
     const views = createViews({ registry: r.registry, store: r.store, home: r.home, onLog: () => undefined });

@@ -64,6 +64,8 @@ export interface ScheduledLast {
   readonly result?: string | undefined;
   /** True once the notify command was run for `result`. */
   readonly notified?: boolean | undefined;
+  /** True when a person ran the entry now: `firedAt` is then the run's time, and `plannedAt` is untouched. */
+  readonly manual?: boolean | undefined;
 }
 
 /** One finished firing kept for the next prompt. */
@@ -98,6 +100,8 @@ export interface ScheduledPrompt {
   readonly last?: ScheduledLast | undefined;
   /** The last few finished results, oldest first. */
   readonly recent?: readonly ScheduledRecent[] | undefined;
+  /** When a person asked to run it now, until the source starts that run. */
+  readonly runNow?: number | undefined;
 }
 
 /** The longest summary an entry keeps and a notification carries. */
@@ -120,6 +124,7 @@ function lastOf(value: unknown): ScheduledLast | undefined {
     ...(text(value.chatId) === undefined ? {} : { chatId: value.chatId as string }),
     ...(text(value.result) === undefined ? {} : { result: value.result as string }),
     ...(value.notified === true ? { notified: true } : {}),
+    ...(value.manual === true ? { manual: true } : {}),
   };
 }
 
@@ -149,6 +154,7 @@ export function scheduledPromptOf(value: unknown): ScheduledPrompt | undefined {
     paused: value.paused === true,
     ...(last === undefined ? {} : { last }),
     ...(recent.length === 0 ? {} : { recent: recent.slice(-SCHEDULE_RECENT_COUNT) }),
+    ...(typeof value.runNow === "number" && Number.isFinite(value.runNow) ? { runNow: value.runNow } : {}),
   };
 }
 
@@ -204,6 +210,7 @@ function stored(entry: ScheduledPrompt): Record<string, JsonValue> {
     ...(entry.recent === undefined || entry.recent.length === 0
       ? {}
       : { recent: entry.recent as unknown as JsonValue }),
+    ...(entry.runNow === undefined ? {} : { runNow: entry.runNow }),
   };
 }
 
@@ -267,7 +274,7 @@ export function scheduledInstruction(entry: ScheduledPrompt): string {
   // `last` is recorded when the firing starts, so it says what was planned and when it ran.
   const last = entry.last;
   const late =
-    last?.firedAt !== undefined && last.plannedAt < minuteStart(last.firedAt)
+    last?.firedAt !== undefined && last.manual !== true && last.plannedAt < minuteStart(last.firedAt)
       ? { scheduledAt: last.plannedAt, lateSecs: Math.floor((last.firedAt - last.plannedAt) / 1_000) }
       : undefined;
   const parts: string[] = [];
@@ -716,6 +723,26 @@ export const scheduleActions: readonly ActionTypeDefinition[] = [
     },
   },
   {
+    name: "schedule-run-now",
+    on: BOT_TYPE,
+    args: nameArg(),
+    when: (state) => state.removed !== true,
+    why: (object) =>
+      object.data.removed === true ? `bot ${object.id} is no longer in the settings` : undefined,
+    async run(ctx, args) {
+      const name = checkPromptName((args as { readonly name: string }).name);
+      const changed = await replaceEntry(
+        ctx.store,
+        ctx.object.id,
+        name,
+        (entry) => ({ ...entry, runNow: entry.runNow ?? Date.now() }),
+        "action:bot/schedule-run-now",
+      );
+      if (changed === undefined) throw new BotError(`bot ${ctx.object.id} has no scheduled prompt "${name}"`);
+      return `running scheduled prompt "${name}" of bot ${ctx.object.id} now; its next timed run is unchanged`;
+    },
+  },
+  {
     name: "schedule-remove",
     on: BOT_TYPE,
     args: nameArg(),
@@ -813,6 +840,11 @@ export class BotScheduleSource {
         if (object.data.removed === true) continue;
         const bot = object.id;
         for (const entry of scheduledPrompts(object.data)) {
+          if (entry.runNow !== undefined) {
+            // The entry read here is stale after this; the next check handles its timed run.
+            await this.runNow(bot, entry, now);
+            continue;
+          }
           await this.one(bot, entry, now, catchUp);
         }
         for (const followUp of followUps(object.data)) {
@@ -916,19 +948,42 @@ export class BotScheduleSource {
     await this.fire(bot, entry, minute, now, skipped);
   }
 
+  /**
+   * Fires an entry once because a person asked. The request is cleared first, so
+   * a crash loses it rather than runs it twice. The planned time and schedule of
+   * `last` stay what the timed runs expect, so the next timed run is unchanged.
+   */
+  private async runNow(bot: string, entry: ScheduledPrompt, now: number): Promise<void> {
+    const cleared = await replaceEntry(
+      this.ctx.store,
+      bot,
+      entry.name,
+      (current) => (current.runNow === undefined ? undefined : { ...current, runNow: undefined }),
+      "source:bot/run-now",
+    );
+    if (cleared === undefined) return;
+    const last = entry.last !== undefined && entry.last.schedule === entry.schedule ? entry.last : undefined;
+    const latest = latestCronMinute(parseCron(entry.schedule), now, CATCH_UP_DAYS);
+    const planned = last?.plannedAt ?? latest ?? minuteStart(now);
+    await this.fire(bot, entry, planned, now, [], true);
+  }
+
   private async fire(
     bot: string,
     entry: ScheduledPrompt,
     minute: number,
     now: number,
     skipped: readonly number[],
+    manual = false,
   ): Promise<void> {
-    await this.setLast(bot, entry.name, {
+    const recorded = {
       plannedAt: minute,
       firedAt: now,
       schedule: entry.schedule,
-    });
-    const title = `${entry.name} (${localDate(minute)})`.slice(0, 120);
+      ...(manual ? { manual: true } : {}),
+    };
+    await this.setLast(bot, entry.name, recorded);
+    const title = `${entry.name} (${localDate(manual ? now : minute)})`.slice(0, 120);
     let chatId: string | undefined;
     try {
       const run = await this.ctx.client.act("bot:chat", `${BOT_TYPE}:${bot}`, {
@@ -948,9 +1003,7 @@ export class BotScheduleSource {
     } catch (error) {
       const message = messageOf(error);
       await this.setLast(bot, entry.name, {
-        plannedAt: minute,
-        firedAt: now,
-        schedule: entry.schedule,
+        ...recorded,
         result: replySummary(`Could not start: ${message}`),
       });
       return;
@@ -970,7 +1023,7 @@ export class BotScheduleSource {
       "step:bot/scheduled",
     );
     if (changed === undefined) return;
-    await this.watch(bot, entry.name, minute, chatId);
+    await this.watch(bot, entry.name, manual ? now : minute, chatId);
     if (skipped.length > 0) {
       await this.chatWatches.log(
         `scheduled prompt "${entry.name}" of bot ${bot}: skipped ${skipped
@@ -1064,7 +1117,7 @@ export class BotScheduleSource {
       for (const entry of scheduledPrompts(object.data)) {
         const last = entry.last;
         if (last?.chatId === undefined || last.notified === true) continue;
-        await this.watch(object.id, entry.name, last.plannedAt, last.chatId);
+        await this.watch(object.id, entry.name, last.manual === true && last.firedAt !== undefined ? last.firedAt : last.plannedAt, last.chatId);
       }
     }
   }
