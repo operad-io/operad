@@ -78,3 +78,4 @@ the row fields.
 | T-0785-M1 | packages/source-cron/src/schedules.ts | the flow file was written over an existing file (`wx` became `w`) | `operad routines to-flow > refuses when the file already exists and changes nothing` |
 | T-0785-M2 | packages/source-cron/src/schedules.ts | the file ignored the routine's `--cwd` and used the home | `operad routines to-flow > writes a flow file that loads and runs the command, and points the routine at it` |
 | T-0785-M3 | packages/source-cron/src/schedules.ts | the routine kept starting `shell:command` instead of `home:<name>` | `operad routines to-flow > writes a flow file that loads and runs the command, and points the routine at it` |
+| T-0785-M4 | packages/source-cron/src/index.ts | the `cron:to-flow` action dropped its `name` argument | `a client offers to-flow without an object, and the routine then runs the file` |

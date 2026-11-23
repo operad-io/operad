@@ -429,6 +429,44 @@ function oneId(parsed: ParsedArgs): string {
   return id;
 }
 
+/**
+ * Writes a command routine as a flow file of the home and points the routine at
+ * it. Both the `routines to-flow` command and the `to-flow` action run this.
+ */
+export function routineToFlow(home: string, id: string, nameArg: string | undefined, now: number): string {
+  const rules = readRules(home);
+  const rule = found(rules, id);
+  const command = commandOf(rule);
+  if (command === undefined) {
+    throw new ScheduleError(`routine "${id}" does not run a command, so it has no flow file to make`);
+  }
+  const name = nameArg ?? `routine-${id}`;
+  if (!HOME_FLOW_NAME.test(name)) {
+    throw new ScheduleError(
+      `routines: --name "${name}" may use letters, digits, ".", "_" and "-" and must start with a letter or digit`,
+    );
+  }
+  const flows = join(home, "flows");
+  const file = join(flows, `${name}.flow.ts`);
+  const converted: TriggerRule = { ...rule, start: { flow: `home:${name}` } };
+  const convertedId = scheduledId(converted);
+  if (scheduled(rules).some((entry) => scheduledId(entry) === convertedId)) {
+    throw new ScheduleError(`a routine "${convertedId}" already exists`);
+  }
+  mkdirSync(flows, { recursive: true });
+  try {
+    writeFileSync(file, routineFlowFile(name, command, commandCwd(rule, home)), { flag: "wx" });
+  } catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "EEXIST") {
+      throw new ScheduleError(`${file} already exists; choose another name or edit that file`);
+    }
+    throw new ScheduleError(`cannot write ${file}: ${String(error)}`);
+  }
+  writeRules(home, replace(rules, id, () => converted));
+  baselineCronRule(home, converted, now);
+  return `wrote ${file}; the routine (${convertedId}) now runs home:${name}`;
+}
+
 /** The `routines` command: list, add, edit, pause, resume and remove. */
 export function scheduledCommand(
   options: { readonly now?: (() => number) | undefined } = {},
@@ -551,38 +589,7 @@ export function scheduledCommand(
       }
 
       if (sub === "to-flow") {
-        const id = oneId(parsed);
-        const rules = readRules(ctx.home);
-        const rule = found(rules, id);
-        const command = commandOf(rule);
-        if (command === undefined) {
-          throw new ScheduleError(`routine "${id}" does not run a command, so it has no flow file to make`);
-        }
-        const name = parsed.values.get("--name") ?? `routine-${id}`;
-        if (!HOME_FLOW_NAME.test(name)) {
-          throw new ScheduleError(
-            `routines: --name "${name}" may use letters, digits, ".", "_" and "-" and must start with a letter or digit`,
-          );
-        }
-        const flows = join(ctx.home, "flows");
-        const file = join(flows, `${name}.flow.ts`);
-        const converted: TriggerRule = { ...rule, start: { flow: `home:${name}` } };
-        const convertedId = scheduledId(converted);
-        if (scheduled(rules).some((entry) => scheduledId(entry) === convertedId)) {
-          throw new ScheduleError(`a routine "${convertedId}" already exists`);
-        }
-        mkdirSync(flows, { recursive: true });
-        try {
-          writeFileSync(file, routineFlowFile(name, command, commandCwd(rule, ctx.home)), { flag: "wx" });
-        } catch (error) {
-          if (error instanceof Error && "code" in error && error.code === "EEXIST") {
-            throw new ScheduleError(`${file} already exists; choose another --name or edit that file`);
-          }
-          throw new ScheduleError(`cannot write ${file}: ${String(error)}`);
-        }
-        writeRules(ctx.home, replace(rules, id, () => converted));
-        baselineCronRule(ctx.home, converted, now());
-        return `wrote ${file}; the routine (${convertedId}) now runs home:${name}`;
+        return routineToFlow(ctx.home, oneId(parsed), parsed.values.get("--name"), now());
       }
 
       if (sub === "pause" || sub === "resume") {
