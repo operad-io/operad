@@ -133,6 +133,7 @@ export function commitChanges(
   message: string,
   options: { readonly allowEmpty?: boolean | undefined } = {},
 ): CommitInfo | undefined {
+  if (!repository.tracked) return undefined;
   const paths = pathIn(repository.root, directory);
   const status = memoryGit(repository.root, ["status", "--porcelain", "--", paths]);
   if (!status.ok) {

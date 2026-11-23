@@ -10,7 +10,7 @@ import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from
 import { homedir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { findGit, GIT_NOT_INSTALLED, realGitFinderHost } from "@operad-io/engine/platform";
+import { findGit, GIT_NOT_INSTALLED, realGitFinderHost, type GitFinderHost } from "@operad-io/engine/platform";
 import { configPath, isRecord, prepareSettings, type ActionArgsSchema, type JsonValue } from "@operad-io/engine";
 
 /** The plugin name. */
@@ -108,6 +108,13 @@ export function wikiDirectoryOfHome(home: string, userHome: string = homedir()):
   }
 }
 
+/** Test-only: the machine git is looked for on, when set. */
+export const memoryTestHooks: { finder?: GitFinderHost | undefined } = {};
+
+function findMemoryGit(env: Readonly<Record<string, string | undefined>>): string | undefined {
+  return findGit(memoryTestHooks.finder ?? { ...realGitFinderHost(), env });
+}
+
 /** One git run. */
 export interface GitResult {
   readonly ok: boolean;
@@ -118,7 +125,7 @@ export interface GitResult {
 /** Runs git without a shell; output is trimmed. */
 export function memoryGit(cwd: string, args: readonly string[]): GitResult {
   const env = { ...process.env, GIT_TERMINAL_PROMPT: "0" };
-  const program = findGit({ ...realGitFinderHost(), env });
+  const program = findMemoryGit(env);
   if (program === undefined) return { ok: false, out: "", err: GIT_NOT_INSTALLED };
   const result = Bun.spawnSync({
     cmd: [program, "-C", cwd, ...args],
@@ -144,6 +151,8 @@ export interface Repository {
   readonly directory: string;
   /** Whether this call made the repository. */
   readonly created: boolean;
+  /** False when no git program is on this machine: a plain folder with no history until git appears. */
+  readonly tracked: boolean;
 }
 
 /**
@@ -153,6 +162,8 @@ export interface Repository {
  */
 export function ensureRepository(directory: string): Repository {
   mkdirSync(directory, { recursive: true });
+  // No git program (on a Mac, no command line tools): a plain folder, no error.
+  if (findMemoryGit(process.env) === undefined) return { root: directory, directory, created: false, tracked: false };
   // git answers with a real path. Reading the directory through its real path
   // too keeps the two comparable, so a repository that is this directory keeps
   // the name the caller gave it.
@@ -160,13 +171,13 @@ export function ensureRepository(directory: string): Repository {
   const found = memoryGit(real, ["rev-parse", "--show-toplevel"]);
   if (found.ok && found.out.length > 0) {
     const same = found.out === real;
-    return { root: same ? directory : found.out, directory: same ? directory : real, created: false };
+    return { root: same ? directory : found.out, directory: same ? directory : real, created: false, tracked: true };
   }
   const made = memoryGit(real, ["init", "--quiet"]);
   if (!made.ok) {
     throw new MemoryError(`git init in ${directory} failed: ${made.err || "git wrote nothing"}`);
   }
-  return { root: directory, directory, created: true };
+  return { root: directory, directory, created: true, tracked: true };
 }
 
 /** The wiki: created when missing, and a repository when it is not one. */
