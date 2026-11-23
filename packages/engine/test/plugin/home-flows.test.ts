@@ -1,8 +1,10 @@
 import { afterAll, expect, test } from "bun:test";
+import { lstatSync, realpathSync, symlinkSync } from "node:fs";
 import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { codeRoots, loadPluginRegistry } from "../../src/index.ts";
+import { linkEngineIntoHome } from "../../src/plugin/home-flows.ts";
 import { cleanupTempRoots, tempRoot } from "./support.ts";
 
 afterAll(cleanupTempRoots);
@@ -103,4 +105,36 @@ test("a home without a flows directory has no home flows", async () => {
 test("the flows directory is code a process watches", () => {
   const roots = codeRoots({ home: "/h", plugins: [] });
   expect(roots.some((root) => root.path === "/h/flows" && root.label === "home flows")).toBe(true);
+});
+
+const ENGINE_DIR = realpathSync(fileURLToPath(new URL("../..", import.meta.url)));
+
+test("the home gets a link to the running engine, renewed when it points elsewhere", async () => {
+  const root = await tempRoot();
+  const home = join(root, "home");
+  const link = join(home, "node_modules", "@operad-io", "engine");
+  linkEngineIntoHome(home);
+  expect(realpathSync(link)).toBe(ENGINE_DIR);
+
+  await rm(link);
+  symlinkSync(root, link, "dir");
+  linkEngineIntoHome(home);
+  expect(realpathSync(link)).toBe(ENGINE_DIR);
+});
+
+test("a real directory the person put in the home is left alone", async () => {
+  const root = await tempRoot();
+  const home = join(root, "home");
+  const link = join(home, "node_modules", "@operad-io", "engine");
+  await mkdir(link, { recursive: true });
+  linkEngineIntoHome(home);
+  expect(lstatSync(link).isSymbolicLink()).toBe(false);
+});
+
+test("a home with no flows directory is not written to", async () => {
+  const root = await tempRoot();
+  const home = join(root, "home");
+  await mkdir(home, { recursive: true });
+  await loadPluginRegistry({ home, storeRoot: join(root, "store"), onLog: () => undefined });
+  expect(() => lstatSync(join(home, "node_modules"))).toThrow();
 });

@@ -28,6 +28,8 @@ export default defineFlow({
 });
 ```
 
+Import `defineFlow` from `@operad-io/engine`, as above: it is the same engine operad itself runs, whether operad was installed globally or runs from a source checkout. To make that work operad keeps a link at `<home>/node_modules/@operad-io/engine` and renews it when the install moves; a real folder you put there is left alone. Other `@operad-io` packages are not linked. A step of a plugin is named by its string, `"<plugin>/<step>"`, and needs no import.
+
 The name the file gives inside `defineFlow` does not matter; the file name does. A file name uses letters, digits, `.`, `_` and `-`, and starts with a letter or digit.
 
 ## Using them

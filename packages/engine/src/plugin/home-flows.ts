@@ -6,8 +6,9 @@
  * reason and the others still load.
  */
 
-import { readdirSync } from "node:fs";
+import { lstatSync, mkdirSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync } from "node:fs";
 import { basename, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { loadFlow } from "../flow/load.ts";
 import type { FlowDefinition, StepTypeRegistry } from "../flow/types.ts";
 import { messageOf } from "./errors.ts";
@@ -38,6 +39,39 @@ export interface HomeFlows {
   readonly refused: readonly HomeFlowRefusal[];
 }
 
+/** The package directory of the running engine. */
+const ENGINE_DIRECTORY = realpathSync(fileURLToPath(new URL("../../", import.meta.url)));
+
+/**
+ * Makes `import { defineFlow } from "@operad-io/engine"` work in a flow file of
+ * the home. The home is outside any package, so plain resolution from the file
+ * finds nothing (or, with auto-install, a copy of another version). The home
+ * gets `node_modules/@operad-io/engine`, a link to the engine the running
+ * operad is made of, so a file imports the same code operad runs, from a
+ * global install or from a source checkout alike. A link that points elsewhere
+ * (the install moved or was upgraded) is renewed; a real directory the person
+ * put there is left alone. The link is written under a temporary name and
+ * renamed, so a process that starts at the same time never sees it missing.
+ */
+export function linkEngineIntoHome(home: string): void {
+  const scope = join(home, "node_modules", "@operad-io");
+  const link = join(scope, "engine");
+  try {
+    if (!lstatSync(link).isSymbolicLink() || realpathSync(link) === ENGINE_DIRECTORY) return;
+  } catch {
+    // Absent or dangling: written below.
+  }
+  try {
+    mkdirSync(scope, { recursive: true });
+    const temporary = `${link}.${process.pid}.tmp`;
+    rmSync(temporary, { force: true });
+    symlinkSync(ENGINE_DIRECTORY, temporary, "dir");
+    renameSync(temporary, link);
+  } catch {
+    // A home that cannot be written: the import then fails, and the refusal names the file.
+  }
+}
+
 /** The directory of the home's flows. */
 export function homeFlowsDirectory(home: string): string {
   return join(home, "flows");
@@ -58,6 +92,7 @@ export async function loadHomeFlows(
   } catch {
     return { flows: [], refused: [] };
   }
+  linkEngineIntoHome(home);
   const flows: HomeFlow[] = [];
   const refused: HomeFlowRefusal[] = [];
   for (const entry of names) {
