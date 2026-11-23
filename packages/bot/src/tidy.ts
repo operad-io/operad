@@ -5,7 +5,7 @@
  * when the botanist wakes and what a person sees.
  */
 
-import { messageOf, type SourceContext } from "@operad-io/engine";
+import { messageOf, type PluginFact, type SourceContext } from "@operad-io/engine";
 import { join, resolve } from "node:path";
 import {
   CHAT_TYPE,
@@ -13,6 +13,7 @@ import {
   allMessages,
   chatData,
   lastReplyOutcome,
+  readChat,
   stoppedRunAfter,
   chatFacts,
   costText,
@@ -919,22 +920,28 @@ export class BotTidySource {
       chatId,
       chatId,
       async (read) => {
-        const committed = read.facts.some(
-          (fact) =>
-            fact.type === TIDY_COMMIT_FACT &&
-            isRecord(fact.data) &&
-            fact.data["chat"] === chatId,
-        );
-        if (!committed) {
-          // A run that ended (cancelled, failed or quiet) without its commit
-          // still gives the instructions back; the commit, if it comes, restores them.
+        const committedIn = (facts: readonly PluginFact[]): boolean =>
+          facts.some(
+            (fact) =>
+              fact.type === TIDY_COMMIT_FACT &&
+              isRecord(fact.data) &&
+              fact.data["chat"] === chatId,
+          );
+        if (!committedIn(read.facts)) {
+          // The commit is a step after the reply (memory/commit), so a plain
+          // reply is not yet an ending: only a cancelled or failed run, or a run
+          // that has wholly ended, is one without its commit.
           const outcome = lastReplyOutcome(read.messages, read.entries);
           const cancelled = stoppedRunAfter(read.facts, -1) !== undefined || outcome.kind === "stopped";
-          if (memoryDir !== undefined && (cancelled || outcome.kind !== "none")) unlockInstructions(memoryDir);
-          // A run that ended without a commit (cancelled, failed or a plain
-          // reply) ends its card here, not never; the watch only reads once no
-          // reply is still being written.
           if (!cancelled && outcome.kind === "none") return undefined;
+          if (!cancelled && outcome.kind === "normal") {
+            if (this.ctx.runs === undefined || outcome.runId === undefined) return undefined;
+            if ((await this.ctx.runs.active(outcome.runId)) !== false) return undefined;
+            // The commit may have landed as the run ended: read again before ending without it.
+            if (committedIn(readChat(this.ctx.store, chatId).facts)) return undefined;
+          }
+          // The run ended without its commit: the instructions are given back.
+          if (memoryDir !== undefined) unlockInstructions(memoryDir);
           const stored = await this.ctx.store.get(CHAT_TYPE, chatId);
           if (stored === undefined) return undefined;
           const failure = [...read.entries].reverse().find((item) => item.kind === "failure");
@@ -942,7 +949,11 @@ export class BotTidySource {
           return {
             stored,
             replyText: reply?.text,
-            failureText: failure?.text ?? "The run was cancelled before it changed the memory.",
+            // A plain reply that ended with no commit is a quiet end, not a failure.
+            failureText:
+              outcome.kind === "normal" && !cancelled
+                ? undefined
+                : failure?.text ?? "The run was cancelled before it changed the memory.",
           };
         }
         const stored = await this.ctx.store.get(CHAT_TYPE, chatId);
@@ -1122,6 +1133,7 @@ export class BotTidySource {
   start(): { stop: () => void } {
     this.timer = setInterval(() => {
       this.chatWatches.track(this.poll());
+      this.chatWatches.recheckAll();
     }, 1_000);
     if (typeof this.timer === "object" && "unref" in this.timer) {
       this.timer.unref();

@@ -10,6 +10,7 @@ import { CHAT_TYPE, readChat, writingReplyNow, type ChatRead } from "@operad-io/
 /** One chat's watch: how to stop it. */
 interface ChatWatch {
   readonly stop: () => void;
+  readonly recheck: () => void;
 }
 
 /** The watches of one bot source, and the work they and its polls started. */
@@ -37,6 +38,11 @@ export class ChatWatches {
   /** Waits for the checks that are running now; a test calls this after a reply. */
   async settled(): Promise<void> {
     while (this.work.size > 0) await Promise.allSettled([...this.work]);
+  }
+
+  /** Reads every watched chat again: an end that leaves no new fact is found by it. */
+  recheckAll(): void {
+    for (const watch of [...this.watches.values()]) watch.recheck();
   }
 
   stopAll(): void {
@@ -91,6 +97,7 @@ export class ChatWatches {
         unsubscribe?.();
         this.watches.delete(key);
       },
+      recheck: () => this.track(check()),
     };
     this.watches.set(key, blocking);
     unsubscribe = this.store.subscribe({ type: CHAT_TYPE, id: chatId }, {}, () => {
