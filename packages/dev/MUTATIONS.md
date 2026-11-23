@@ -1665,3 +1665,6 @@ the row fields.
 | T-0747-M2 | packages/dev/src/mainclone.ts | a refusal over untracked files did not name them | `an untracked file at a path the merge adds is refused with the reason (T-0747)` |
 | T-0747-M3 | packages/dev/src/views.ts | a call the access profile denied was shown as the raw denied/failed lines | `dev views > a call the access profile stopped reads as a normal guard, not a failure (T-0747)` |
 | T-0747-M4 | packages/dev/src/views.ts | the Review section did not escape the reviewer's text | `dev views > the Review section shows the latest round and reaches earlier ones, safe as Markdown (T-0747)` |
+| T-0750-M1 | packages/dev/src/views.ts | the Review section's fix level was read from the repository's current dev.json, not the one recorded with the round | `dev views > the Review section shows the latest round and reaches earlier ones, safe as Markdown (T-0747)` |
+| T-0750-M2 | packages/dev/src/views.ts | the Review section listed oldest round first (sort reversed) | `dev views > the Review section shows the latest round and reaches earlier ones, safe as Markdown (T-0747)` |
+| T-0750-M3 | packages/dev/src/views.ts | the Review section offered no pages or next cursor for several rounds, or showed for a task with no review | `dev views > the Review section shows the latest round and reaches earlier ones, safe as Markdown (T-0747)` |

@@ -903,14 +903,8 @@ async function reviewSection(
   const index = cursor === undefined ? 0 : Number(cursor);
   const shown = Number.isInteger(index) ? ordered[index] : undefined;
   if (shown === undefined) return { markdown: "_That page of the reviews does not exist._" };
-  let fixLevel: string | undefined;
-  try {
-    const task = taskData(object.data);
-    const found = await findRepository(ctx.store, task.repository);
-    if (found !== undefined) fixLevel = (await readDevSettings(repositoryData(found.data).path)).reviewer.fixLevel;
-  } catch {
-    fixLevel = undefined;
-  }
+  // The level recorded with the round; an older round has none, so the line is left out.
+  const fixLevel = typeof shown.record.fixLevel === "string" ? shown.record.fixLevel : undefined;
   return {
     markdown: reviewRound(shown.record, shown.attempt, fixLevel),
     ...(ordered.length > 1

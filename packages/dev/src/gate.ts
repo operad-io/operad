@@ -2015,8 +2015,14 @@ export async function runReview(
       typeof sha === "string" && recorded.sha === undefined
         ? { ...recorded, sha }
         : recorded;
-    const record: ReviewRecord =
+    const withSettings: ReviewRecord =
       used === undefined ? stamped : { ...stamped, reviewSettings: used };
+    // The fix level in force for this round, so a later view shows it and not
+    // whatever dev.json says by then.
+    const record: ReviewRecord = {
+      ...withSettings,
+      fixLevel: context.settings.reviewer.fixLevel,
+    };
     const waiting =
       record.decision !== "findings" && record.result !== "fail";
     const written = await saveTaskGuarded(
