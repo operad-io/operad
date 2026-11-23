@@ -5,3 +5,4 @@ node_modules/
 .radian/
 /.radian-worktrees/
 /.radian-sandbox/
+.archify/
