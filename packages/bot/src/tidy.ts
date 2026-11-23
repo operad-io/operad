@@ -5,7 +5,7 @@
  * when the botanist wakes and what a person sees.
  */
 
-import { messageOf } from "@operad-io/engine";
+import { messageOf, type SourceContext } from "@operad-io/engine";
 import { join, resolve } from "node:path";
 import {
   CHAT_TYPE,
@@ -58,7 +58,7 @@ import {
   ROUTINE_TYPE,
   SCHEDULE_SOURCE,
   localDate,
-  notifyScheduledReply,
+  mainChatDelivery,
   replySummary,
   scheduledPromptOf,
   withRun,
@@ -613,6 +613,8 @@ export interface TidySourceContext {
   readonly clock: () => number;
   readonly logger: { write(text: string): Promise<string> };
   readonly client: ClientApi;
+  /** What a delivery to the main chat needs to write; without it a result stays in the history. */
+  readonly facts?: SourceContext["facts"] | undefined;
   readonly harnesses?: readonly string[] | undefined;
   readonly harnessCapabilities?: ((harness: string) => HarnessCapabilities | undefined) | undefined;
   /** How the check reads its work; a test replaces it to see whether it ran. */
@@ -653,7 +655,7 @@ export class BotTidySource {
     options: { readonly notify?: ((notice: ScheduleNotice) => Promise<void>) | undefined } = {},
   ) {
     this.ctx = ctx;
-    this.notify = options.notify ?? ((notice) => notifyScheduledReply(ctx.home, notice));
+    this.notify = options.notify ?? mainChatDelivery(ctx);
     this.chatWatches = new ChatWatches(ctx.logger, ctx.store, ctx.runs);
   }
 
@@ -836,6 +838,9 @@ export class BotTidySource {
           runId: outcome.chatId,
           title: DREAMING_NAME,
           summary: tidyOutcomeLine(bot, outcome),
+          text: tidyOutcomeLine(bot, outcome),
+          failed: true,
+          bot,
         });
       } catch (error) {
         await this.chatWatches.log(
@@ -988,6 +993,9 @@ export class BotTidySource {
             runId: chatId,
             title: DREAMING_NAME,
             summary: tidyOutcomeLine(bot, { ...outcome, summary: outcomeSummary(outcome) }),
+            text: tidyOutcomeLine(bot, { ...outcome, summary: outcomeSummary(outcome) }),
+            failed: failureText !== undefined,
+            bot,
           });
         } catch (error) {
           await this.chatWatches.log(
@@ -1038,6 +1046,9 @@ export class BotTidySource {
         runId: chatId,
         title: DREAMING_NAME,
         summary: tidyOutcomeLine(bot, { ...outcome, summary: outcomeSummary(outcome) }),
+        text: tidyOutcomeLine(bot, { ...outcome, summary: outcomeSummary(outcome) }),
+        failed: false,
+        bot,
       });
     } catch (error) {
       await this.chatWatches.log(

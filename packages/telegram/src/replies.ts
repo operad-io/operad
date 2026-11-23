@@ -15,7 +15,7 @@
  * the tool calls (ADR 0033 D7).
  */
 
-import { CHAT_TYPE, allEntries, allMessages, chatData } from "@operad-io/chat";
+import { CHAT_TYPE, allEntries, allMessages, chatData, deliveryHeader } from "@operad-io/chat";
 import { messageOf, type SourceContext } from "@operad-io/engine";
 import { BotApiError, type BotApi } from "./api.ts";
 import { TelegramEvents, type TelegramEvent } from "./events.ts";
@@ -182,6 +182,11 @@ export class ReplySender {
     if (target === undefined) return;
     const outgoing: Outgoing[] = [];
     for (const message of allMessages(this.ctx.store, chatId)) {
+      if (message.role === "delivery" && message.delivery !== undefined) {
+        // A routine's result: its header first, so it reads apart from conversation.
+        outgoing.push({ id: message.id, at: message.at, sequence: message.sequence, text: `**${deliveryHeader(message.delivery)}**\n\n${message.text}` });
+        continue;
+      }
       if (message.role !== "assistant") continue;
       outgoing.push({ id: message.id, at: message.at, sequence: message.sequence, text: message.text });
     }

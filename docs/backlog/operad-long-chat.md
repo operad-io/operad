@@ -72,7 +72,7 @@
 2. 修剪旧工具结果（pi 自动压缩和压缩前落盘已做）。
 3. Routine 对象、历史和结果送达；改名 Dreaming / 梦境整理。
    - 已落地（T-0768，见 ADR 0030 D10、D13）：Routine 对象（父对象是 bot，行、页面、历史里每次运行的过程和结果、页面上的操作）、运行不是 chat（`R-` 编号，不进 chat 列表）、Dreaming 作为内置 Routine、改名、30 天历史、现有定时 chat 一次性关闭。`bot:schedule-*` 和 `bot schedule` 保留旧名。
-   - 还没做：结果送进 bot 的主 chat（依赖第 4 项的"主 chat"），现在仍走 `notify` 命令，通知指向 routine。
+   - 已落地（T-0770，见 ADR 0030 D10、0026 D19）：有内容的结果作为一条带 `Routine · 名字` 标题的消息送进主 chat（绑定 Telegram 的 chat 优先，否则最近的 chat；规则是 `mainChatOf`），绑定的 Telegram 也收到；无事可报不送达，失败总是送达；不触发回复，下一条消息只带结果的摘要，完整记录按需用工具读；routine 不再走 `notify` 命令。
 4. 客户端：服务端给出"bot 最近的 chat"，再改桌面、iOS 和 `operad` 命令的默认入口；桌面和 iOS 的侧边栏加 Routines。
 5. 闲置自动关闭和运行历史的清理。
 

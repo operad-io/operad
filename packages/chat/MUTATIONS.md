@@ -709,3 +709,11 @@ are append-only, so the old lines stay as history.
 | T-0780-M2 | packages/chat/src/model.ts | a compaction was never judged still full | `a chat too full to compact > two compactions never run in a row: with no reply that added context between, the agent is not asked again` |
 | T-0780-M3 | packages/chat/src/model.ts | `/new` did not end the full state | `a chat too full to compact > /new ends it: the next message goes to a fresh session` |
 | T-0780-M4 | packages/chat/src/model.ts | every compaction counted as full | `a chat too full to compact > a compaction that fits does not stop the chat` |
+
+## T-0770 — A plugin delivers a result into a chat
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0770-M4 | packages/chat/src/model.ts | a delivery was carried again after a reply had seen it | `a delivered result > rides on the next message as its summary, not its whole text, and only once` |
+| T-0770-M5 | packages/chat/src/reply.ts | the prompt left out the delivered results | `a delivered result > rides on the next message as its summary, not its whole text, and only once` and `a failed run says so in the header and the carried line` |
+| T-0770-M6 | packages/chat/src/deliver.ts | a delivery of one run was recorded twice | `a delivered result > is recorded once for one run` |

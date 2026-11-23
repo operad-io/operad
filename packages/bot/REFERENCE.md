@@ -255,11 +255,12 @@ catch-up firing appends `latenessLine` to the prompt.
 
 The source watches the run's facts. On the first assistant message, or on a
 failure entry, it records `replySummary` as the routine's `result`, updates the
-run in `runs` (pruning those older than `ROUTINE_HISTORY_DAYS`), runs the
-`notify` command from `config.json` with the summary as `OPERAD_REASON` and the
-routine's id and link as `OPERAD_ID` and `OPERAD_LINK`, and marks `notified`. A
-firing whose reply ended before `serve` stopped is found the same way at the next
-start; a command that fails is logged and not retried. When the plugin starts,
+run in `runs` (pruning those older than `ROUTINE_HISTORY_DAYS`), delivers the
+result with `deliverToMainChat` (a `delivery` message in the chat `mainChatOf`
+names, ADR 0026 D19; a quiet ending delivers nothing, a failure always does) and
+marks `notified`. A firing whose reply ended before `serve` stopped is found the
+same way at the next start; a bot with no open chat logs it and leaves the
+result in the history. When the plugin starts,
 `closeOldScheduledChats` closes once the chats that earlier scheduled prompts and
 memory tidies opened.
 
@@ -325,12 +326,12 @@ not force linking a mention. A note marked `untrusted: true` is left out of
 those lists, so the tidy is never pointed at one to link. The source watches for the memory plugin's
 `memory.tidy` fact and then reads the run's diff summary, from the last tidy
 commit to the tidy commit. A run started from the card leaves no pending item
-when it succeeds; it calls `notify` with one line naming the bot, the change or
+when it succeeds; it delivers one line to the main chat naming the bot, the change or
 `no memory change`, the cost and, when the rewrite was voided, that only
 additions were kept. The line never carries the agent's reply; the diff summary,
 cost and reply stay in the tidy object's section and the run's section of Dreaming. A failed run leaves a failed
 card whose `run` and `skip` actions are the decision it needs, with one short
-line giving the reason. An automatic run returns to idle and calls `notify` when
+line giving the reason. An automatic run returns to idle and delivers a line when
 the run changed something or the run failed. A card left running without a
 run, such as after a crash between starting the run and recording it, becomes
 a failed card on the next start.

@@ -2,7 +2,7 @@
  * Routines of a bot (ADR 0030 D10). The bot plugin is its own source: it reads
  * the routine objects, fires the latest planned minute when it is due, starts a
  * run with the prompt, and when the reply ends it records the result in the
- * routine's history and runs the same notify command a wait uses.
+ * routine's history and delivers it to the bot's main chat (ADR 0030 D10).
  *
  * A run keeps its reply and process in a record the chat plugin writes, but it
  * is not a chat: it has an `R-` id, is in no chat list, and nothing a person
@@ -17,6 +17,7 @@
 
 import { messageOf } from "@operad-io/engine";
 import { CHAT_TYPE, chatData, sendMessage } from "@operad-io/chat";
+import { deliverToMainChat } from "./delivery.ts";
 import { ChatWatches } from "./chat-watch.ts";
 import {
   cronMatches,
@@ -24,10 +25,7 @@ import {
   isRecord,
   latestCronMinute,
   minuteStart,
-  NOTIFY_TIMEOUT_MS,
-  objectLink,
   parseCron,
-  readConfig,
   type ActionArgsSchema,
   type ActionTypeDefinition,
   type JsonValue,
@@ -38,7 +36,6 @@ import {
   type SourceHandle,
   type StoredObject,
 } from "@operad-io/engine";
-import { runLine } from "@operad-io/engine/platform";
 import { BOT_TYPE, BotError } from "./bot.ts";
 import { followUps, removeFollowUp, withBotLock, type FollowUp } from "./follow-up.ts";
 import { SETUP_DEV_INSTRUCTION } from "./setup-dev.ts";
@@ -495,41 +492,38 @@ export function replySummary(message: string): string {
     : `${oneLine.slice(0, SCHEDULE_SUMMARY_MAX - 1)}…`;
 }
 
-/** What a notification command is given. */
+/** What a finished routine run delivers. */
 export interface ScheduleNotice {
   /** The routine's object id. */
   readonly routineId: string;
   /** The run's record id. */
   readonly runId: string;
   readonly title: string;
+  /** A short summary; it is what rides on the main chat's next message. */
   readonly summary: string;
+  /** The whole result, shown in the main chat and sent to a bound Telegram chat. */
+  readonly text: string;
+  /** True when the run failed. */
+  readonly failed: boolean;
+  /** The bot whose main chat gets it. */
+  readonly bot: string;
 }
 
-/** Runs the configured notify command for a finished scheduled reply. */
-export async function notifyScheduledReply(
-  home: string,
-  notice: ScheduleNotice,
-): Promise<void> {
-  const config = await readConfig(home);
-  const command = config.notify.command;
-  if (command === null) return;
-  const outcome = await runLine({
-    line: command,
-    cwd: home,
-    env: {
-      OPERAD_ID: `${ROUTINE_TYPE}:${notice.routineId}`,
-      OPERAD_TITLE: notice.title,
-      OPERAD_REASON: notice.summary,
-      OPERAD_LINK: objectLink(ROUTINE_TYPE, notice.routineId),
-    },
-    timeoutMs: NOTIFY_TIMEOUT_MS,
-    signal: new AbortController().signal,
-  });
-  if (outcome.exitCode !== 0 || outcome.timedOut || outcome.spawnError !== undefined) {
-    throw new Error(
-      `the notify command ${outcome.timedOut ? "timed out" : `exited ${outcome.exitCode ?? "without a code"}`}`,
-    );
-  }
+/**
+ * The delivery a routine's result makes: a message in the bot's main chat
+ * (see {@link deliverToMainChat}). A host with no way to write facts delivers
+ * nothing and the result stays in the routine's history.
+ */
+export function mainChatDelivery(
+  ctx: { readonly store: ObjectStore; readonly facts?: SourceContext["facts"] | undefined; readonly logger: { write(text: string): Promise<string> } },
+): (notice: ScheduleNotice) => Promise<void> {
+  return async (notice) => {
+    const bot = notice.bot;
+    const { facts } = ctx;
+    if (facts === undefined) return;
+    const delivered = await deliverToMainChat({ store: ctx.store, facts }, bot, notice);
+    if (!delivered) await ctx.logger.write(`routine "${notice.title}" of bot ${bot}: the bot has no open chat; the result stays in the routine's history\n`);
+  };
 }
 
 /** Reads a bot object, or says why it cannot be used. */
@@ -924,8 +918,12 @@ export class BotScheduleSource {
     options: { readonly notify?: ((notice: ScheduleNotice) => Promise<void>) | undefined } = {},
   ) {
     this.ctx = ctx;
-    this.notify = options.notify ?? ((notice) => notifyScheduledReply(ctx.home, notice));
+    this.notify = options.notify ?? ((notice) => this.deliverFor(notice));
     this.chatWatches = new ChatWatches(ctx.logger, ctx.store, ctx.runs);
+  }
+
+  private deliverFor(notice: ScheduleNotice): Promise<void> {
+    return mainChatDelivery(this.ctx)(notice);
   }
 
   /** Waits for the checks that are running now; a test calls this after a reply. */
@@ -1188,9 +1186,10 @@ export class BotScheduleSource {
               ? replySummary(failure.text ?? "The reply failed.")
               : replySummary(reply.text);
         if (result === undefined) return undefined;
-        return { result, quiet, failed };
+        const text = reply !== undefined && !failedAfter ? reply.text : result;
+        return { result, quiet, failed, text };
       },
-      async ({ result, quiet, failed }) => {
+      async ({ result, quiet, failed, text }) => {
         const now = this.ctx.clock();
         const status: RoutineRunStatus = quiet ? "quiet" : failed ? "failed" : "done";
         await replaceEntry(
@@ -1215,11 +1214,11 @@ export class BotScheduleSource {
               : undefined,
           "step:bot/scheduled",
         );
-        // A quiet ending records its result and runs no notify command.
+        // A quiet ending records its result and delivers nothing; a failure is always delivered.
         if (quiet) return;
         try {
           const routine = await findRoutine(this.ctx.store, bot, name);
-          await this.notify({ routineId: routine?.id ?? "", runId, title: name, summary: result });
+          await this.notify({ routineId: routine?.id ?? "", runId, title: name, summary: result, text, failed, bot });
         } catch (error) {
           await this.chatWatches.log(
             `routine "${name}" of bot ${bot}: notify: ${messageOf(error)}`,

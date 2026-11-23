@@ -179,8 +179,36 @@ export const CHAT_SOURCES = ["ios", "telegram", "cli", "tui"] as const;
 /** The event source of a message from a client the chat does not know by name. */
 export const OTHER_SOURCE = "other";
 
-/** Who wrote a message: the person, or the assistant. */
-export type MessageRole = "user" | "assistant";
+/**
+ * Who wrote a message: the person, the assistant, or a plugin that delivers a
+ * result into the chat (a `delivery`, which never starts a reply).
+ */
+export type MessageRole = "user" | "assistant" | "delivery";
+
+/** What a delivered result says about itself. */
+export interface DeliveryData {
+  /** The routine that produced it, as the header names it. */
+  readonly routine: string;
+  /** The record of the run, which the agent reads on demand. */
+  readonly runId: string;
+  /** The short summary that rides on the next message; the message's text is the whole result. */
+  readonly summary: string;
+  /** True when the run failed. */
+  readonly failed?: boolean | undefined;
+}
+
+/** The header a delivered result carries, so it is told apart from conversation. */
+export function deliveryHeader(delivery: DeliveryData): string {
+  return `Routine · ${delivery.routine}${delivery.failed === true ? " · failed" : ""}`;
+}
+
+/** The delivery a fact's data holds, or undefined when it holds none. */
+export function deliveryOf(value: unknown): DeliveryData | undefined {
+  if (!isRecord(value)) return undefined;
+  const { routine, runId, summary, failed } = value;
+  if (typeof routine !== "string" || typeof runId !== "string" || typeof summary !== "string") return undefined;
+  return { routine, runId, summary, ...(failed === true ? { failed: true as const } : {}) };
+}
 
 /** The scheduled prompt that opened a chat: its bot and the entry's name. */
 export interface ScheduledChat {
@@ -486,6 +514,8 @@ export interface MessageData {
   readonly source: { readonly kind: string; readonly ref: string | null };
   /** An assistant message: the ids of the messages it answers. */
   readonly replyTo?: readonly string[] | undefined;
+  /** A delivered result: where it came from and its summary. */
+  readonly delivery?: DeliveryData | undefined;
   /** A user message: text only the agent is given after the text; no view shows it. */
   readonly instruction?: string | undefined;
   /** The run whose answer this message or entry belongs to. */
@@ -1106,7 +1136,9 @@ function messageOfFact(fact: PluginFact): Message | undefined {
   if (fact.type !== MESSAGE_FACT) return undefined;
   const data = fact.data;
   if (typeof data.id !== "string" || typeof data.text !== "string") return undefined;
-  if (data.role !== "user" && data.role !== "assistant") return undefined;
+  if (data.role !== "user" && data.role !== "assistant" && data.role !== "delivery") return undefined;
+  const delivery = data.role === "delivery" ? deliveryOf(data.delivery) : undefined;
+  if (data.role === "delivery" && delivery === undefined) return undefined;
   const from = isRecord(data.from) ? data.from : {};
   const source = isRecord(data.source) ? data.source : {};
   const timings = timingsOf(data.timings);
@@ -1126,6 +1158,7 @@ function messageOfFact(fact: PluginFact): Message | undefined {
       ref: typeof source.ref === "string" ? source.ref : null,
     },
     ...(Array.isArray(data.replyTo) ? { replyTo: stringList(data.replyTo) } : {}),
+    ...(delivery === undefined ? {} : { delivery }),
     ...(data.role === "user" && typeof data.instruction === "string" && data.instruction.length > 0
       ? { instruction: data.instruction }
       : {}),
@@ -1445,6 +1478,52 @@ export function briefToCarry(messages: readonly Message[], facts: readonly Plugi
       ? `${lead} Brief of the earlier session:\n\n${text}`
       : `${lead} A brief of the earlier session could not be made${failed === undefined ? "" : ` (${failed})`}.`;
   return goal.length === 0 ? body : `${body}\n\nGoal for this session: ${goal}`;
+}
+
+/**
+ * The results delivered to a chat that its agent has not seen: those recorded
+ * after the latest reply's run began (a reply's prompt carried what was there
+ * when its run began) and after the latest `/new`. Oldest first.
+ */
+export function deliveriesToCarry(
+  messages: readonly Message[],
+  facts: readonly PluginFact[],
+): readonly (Message & { readonly delivery: DeliveryData })[] {
+  const started = new Map<string, number>();
+  for (const fact of facts) {
+    if (fact.type === RUN_FACT && typeof fact.data.runId === "string") started.set(fact.data.runId, fact.sequence);
+  }
+  let seen = newSessionAt(facts);
+  for (const message of messages) {
+    if (message.role !== "assistant" || message.runId === undefined) continue;
+    const at = started.get(message.runId);
+    if (at !== undefined && at > seen) seen = at;
+  }
+  const found: (Message & { readonly delivery: DeliveryData })[] = [];
+  for (const message of messages) {
+    if (message.role === "delivery" && message.delivery !== undefined && message.sequence > seen) {
+      found.push({ ...message, delivery: message.delivery });
+    }
+  }
+  return found;
+}
+
+/**
+ * The block that carries delivered results on a message: each one's summary and
+ * where its whole record is, never the whole result, so several a day do not
+ * stay in the context for good.
+ */
+export function deliveryBlock(deliveries: readonly { readonly delivery: DeliveryData }[]): string | undefined {
+  if (deliveries.length === 0) return undefined;
+  const lines = deliveries.map(
+    ({ delivery }) => `- ${delivery.routine}${delivery.failed === true ? " (failed)" : ""}, run ${delivery.runId}: ${delivery.summary}`,
+  );
+  return [
+    "[Routine results]",
+    "These results were delivered to this chat since your last reply. Each line is a summary. The person may ask about one; read the whole record of a run on demand with the operad tool `section` (id `chat:<run>`, section `transcript`) instead of guessing.",
+    ...lines,
+    "[End of routine results]",
+  ].join("\n");
 }
 
 /**
