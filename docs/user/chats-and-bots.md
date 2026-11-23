@@ -143,6 +143,11 @@ The records do not depend on the agent's own session files, so a cleaned or
 compacted session does not erase the chat's history; the agent's context still
 belongs to the agent, which continues its own session.
 
+A `pi` chat compacts its context after a reply when it reaches three quarters of
+the model's window. If the compacted context still fills that much, the chat does
+not compact again and again: your next message fails with a line saying the chat
+is too full to continue. Send `/new` to start a fresh one.
+
 A chat's filters are `open` (the default) and `closed`; the kernel adds `all`,
 so `operad list chat --filter all` still shows closed chats. A chat on a
 repository whose `workIn` is `worktree` works in the main clone, read-only (with

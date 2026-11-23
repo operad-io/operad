@@ -1,3 +1,5 @@
+import { isRecord } from "@operad-io/engine";
+
 /**
  * Pruning old tool results from what a model call is sent (T-0767).
  *
@@ -46,10 +48,6 @@ export const DEFAULT_MIN_PRUNE_CHARS = 20_000;
 /** The text that stands in for a pruned result. */
 export function placeholderFor(toolName: string): string {
   return `[${toolName} result removed from the context to save space]`;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
 }
 
 /** The characters of text a tool result holds; images and other blocks count nothing. */

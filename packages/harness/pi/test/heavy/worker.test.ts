@@ -2300,3 +2300,39 @@ test("a resumed session is pruned by the time of its last message, not by a fres
   const soon = await runFake(s, [{ text: "x" }], resume, { FAKE_PRUNE_CLOCK_BASE: String(Date.now() + 1000) });
   expect(soon.stderr).not.toContain("pruned");
 });
+
+test("the compaction's summary keeps the lists of files the session read and modified", async () => {
+  const s = setup();
+  const readPath = join(s.input["cwd"] as string, "notes-read.txt");
+  const writePath = join(s.input["cwd"] as string, "made-by-agent.txt");
+  writeFileSync(readPath, "x\n");
+  const first = await runFake(
+    s,
+    [
+      { text: "", toolCall: { name: "read", arguments: { path: readPath } } },
+      { text: "", toolCall: { name: "write", arguments: { path: writePath, content: "y\n" } } },
+      { text: "EARLIER" },
+    ],
+    { ...s.input, prompt: LONG, access: { default: "edit" } },
+  );
+  expect(last(first)["result"]).toBe("done");
+  expect(existsSync(writePath)).toBe(true);
+  const run = await runFake(
+    s,
+    [{ text: "ANSWER" }, { text: "SUMMARY-WORDS" }],
+    { ...s.input, prompt: LONG, resumeSession: last(first)["sessionId"], compact: { at: 0.0001 } },
+  );
+  const result = last(run);
+  expect(result["compaction"]).toMatchObject({ reason: "threshold" });
+  const sessionFile = String(result["sessionId"]);
+  const entries = readFileSync(sessionFile, "utf8")
+    .split("\n")
+    .filter((line) => line.length > 0)
+    .map((line) => JSON.parse(line) as Record<string, unknown>);
+  const summary = entries.find((entry) => entry["type"] === "compaction")?.["summary"];
+  expect(typeof summary).toBe("string");
+  const text = String(summary);
+  expect(text).toContain("SUMMARY-WORDS");
+  expect(text).toMatch(/<read-files>[^<]*notes-read\.txt[^<]*<\/read-files>/);
+  expect(text).toMatch(/<modified-files>[^<]*made-by-agent\.txt[^<]*<\/modified-files>/);
+});
