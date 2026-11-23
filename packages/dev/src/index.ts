@@ -257,6 +257,7 @@ export * from "./project-flows.ts";
 export * from "./schedule.ts";
 export * from "./service.ts";
 export * from "./register-requests.ts";
+export * from "./setup-git.ts";
 export * from "./places.ts";
 export * from "./project-settings.ts";
 export * from "./retry.ts";

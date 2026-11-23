@@ -1723,3 +1723,12 @@ the row fields.
 | T-0732-M4 | packages/dev/src/git-state.ts | the no-commit state said the no-repository sentence | `a task needs git > no commit: the refusal asks for the first commit` |
 | T-0732-M5 | packages/dev/src/git-state.ts | the subfolder sentence did not name the root or the add command | `a task needs git > a subfolder names the root and the command` |
 | T-0732-M6 | packages/dev/src/steps.ts | `prepareBranch` did not refuse a folder without git | `a task needs git > the branch-mode step refuses with the same sentence` |
+| T-0733-M1 | packages/dev/src/setup-git.ts | `gitignoreProblem` never reported a secret name that the text lets in | `the .gitignore text check > accepts the defaults and refuses text that lets a secret in, a null byte or a huge text` |
+| T-0733-M2 | packages/dev/src/setup-git.ts | `applyLocked` did not empty the index before adding the approved paths | `applySetupGit > what was staged before is not in the commit` |
+| T-0733-M3 | packages/dev/src/setup-git.ts | `applyLocked` ran `git add -A` instead of adding the approved paths | `applySetupGit > makes a branch-mode repository without a remote, committing only the approved paths` |
+| T-0733-M4 | packages/dev/src/setup-git.ts | the identity of the request was not written to the repository's git configuration | `applySetupGit > makes a branch-mode repository without a remote, committing only the approved paths` |
+| T-0733-M5 | packages/dev/src/setup-git.ts | `refuseUnsafeFolder` did not refuse the home folder | `the file list for the first commit > the home folder and a disk root are refused` |
+| T-0733-M6 | packages/dev/src/setup-git.ts | `updateSettings` kept `remote` in `dev.json` | `applySetupGit > makes a branch-mode repository without a remote, committing only the approved paths` |
+| T-0733-M7 | packages/dev/src/setup-git.ts | a folder with `git init` done and no commit was taken for finished | `applySetupGit > a process killed after git init and before the commit is finished by the next run` |
+| T-0733-M8 | packages/dev/src/register-requests.ts | a failed setup request was rewritten with only its path and error | `a request to set up git, carried by the request file > one that fails stays whole with its reason and is a pending item` |
+| T-0733-M9 | packages/dev/src/git.ts | `printsOnSuccess` expected output from `symbolic-ref HEAD refs/heads/<name>` | `applySetupGit > again after it ended does nothing more` |
