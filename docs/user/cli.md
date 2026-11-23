@@ -94,7 +94,7 @@ and `operad help` print the whole table.
 | `operad bot setup-dev <bot> <repository directory>` | `< dev.json` | Setup Dev: with no input it prints the steps for the agent; with the repository's `dev.json` on stdin it proposes turning `dev` on for that repository, and a person approves it. |
 | `operad bot setup-git <bot> <folder>` | `< {"gitignore", "identity"}` | Set up git here, for a bot's agent: with no input it prints the steps (install git when it is missing, with each command an approved pending item, then the proposal); with a JSON object on stdin (`{}` for the defaults) it proposes the first commit of a folder that has no git or no commit: the `.gitignore`, the list of files and the name and email (prefilled from the computer account), and a person approves it in Pending. A folder inside another git repository, the home folder and a disk root are refused. |
 | `operad bot setup <bot> <plugin> [target]` | | Setup <name>: prints what the plugin's own check finds missing and the steps of its setup guide, for a bot's agent to follow. In a bot chat, `/setup <plugin> [target]` sends the same to the chat. |
-| `operad bot schedule <bot> add\|edit\|remove <name>` | `--words <text>`, `--schedule <cron>`, `--prompt <text>`, `--model <model>`, `--effort <effort>` | Proposes adding, changing or removing a scheduled prompt; a person approves it. |
+| `operad bot schedule <bot> add\|edit\|remove <name>` | `--words <text>`, `--schedule <cron>`, `--prompt <text>`, `--model <model>`, `--effort <effort>` | Proposes adding, changing or removing a routine; a person approves it. |
 | `operad bot follow-up <chat> --at <time> --do <sentence>` | `--at <time>`, `--do <sentence>` | Sets a Follow-up in a bot chat; it takes effect at once. For the chat's agent; see [Follow-ups](chats-and-bots.md#follow-ups). |
 | `operad bot follow-ups <chat>` | `--cancel <id>` | Lists the chat's follow-ups, or cancels one with `--cancel`. |
 | `operad memory search <query>` | `--scope <scope>`, `--field <name>=<value>`, `--limit <n>` | Searches the shared wiki, the bot's memory and the bot's chats. Prints each result's document id, title, line range and snippet, then the directory notes that came back with it. `--scope` takes `wiki`, `memory` or `chats`; `--field` narrows by frontmatter; `--limit` caps the results. The same arguments may be given as JSON on stdin. |
@@ -456,11 +456,11 @@ change. A bot can tighten the default access profile, never loosen it. MCP
 servers are not changed here; use `bot mcp`.
 
 `operad bot schedule <bot> add|edit|remove <name>` proposes adding, changing
-or removing one scheduled prompt. `add` takes `--schedule`, `--words` and
+or removing one routine. `add` takes `--schedule`, `--words` and
 `--prompt`; `edit` takes the field or fields to change and `--words`;
 `remove` takes `--words`. Optional `--model` and `--effort` set or clear those
 fields. The proposal shows the schedule in words and as cron, the prompt, the
-model and the effort, and nothing fires until a person approves it.
+model and the effort, and nothing runs until a person approves it.
 
 ## Runnable examples
 

@@ -17,7 +17,7 @@ describe("the bot page's text", () => {
         problem: "bad *thing*",
       },
     } as unknown as StoredObject;
-    const content = await botViews.load({ store: { list: async () => ({ objects: [] }) } } as unknown as ViewContext, object, "bot", {});
+    const content = await botViews.load({ store: { list: () => ({ objects: [] }) } } as unknown as ViewContext, object, "bot", {});
     const text = content.markdown;
     expect(text).toContain("Working directory: `/tmp/a*b_c`");
     expect(text).toContain("Default agent: cl\\*aude");

@@ -50,17 +50,18 @@ import {
   runSkillCommand,
 } from "./proposals.ts";
 import {
+  ROUTINE_TYPE,
   SCHEDULE_SOURCE,
+  migrateScheduled,
   scheduleActions,
   scheduledChatContext,
-  scheduledData,
   scheduledInstructionFor,
   markdownCode,
   markdownText,
-  scheduledMarkdown,
-  scheduledPrompts,
+  routinesOf,
   startScheduled,
 } from "./schedule.ts";
+import { closeOldScheduledChats, routineActions, routineMarkdown, routineViews, ROUTINE_FILTERS } from "./routine.ts";
 import { followUpActions, followUpData, followUpMarkdown, followUps, runFollowUpCommand, runFollowUpsCommand } from "./follow-up.ts";
 import {
   TIDY_TYPE,
@@ -167,9 +168,9 @@ export async function syncBots(
       data = { name, removed: false, problem: error.message };
     }
     const current = await store.get(BOT_TYPE, name);
-    // A client's scheduled prompts belong to the bot object, not to config.json.
-    if (Array.isArray(current?.data.scheduled)) {
-      data.scheduled = current.data.scheduled as JsonValue[];
+    // Routines used to be a field of the bot object; each one is an object of its own now.
+    if (current !== undefined && Array.isArray(current.data.scheduled)) {
+      await migrateScheduled(store, name, current.data);
     }
     // So are its follow-ups (ADR 0030 D16).
     if (Array.isArray(current?.data.followUps)) {
@@ -208,8 +209,10 @@ export interface OpenChat {
   readonly title?: string | undefined;
   /** The channels (`telegram:<chat>`) whose messages land in this chat. */
   readonly channels?: readonly string[] | undefined;
-  /** The scheduled prompt that opens the chat; absent when a person opens it. */
+  /** The routine that starts the run; absent when a person opens a chat. */
   readonly scheduled?: ScheduledChat | undefined;
+  /** True for the record of a run of a routine, which is not a chat. */
+  readonly run?: boolean | undefined;
   readonly cause: string;
 }
 
@@ -278,6 +281,7 @@ export async function openChat(input: OpenChat): Promise<string> {
       title: input.title ?? `Bot (${bot.name})`,
       ...(input.channels === undefined ? {} : { channels: input.channels }),
       ...(input.scheduled === undefined ? {} : { scheduled: input.scheduled }),
+      ...(input.run === true ? { run: true } : {}),
       refresh: SETTINGS_STEP,
     },
     input.cause,
@@ -561,7 +565,7 @@ const chatAction: ActionTypeDefinition = {
       effort: input.effort,
       title: input.title ?? (input.message === undefined ? undefined : titleFromMessage(input.message)),
       channels: input.channels,
-      ...(scheduled === undefined ? {} : { scheduled }),
+      ...(scheduled === undefined ? {} : { scheduled, run: true }),
       cause: "action:bot/chat",
     });
     const sent =
@@ -573,7 +577,7 @@ const chatAction: ActionTypeDefinition = {
             input.message,
             undefined,
             [],
-            scheduled === undefined ? undefined : scheduledInstructionFor(ctx.object.data, scheduled.entry),
+            scheduled === undefined ? undefined : await scheduledInstructionFor(ctx.store, ctx.object.id, scheduled.entry),
           );
     return { text: `opened chat ${id}${sent === undefined ? "" : `; ${sent}`}`, opens: `chat:${id}` };
   },
@@ -721,7 +725,8 @@ export async function runSettings(ctx: StepContext, params: unknown): Promise<Pl
         notes: memoryNotes(join(bot.cwd, "memory")) as unknown as JsonValue,
         // The memory plugin records what this reply wrote, once the round ends.
         ...(ctx.stepLoaded !== undefined && ctx.stepLoaded(MEMORY_COMMIT_STEP) ? { after: MEMORY_COMMIT_STEP } : {}),
-        context: scheduledChatContext(stored.id),
+        // A run of a routine is not a chat: it proposes no schedule and sets no follow-up.
+        ...(chatData(stored.data).run === true ? {} : { context: scheduledChatContext(stored.id) }),
       },
     };
   } catch (error) {
@@ -729,7 +734,7 @@ export async function runSettings(ctx: StepContext, params: unknown): Promise<Pl
   }
 }
 
-function botMarkdown(object: StoredObject): string {
+async function botMarkdown(store: ObjectStore, object: StoredObject): Promise<string> {
   const data = object.data;
   const lines = [`**${object.id}**`];
   if (typeof data.problem === "string") lines.push(`Cannot be used: ${markdownText(data.problem)}`);
@@ -748,7 +753,7 @@ function botMarkdown(object: StoredObject): string {
       `They are mounted in chats on ${MCP_HARNESSES.join(" and ")}. A chat on pi does not mount them: pi takes no MCP servers yet, so it cannot use ${servers.join(", ")}.`,
     );
   }
-  lines.push(scheduledMarkdown(scheduledPrompts(data), Date.now()).join("\n"));
+  lines.push(routineMarkdown(await routinesOf(store, object.id), Date.now()).join("\n"));
   lines.push(followUpMarkdown(followUps(data)).join("\n"));
   return lines.join("\n\n");
 }
@@ -765,7 +770,6 @@ export const botViews: ObjectViews = {
     title: object.id,
     state: object.data.removed === true ? "removed" : "open",
     data: {
-      scheduled: scheduledData(scheduledPrompts(object.data), Date.now()) as unknown as JsonValue,
       timeZone: serverTimeZone(),
       followUps: followUpData(followUps(object.data)) as unknown as JsonValue,
     },
@@ -774,7 +778,10 @@ export const botViews: ObjectViews = {
   // The bot's main chat rides on its page, so a client that opens the bot can go on to it.
   load: async (ctx, object): Promise<SectionContent> => {
     const main = object.data.removed === true ? undefined : await mainChatOf(ctx.store, `${BOT_TYPE}:${object.id}`);
-    return { markdown: botMarkdown(object), data: { mainChat: main === undefined ? null : `${CHAT_TYPE}:${main}` } };
+    return {
+      markdown: await botMarkdown(ctx.store, object),
+      data: { mainChat: main === undefined ? null : `${CHAT_TYPE}:${main}` },
+    };
   },
 };
 
@@ -810,6 +817,7 @@ export function createBotPlugin() {
         ],
       },
       { name: TIDY_TYPE, index: ["bot", "state"] },
+      { name: ROUTINE_TYPE, index: ["bot"], filters: ROUTINE_FILTERS },
     ],
     steps: [
       { name: "settings", results: ["done", "failed"], run: runSettings },
@@ -835,7 +843,7 @@ export function createBotPlugin() {
         mode: "auto" as const,
       },
     ],
-    actions: [chatAction, setupDevAction, setupAction, chatSetupAction, createAction, loginAction, ...proposalActions, ...scheduleActions, ...followUpActions, ...tidyActions],
+    actions: [chatAction, setupDevAction, setupAction, chatSetupAction, createAction, loginAction, ...proposalActions, ...scheduleActions, ...routineActions, ...followUpActions, ...tidyActions],
     commands: [
       {
         name: "skill",
@@ -894,6 +902,8 @@ export function createBotPlugin() {
     // `serve` starts it like any source.
     start: async (ctx) => {
       await migrateDefaultHome(ctx.store, ctx.home, readBots(ctx.home, ctx.settings));
+      // Chats the old scheduled prompts and memory tidies opened are closed once (ADR 0030 D10).
+      await closeOldScheduledChats(ctx.store, ctx.client);
       const scheduled = await startScheduled(ctx);
       const tidy = await startTidy(ctx);
       return {
@@ -903,7 +913,7 @@ export function createBotPlugin() {
         },
       };
     },
-    views: { [BOT_TYPE]: botViews, [PROPOSAL_TYPE]: proposalViews, [TIDY_TYPE]: tidyViews },
+    views: { [BOT_TYPE]: botViews, [PROPOSAL_TYPE]: proposalViews, [TIDY_TYPE]: tidyViews, [ROUTINE_TYPE]: routineViews },
   });
 }
 
@@ -917,6 +927,7 @@ export * from "./setup-dev.ts";
 export * from "./setup-git.ts";
 export * from "./setup.ts";
 export * from "./schedule.ts";
+export * from "./routine.ts";
 export * from "./follow-up.ts";
 export * from "./tidy.ts";
 export * from "./mcp.ts";

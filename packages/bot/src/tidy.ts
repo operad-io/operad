@@ -55,12 +55,17 @@ import {
 } from "./bot.ts";
 import { ChatWatches } from "./chat-watch.ts";
 import {
+  ROUTINE_TYPE,
   SCHEDULE_SOURCE,
   localDate,
   notifyScheduledReply,
   replySummary,
+  scheduledPromptOf,
+  withRun,
+  type RoutineRun,
   type ScheduleNotice,
 } from "./schedule.ts";
+import { DREAMING_BUILTIN, DREAMING_NAME, dreamingId } from "./routine.ts";
 
 /** The internal object type of one bot's tidy state and card. */
 export const TIDY_TYPE = "bot-tidy";
@@ -446,22 +451,22 @@ export function tidyOutcomeLine(bot: string, outcome: TidyOutcome): string {
 export function tidyCardPrompt(data: TidyData): string {
   if (data.state === "pending" || data.state === "requested") {
     const lines = [
-      `Memory tidy for bot ${data.bot}: ${data.counts.notes} new or changed note${data.counts.notes === 1 ? "" : "s"}, ${data.counts.chats} chat${data.counts.chats === 1 ? "" : "s"} to check.`,
+      `Dreaming for bot ${data.bot}: ${data.counts.notes} new or changed note${data.counts.notes === 1 ? "" : "s"}, ${data.counts.chats} chat${data.counts.chats === 1 ? "" : "s"} to check.`,
       data.counts.indexOver ? "The memory index is over its limit." : "The memory index is within its limit.",
     ];
     if (data.state === "requested") lines.push("It runs as soon as no chat of this bot is replying.");
     return lines.join(" ");
   }
   if (data.state === "running") {
-    return `Memory tidy for bot ${data.bot} is running in chat ${data.chatId ?? "…"}.`;
+    return `Dreaming for bot ${data.bot} is running.`;
   }
   const outcome = data.outcome ?? data.lastOutcome;
   if (data.state === "failed") {
     const reason = outcome === undefined ? "no reason was recorded" : outcome.summary;
-    return `Memory tidy for bot ${data.bot} failed: ${reason.replace(/\.$/, "")}.`;
+    return `Dreaming for bot ${data.bot} failed: ${reason.replace(/\.$/, "")}.`;
   }
-  if (outcome === undefined) return `Memory tidy for bot ${data.bot}: nothing to show.`;
-  return `Memory tidy for bot ${data.bot} finished. ${tidyOutcomeLine(data.bot, outcome)}.${outcome.reply.length === 0 ? "" : ` Reply: ${outcome.reply}`}`;
+  if (outcome === undefined) return `Dreaming for bot ${data.bot}: nothing to show.`;
+  return `Dreaming for bot ${data.bot} finished. ${tidyOutcomeLine(data.bot, outcome)}.${outcome.reply.length === 0 ? "" : ` Reply: ${outcome.reply}`}`;
 }
 
 /** The actions a tidy card offers: Run and Skip. */
@@ -473,13 +478,10 @@ export const tidyActions: readonly ActionTypeDefinition[] = [
     async run(ctx) {
       const data = tidyDataOf(ctx.object.data);
       if (data === undefined) throw new BotError("this tidy card has no usable state");
-      await ctx.store.put(
-        TIDY_TYPE,
-        data.bot,
-        { ...data, state: "requested", requestedAt: Date.now(), outcome: undefined } as unknown as Record<string, JsonValue>,
-        "action:bot/run",
-      );
-      return `memory tidy for bot ${data.bot} will run when no chat of the bot is replying`;
+      const next = { ...data, state: "requested", requestedAt: Date.now(), outcome: undefined } as TidyData;
+      await ctx.store.put(TIDY_TYPE, data.bot, next as unknown as Record<string, JsonValue>, "action:bot/run");
+      await syncDreaming(ctx.store, next, Date.now());
+      return `Dreaming for bot ${data.bot} will run when no chat of the bot is replying`;
     },
   },
   {
@@ -489,16 +491,50 @@ export const tidyActions: readonly ActionTypeDefinition[] = [
     async run(ctx) {
       const data = tidyDataOf(ctx.object.data);
       if (data === undefined) throw new BotError("this tidy card has no usable state");
-      await ctx.store.put(
-        TIDY_TYPE,
-        data.bot,
-        { ...data, state: "skipped", requestedAt: undefined } as unknown as Record<string, JsonValue>,
-        "action:bot/skip",
-      );
-      return `skipped the memory tidy of bot ${data.bot} until the next check finds work`;
+      const next = { ...data, state: "skipped", requestedAt: undefined } as TidyData;
+      await ctx.store.put(TIDY_TYPE, data.bot, next as unknown as Record<string, JsonValue>, "action:bot/skip");
+      await syncDreaming(ctx.store, next, Date.now());
+      return `skipped Dreaming for bot ${data.bot} until the next check finds work`;
     },
   },
 ];
+
+/**
+ * Keeps the Dreaming routine of a bot in step with its tidy state: the routine
+ * object is what the list of routines shows. A run is added or updated by id;
+ * the history keeps 30 days.
+ */
+export async function syncDreaming(
+  store: ObjectStore,
+  tidy: TidyData,
+  now: number,
+  options: { readonly schedule?: string | undefined; readonly run?: RoutineRun | undefined } = {},
+): Promise<void> {
+  const id = dreamingId(tidy.bot);
+  const current = await store.get(ROUTINE_TYPE, id);
+  const entry = scheduledPromptOf(current?.data);
+  const schedule = options.schedule ?? entry?.schedule ?? "30 3 * * *";
+  const started = options.run === undefined ? undefined : entry?.runs?.find((item) => item.id === options.run?.id)?.at;
+  const run = options.run === undefined ? undefined : { ...options.run, at: started ?? options.run.at };
+  const runs = run === undefined ? entry?.runs : withRun(entry?.runs, run, now);
+  const outcome = tidy.outcome ?? tidy.lastOutcome;
+  const data: Record<string, JsonValue> = {
+    bot: tidy.bot,
+    name: DREAMING_NAME,
+    builtin: DREAMING_BUILTIN,
+    schedule,
+    prompt: "Tidy this bot's memory.",
+    paused: false,
+    state: tidy.state,
+    ...(outcome === undefined
+      ? {}
+      : { last: { plannedAt: tidy.plannedAt, schedule, result: outcomeSummary(outcome), ...(tidy.state === "failed" ? { failed: true } : {}) } as unknown as JsonValue }),
+    ...(runs === undefined || runs.length === 0 ? {} : { runs: runs as unknown as JsonValue }),
+  };
+  if (current === undefined || JSON.stringify(current.data) !== JSON.stringify(data)) {
+    await store.put(ROUTINE_TYPE, id, data, "source:bot/tidy");
+  }
+}
 
 /** The pending items the tidy cards make. */
 export async function tidyItems(
@@ -529,11 +565,11 @@ export async function tidyItems(
 function tidyRow(object: StoredObject): ObjectRow {
   const data = tidyDataOf(object.data);
   if (data === undefined) {
-    return { id: object.id, title: "Memory tidy", state: "broken", parent: `${BOT_TYPE}:${object.id}` };
+    return { id: object.id, title: DREAMING_NAME, state: "broken", parent: `${BOT_TYPE}:${object.id}` };
   }
   return {
     id: object.id,
-    title: `Memory tidy for ${data.bot}`,
+    title: `${DREAMING_NAME} for ${data.bot}`,
     state: data.state,
     parent: `${BOT_TYPE}:${data.bot}`,
     ...(data.state === "pending" || data.state === "failed"
@@ -548,7 +584,7 @@ function tidyRow(object: StoredObject): ObjectRow {
 /** How a tidy card shows when it is read as an object. */
 export const tidyViews: ObjectViews = {
   row: tidyRow,
-  sections: () => [{ id: "tidy", title: "Memory tidy" }],
+  sections: () => [{ id: "tidy", title: DREAMING_NAME }],
   load: (_ctx, object): SectionContent => {
     const data = tidyDataOf(object.data);
     return {
@@ -615,8 +651,19 @@ export class BotTidySource {
     await this.chatWatches.settled();
   }
 
-  private async put(bot: string, data: TidyData, cause: string): Promise<void> {
+  private async put(bot: string, data: TidyData, cause: string, run?: RoutineRun): Promise<void> {
     await this.ctx.store.put(TIDY_TYPE, bot, data as unknown as Record<string, JsonValue>, cause);
+    let schedule: string | undefined;
+    try {
+      const settings = readBots(this.ctx.home, this.ctx.settings)[bot];
+      if (settings !== undefined) {
+        const { hour, minute } = tidyClock(settings);
+        schedule = `${minute} ${hour} * * *`;
+      }
+    } catch {
+      // Without usable settings the routine keeps the schedule it has.
+    }
+    await syncDreaming(this.ctx.store, data, this.ctx.clock(), { ...(schedule === undefined ? {} : { schedule }), ...(run === undefined ? {} : { run }) });
   }
 
   private async bots(): Promise<readonly StoredObject[]> {
@@ -649,7 +696,7 @@ export class BotTidySource {
     try {
       settings = readBots(this.ctx.home, this.ctx.settings)[bot];
     } catch (error) {
-      await this.chatWatches.log(`memory tidy: ${messageOf(error)}`);
+      await this.chatWatches.log(`dreaming: ${messageOf(error)}`);
       return;
     }
     if (settings === undefined || !memoryEnabled(this.ctx.home)) return;
@@ -658,7 +705,7 @@ export class BotTidySource {
       cwd = workingDirectory(this.ctx.home, bot, settings);
       ensureBotMemory(cwd, this.ctx.home);
     } catch (error) {
-      await this.chatWatches.log(`memory tidy ${bot}: ${messageOf(error)}`);
+      await this.chatWatches.log(`dreaming ${bot}: ${messageOf(error)}`);
       return;
     }
     const stored = await this.ctx.store.get(TIDY_TYPE, bot);
@@ -769,17 +816,19 @@ export class BotTidySource {
         ...(auto ? { outcome: undefined, lastOutcome: outcome } : { outcome }),
       },
       "source:bot/tidy",
+      { id: data.chatId ?? `failed-${now}`, at: now, status: "failed", result: outcome.summary },
     );
     if (auto) {
       try {
         await this.notify({
-          chatId: outcome.chatId,
-          title: "Memory tidy",
+          routineId: dreamingId(bot),
+          runId: outcome.chatId,
+          title: DREAMING_NAME,
           summary: tidyOutcomeLine(bot, outcome),
         });
       } catch (error) {
         await this.chatWatches.log(
-          `memory tidy of bot ${bot}: notify: ${messageOf(error)}`,
+          `dreaming of bot ${bot}: notify: ${messageOf(error)}`,
         );
       }
     }
@@ -813,7 +862,7 @@ export class BotTidySource {
     try {
       const run = await this.ctx.client.act("bot:chat", `${BOT_TYPE}:${bot}`, {
         args: {
-          title: `Memory tidy (${localDate(now)})`.slice(0, 120),
+          title: `${DREAMING_NAME} (${localDate(now)})`.slice(0, 120),
           message: tidyPrompt(bot, work),
           ...(model === undefined ? {} : { model }),
         },
@@ -825,15 +874,15 @@ export class BotTidySource {
     } catch (error) {
       const message = messageOf(error);
       await this.failStart(bot, running, `Could not start: ${message}`);
-      await this.chatWatches.log(`memory tidy of bot ${bot} could not start: ${message}`);
+      await this.chatWatches.log(`dreaming of bot ${bot} could not start: ${message}`);
       return;
     }
     if (chatId === undefined) {
-      await this.failStart(bot, running, "Could not start: it opened no chat");
-      await this.chatWatches.log(`memory tidy of bot ${bot} opened no chat`);
+      await this.failStart(bot, running, "Could not start: it started no run");
+      await this.chatWatches.log(`dreaming of bot ${bot} started no run`);
       return;
     }
-    await this.put(bot, { ...running, chatId }, "source:bot/tidy");
+    await this.put(bot, { ...running, chatId }, "source:bot/tidy", { id: chatId, at: now, status: "running" });
     await this.watch(bot, chatId, auto);
   }
 
@@ -896,6 +945,12 @@ export class BotTidySource {
           : replySummary(failureText),
       reply: replyText === undefined ? "" : replySummary(replyText),
     };
+    const run: RoutineRun = {
+      id: chatId,
+      at: now,
+      status: failureText !== undefined ? "failed" : outcome.changed ? "done" : "quiet",
+      result: outcomeSummary(outcome),
+    };
     const data = tidyDataOf((await this.ctx.store.get(TIDY_TYPE, bot))?.data ?? {});
     if (auto) {
       await this.put(
@@ -913,17 +968,19 @@ export class BotTidySource {
           lastOutcome: outcome,
         },
         "source:bot/tidy",
+        run,
       );
       if (outcome.changed || failureText !== undefined) {
         try {
           await this.notify({
-            chatId,
-            title: typeof stored.data.title === "string" ? stored.data.title : "Memory tidy",
+            routineId: dreamingId(bot),
+            runId: chatId,
+            title: DREAMING_NAME,
             summary: tidyOutcomeLine(bot, { ...outcome, summary: outcomeSummary(outcome) }),
           });
         } catch (error) {
           await this.chatWatches.log(
-            `memory tidy of bot ${bot}: notify: ${messageOf(error)}`,
+            `dreaming of bot ${bot}: notify: ${messageOf(error)}`,
           );
         }
       }
@@ -944,6 +1001,7 @@ export class BotTidySource {
           outcome,
         },
         "source:bot/tidy",
+        run,
       );
       return;
     }
@@ -961,16 +1019,18 @@ export class BotTidySource {
         outcome,
       },
       "source:bot/tidy",
+      run,
     );
     try {
       await this.notify({
-        chatId,
-        title: typeof stored.data.title === "string" ? stored.data.title : "Memory tidy",
+        routineId: dreamingId(bot),
+        runId: chatId,
+        title: DREAMING_NAME,
         summary: tidyOutcomeLine(bot, { ...outcome, summary: outcomeSummary(outcome) }),
       });
     } catch (error) {
       await this.chatWatches.log(
-        `memory tidy of bot ${bot}: notify: ${messageOf(error)}`,
+        `dreaming of bot ${bot}: notify: ${messageOf(error)}`,
       );
     }
   }
@@ -981,7 +1041,7 @@ export class BotTidySource {
       if (data?.state !== "running") continue;
       if (data.chatId === undefined) {
         // The process died after marking the run but before recording its chat.
-        await this.failStart(data.bot, data, "Could not start: the tidy chat was not recorded");
+        await this.failStart(data.bot, data, "Could not start: the run was not recorded");
         continue;
       }
       await this.watch(data.bot, data.chatId, data.auto === true);

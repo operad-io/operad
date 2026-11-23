@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { createViews } from "@operad-io/engine";
 import { mainChatOf } from "@operad-io/chat";
+import { openChat } from "../src/index.ts";
 import { cleanupRoots, rig } from "./support.ts";
 
 afterAll(cleanupRoots);
@@ -50,15 +51,16 @@ describe("the bot's main chat", () => {
   test("a chat a scheduled prompt opened is not the main chat", async () => {
     const r = await rig();
     const person = await r.open("default");
-    const scheduled = await r.registry.runAction(
-      "bot/chat",
-      { title: "Morning" },
-      {
-        object: { type: "bot", id: "default", data: (await r.store.get("bot", "default"))?.data ?? {} },
-        actor: { via: "bot", id: "Morning" },
-      },
-    );
-    expect(String(scheduled.value)).toMatch(/C-\d+/);
+    // A chat a scheduled prompt opened before routines were their own objects.
+    await openChat({
+      store: r.store,
+      home: r.home,
+      settings: { bot: { bots: {} } } as never,
+      harnesses: ["claude"],
+      bot: "default",
+      scheduled: { bot: "default", entry: "Morning" },
+      cause: "test",
+    });
     expect(await mainChatOf(r.store, "bot:default")).toBe(person);
   });
 });
