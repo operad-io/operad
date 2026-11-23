@@ -299,7 +299,7 @@ function worktreeRefusal(folder: string): string | undefined {
     if (state.state === "subfolder") {
       return `this folder is inside the git repository at ${state.root}; a worktree needs the repository's own folder`;
     }
-    return "this folder has no git yet, so a chat cannot get a worktree here; the chat can change files in the folder itself";
+    return "this folder has no git yet, so a chat cannot get a worktree here";
   } catch (error) {
     return messageOf(error);
   }

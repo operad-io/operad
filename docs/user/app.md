@@ -87,8 +87,9 @@ The bottom tab bar is:
 
 - **Pending**: everything that waits for a person.
 - **Running**: every run in progress.
-- one tab per plugin's top-level object type: **Projects** (项目) for `dev`, **Chat** for
-  `chat`.
+- one tab per plugin's top-level object type, titled by the `pluginTitle` that
+  `GET /v1/types` sends (**Projects** for `dev`); a client that does not read it
+  shows the plugin's name. **Chat** for `chat`.
 - **Settings**: the server settings, and the objects a plugin puts under
   settings.
 

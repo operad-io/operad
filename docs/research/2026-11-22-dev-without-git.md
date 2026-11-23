@@ -124,16 +124,16 @@ The worktree step gets the same precondition (`steps.ts:901`, before `prepareWor
 
 ## 7. How this fits the P-0132 tasks T-0716..T-0723
 
-I can see only the repository, not the briefs of those tasks. Known from the repository and the brief: T-0716 is the `workIn` setting and the `dev.json` record (branch `work/T-0716-workin-setting`: `settings.ts`, `steps.ts`, `project-settings.ts`, ADR 0039); T-0718 is branch mode; T-0722 is the no-remote repository (the backlog names it for the first commit). The mapping of the others below follows the order of the earlier survey's task list and is a guess; please correct it.
+The tasks, by the names of their branches: T-0716 is the `workIn` setting and the `dev.json` record (`settings.ts`, `steps.ts`, `project-settings.ts`, ADR 0039); T-0717 is the chat in place; T-0718 is the branch-mode worktree step; T-0719 is branch-mode integrate; T-0720 is the branch slots and the end of a task; T-0721 is the chat and task exclusion; T-0722 is the no-remote repository; T-0723 is the `workIn` question in Setup Dev.
 
 | Likely task | Lines it touches | Meets this work at |
 |---|---|---|
 | T-0716 `workIn` setting, `dev.json` read once | `settings.ts` (`workIn`, concurrency refusal, `:1142`, `:1347-1359`), `steps.ts` record of `dev.json`, `project-settings.ts`, ADR 0039 | `writeSettings` (`service.ts:470`) gains `workIn`, the setup writes it |
-| T-0717 chat in place (guess) | `chat.ts:463`, `:518`, `:532`, `runChatAccess`; ADR 0028 D3 | the no-git chat is this task plus the git-program guard; do not start the no-git chat before it |
+| T-0717 chat in place | `chat.ts:463`, `:518`, `:532`, `runChatAccess`; ADR 0028 D3 | the no-git chat is this task plus the git-program guard; do not start the no-git chat before it |
 | T-0718 branch mode, the worktree step | `steps.ts:638-724` (a second `prepareBranch`), `:901-1050`, `:1405`; `runWork` start | the `ready` precondition and the unborn-branch refusal sit in the same function |
-| T-0719..T-0721 (guess: main-checkout check; integrate and main clone; slots, reject, cancel) | `steps.ts:330-347`, `:1766-1846`, `gate.ts:717-957`, `integrate.ts:91-106`, `mainclone.ts:96-148`, `schedule.ts:82`, `service.ts:2002-2062` | none of ours, but the repository the setup makes is only useful after these |
+| T-0719..T-0721 (branch-mode integrate; slots and the end of a task; chat and task exclusion) | `steps.ts:330-347`, `:1766-1846`, `gate.ts:717-957`, `integrate.ts:91-106`, `mainclone.ts:96-148`, `schedule.ts:82`, `service.ts:2002-2062` | none of ours, but the repository the setup makes is only useful after these |
 | T-0722 no-remote repository | about 25 sites that name `settings.remote`: `check.ts`, `views.ts:816`, `:890`, `service.ts:506-551`, `integrate.ts`, `gate.ts`, `steps.ts`; `dev.schema.json` | **the same lines**: `addRepository` (`:544-551`), `writeSettings`, `checkDev`, `setup-dev.ts:74-76`, `SKILL.md:15-16`. Do ours after it, or in the same change as its add part. |
-| T-0723 (unknown) | | |
+| T-0723 `workIn` question in Setup Dev | `setup-dev.ts`, `SKILL.md` | the same guide text as the git setup |
 
 Order that avoids two tasks editing the same lines:
 
@@ -184,4 +184,4 @@ The refusal sentences and the doctor line are text, not words. The words that wo
 
 No setting key is added (`workIn` and its values are T-0716's).
 
-New words: none (the work would need a bot verb for the git setup proposal, and possibly a "chat only" label; both are listed above for the owner)
+New words: a bot verb for the git setup proposal, and possibly a "chat only" label (both listed above for the owner)
