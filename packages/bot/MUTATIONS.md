@@ -501,3 +501,5 @@ changes for bots, in the order they were recorded. The root
 | T-0781-M4 | packages/bot/src/tidy.ts | the tidy launch did not make the instructions read-only | `Run and Skip > Run starts the tidy after no chat is replying and leaves no pending item when it finishes` |
 | T-0786-M1 | packages/bot/src/schedule.ts | `forgetRuns` removed nothing, so a dropped run kept its record | `routine history > runs older than 30 days are removed; the last results on the routine stay` |
 | T-0786-M2 | packages/bot/src/schedule.ts | `droppedRuns` also named runs inside the 30 days | `routine history > a run that withRun drops has no record either; a newer one is untouched` |
+| T-0786-M4 | packages/bot/src/schedule.ts | a run's start did not forget the runs it dropped from the history | `scheduled prompts > a run that leaves the history when a run starts or ends loses its record; a newer one keeps it` |
+| T-0786-M5 | packages/bot/src/schedule.ts | a run's end did not forget the runs it dropped from the history | `scheduled prompts > a run that leaves the history when a run starts or ends loses its record; a newer one keeps it` |
