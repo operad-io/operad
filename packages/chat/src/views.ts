@@ -42,6 +42,7 @@ function row(object: StoredObject): ObjectRow {
   ].filter((part) => part.length > 0);
   const queued = queuedOf(object.data.queued);
   const data: Record<string, JsonValue> = {
+    ...(chat.channels.length === 0 ? {} : { channels: [...chat.channels] }),
     ...(chat.scheduled === undefined ? {} : { scheduled: chat.scheduled }),
     ...(queued.length === 0
       ? {}
