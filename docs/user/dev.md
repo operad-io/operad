@@ -1134,7 +1134,7 @@ and after `//` how many of the plan's tasks may run at once. The plan's badge
 carries its auto level. A task's note reads `$0.31 · claude · area: app-core`: the cost
 (`$0.00` before there is one), the worker, the area (or `waiting for area
 app-core (T-0023-action-numbers)`), and last a refused push's message. A
-repository's note reads `plans: 1 · tasks: 4`, counting open ones.
+repository's note reads `1 plan · 4 tasks open` (`0 plans · 0 tasks open` when none are).
 
 A step ends with one of these results:
 

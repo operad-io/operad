@@ -39,7 +39,8 @@ describe("the repo type", () => {
         id: "alpha",
         title: "alpha",
         state: "active",
-        note: "plans: 0 · tasks: 0",
+        note: "0 plans · 0 tasks open",
+        data: { openPlans: 0, openTasks: 0 },
         mark: "done",
         waiting: undefined,
         running: undefined,
@@ -48,7 +49,8 @@ describe("the repo type", () => {
         id: "beta",
         title: "beta",
         state: "active",
-        note: "plans: 0 · tasks: 0",
+        note: "0 plans · 0 tasks open",
+        data: { openPlans: 0, openTasks: 0 },
         mark: "done",
         waiting: undefined,
         running: undefined,
@@ -100,11 +102,12 @@ describe("the repo type", () => {
     const plan = await addPlan(store, { repository: alpha, slug: "work", title: "Work" });
     const task = await addTask(store, { plan: plan.id, slug: "one", title: "One" });
     const note = async () => (await views.get("repo:alpha")).row.note;
-    expect(await note()).toBe("plans: 1 · tasks: 1");
+    expect(await note()).toBe("1 plan · 1 task open");
+    expect((await views.get("repo:alpha")).row.data).toEqual({ openPlans: 1, openTasks: 1 });
     await confirmPlan(store, plan.id);
     await setTaskPhase(store, task.id, "merged");
     await refreshPlanCounts(store, await getPlan(store, plan.id));
-    expect(await note()).toBe("plans: 0 · tasks: 0");
+    expect(await note()).toBe("0 plans · 0 tasks open");
   });
 
   describe("the row mark follows the repository's work", () => {
