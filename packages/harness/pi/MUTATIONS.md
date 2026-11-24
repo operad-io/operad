@@ -343,3 +343,5 @@ the row fields.
 The rows above reused ids that other packages hold for T-0790 (T-0790-M1); they are renumbered below as T-0790-M5 (the lines above stay, rows are append-only).
 
 | T-0790-M5 | packages/harness/pi/src/index.ts | the step accepted a compaction share above 1 (`compactOf` checked only `> 0`) | `pi/agent > a chat's compaction input reaches the worker, and a bad share fails the step by name` |
+
+_The second "## T-0766" section above repeats the rows of the first; the rows of the first stand._

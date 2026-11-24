@@ -523,3 +523,9 @@ changes for bots, in the order they were recorded. The root
 | T-0795-M2 | packages/bot/src/tidy.ts | serve start skipped the watch of a running card when the bot's settings could not be read | `the instructions after a tidy run > serve start still ends a running card when the bot's settings cannot be read` |
 | T-0795-M3 | packages/bot/src/tidy.ts | a plain reply with no commit ended the card at once, before the run's commit step could record its summary | `the instructions after a tidy run > a plain reply whose commit comes after it ends the card with the commit's summary` |
 | T-0795-M4 | packages/bot/src/tidy.ts | serve start left the instructions read-only for a running card with no recorded chat | `the instructions after a tidy run > a running card with no recorded chat ends at serve start and the file is writable` |
+
+## T-0796 — a note's date stays in the checked period
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0796-M1 | packages/bot/src/tidy.ts | the note's date was its raw file time, with no cap at today | `a note's date is never later than today` |
