@@ -21,7 +21,7 @@ async function hook(profile: unknown, call: unknown): Promise<{ code: number; er
   writeFileSync(file, JSON.stringify(profile));
   const child = Bun.spawn([process.execPath, HOOK, file], { stdin: "pipe", stdout: "pipe", stderr: "pipe" });
   child.stdin.write(JSON.stringify(call));
-  child.stdin.end();
+  void child.stdin.end();
   const [err, code] = await Promise.all([new Response(child.stderr).text(), child.exited]);
   return { code, err };
 }
@@ -115,7 +115,7 @@ async function runReal(access: Record<string, unknown>): Promise<{ wrote: boolea
     const data = (outcome.data ?? {}) as Record<string, unknown>;
     return { wrote: existsSync(join(work, "a.txt")), result: outcome.result, text: String(data.finalMessage ?? data.message ?? "") };
   } finally {
-    server.stop(true);
+    await server.stop(true);
     if (previousHome === undefined) delete process.env.RADIAN_HOME;
     else process.env.RADIAN_HOME = previousHome;
     if (previousConfig !== undefined) process.env.RADIAN_CONFIG = previousConfig;

@@ -408,7 +408,7 @@ describe("dev:rework and dev:reverify", () => {
     ]);
     for (const child of children) {
       child.stdin.write("go\n");
-      child.stdin.end();
+      void child.stdin.end();
     }
     const outputs = await Promise.all(
       nextLines.map(async (next) => {

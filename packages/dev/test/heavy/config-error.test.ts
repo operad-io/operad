@@ -130,7 +130,7 @@ describe("a repository whose dev.json becomes invalid", () => {
       env: { ...process.env, OPERAD_HOME: fixture.root },
     });
     // Without a config.json the home keeps no copy: the fresh process has none to use.
-    fresh.stdin.end();
+    void fresh.stdin.end();
     await fresh.exited;
     expect(fresh.exitCode).not.toBe(0);
 

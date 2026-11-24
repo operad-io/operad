@@ -89,7 +89,7 @@ export class JsonlLog {
 
   /** Writes the rest and waits for every queued write. */
   async end(): Promise<void> {
-    this.flush();
+    void this.flush();
     if (!this.wrote) {
       this.chain = this.chain.then(() => this.logger.write("")).then(() => undefined);
     }

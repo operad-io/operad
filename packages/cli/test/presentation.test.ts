@@ -220,7 +220,7 @@ describe("operad presentation commands", () => {
     const store = openPluginStore({
       root: join(root, "store"),
     });
-    store.put("item", "one", { title: "One", state: "new", plan: "P1" }, "seed");
+    await store.put("item", "one", { title: "One", state: "new", plan: "P1" }, "seed");
 
     const output = capture();
     expect(

@@ -430,7 +430,7 @@ describe("the telegram source", () => {
     const handle = telegram.start();
     stop = () => handle.stop();
     await reachedWait;
-    handle.stop();
+    await handle.stop();
 
     // Both updates came from successful polls, so the third call is the one
     // that failed and the only one that waited.
@@ -476,7 +476,7 @@ describe("the telegram source", () => {
     const handle = telegram.start();
     await first;
     expect(polls).toBe(1);
-    handle.stop();
+    await handle.stop();
     await w.close();
   });
 });

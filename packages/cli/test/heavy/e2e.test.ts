@@ -82,7 +82,7 @@ async function run(
     stderr: "pipe",
   });
   if (input !== undefined) child.stdin.write(input);
-  child.stdin.end();
+  void child.stdin.end();
   const [out, err, code] = await Promise.all([
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),

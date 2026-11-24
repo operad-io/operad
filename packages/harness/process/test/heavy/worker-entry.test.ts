@@ -20,7 +20,7 @@ test("a worker entry survives a host that closes stdout", async () => {
     const stdin = child.stdin;
     if (stdin === null) throw new Error("the child has no stdin pipe");
     stdin.write(`${JSON.stringify({ go })}\n`);
-    stdin.end();
+    void stdin.end();
 
     const reader = child.stdout.getReader();
     const decoder = new TextDecoder();

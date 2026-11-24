@@ -59,7 +59,8 @@ export async function operad(
         stdin.write(chunk);
       }
     }
-    stdin.end();
+    // Not awaited: the output is read below, and waiting for the pipe to drain first could block a child that writes before it reads.
+    void stdin.end();
   }
   const [code, out, err] = await Promise.all([
     child.exited,

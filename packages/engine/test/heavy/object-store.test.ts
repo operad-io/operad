@@ -50,9 +50,9 @@ describe("object list", () => {
     test(`filters on an indexed field (${backend})`, async () => {
       const store = await open(backend);
       store.declare?.("note", ["tag", "plan"]);
-      store.put("note", "a", { tag: "work", plan: "P1" }, "seed");
-      store.put("note", "b", { tag: "home", plan: "P1" }, "seed");
-      store.put("note", "c", { tag: "work", plan: "P2" }, "seed");
+      await store.put("note", "a", { tag: "work", plan: "P1" }, "seed");
+      await store.put("note", "b", { tag: "home", plan: "P1" }, "seed");
+      await store.put("note", "c", { tag: "work", plan: "P2" }, "seed");
 
       expect(await ids(store, "note", { where: { tag: "work" } })).toEqual([
         "a",
@@ -67,13 +67,13 @@ describe("object list", () => {
     test(`refuses a filter on a field that is not indexed (${backend})`, async () => {
       const store = await open(backend);
       store.declare?.("note", ["tag"]);
-      store.put("note", "a", { tag: "work", title: "One" }, "seed");
+      await store.put("note", "a", { tag: "work", title: "One" }, "seed");
 
       expect(() =>
         store.list("note", { where: { title: "One" } }),
       ).toThrow(WhereError);
       try {
-        store.list("note", { where: { title: "One" } });
+        await store.list("note", { where: { title: "One" } });
       } catch (error) {
         expect((error as Error).message).toContain('field "title"');
         expect((error as Error).message).toContain('"tag"');
@@ -87,7 +87,7 @@ describe("object list", () => {
       for (let index = 0; index < 2_500; index += 1) {
         const id = String(index).padStart(5, "0");
         expected.push(id);
-        store.put("note", id, { group: "all" }, "seed");
+        await store.put("note", id, { group: "all" }, "seed");
       }
 
       const seen: string[] = [];
@@ -113,10 +113,10 @@ describe("object list", () => {
     test(`an indexed field change moves an object between filters (${backend})`, async () => {
       const store = await open(backend);
       store.declare?.("note", ["tag"]);
-      store.put("note", "a", { tag: "work" }, "seed");
+      await store.put("note", "a", { tag: "work" }, "seed");
       expect(await ids(store, "note", { where: { tag: "work" } })).toEqual(["a"]);
 
-      store.put("note", "a", { tag: "home" }, "edit");
+      await store.put("note", "a", { tag: "home" }, "edit");
       expect(await ids(store, "note", { where: { tag: "work" } })).toEqual([]);
       expect(await ids(store, "note", { where: { tag: "home" } })).toEqual(["a"]);
     });
@@ -125,17 +125,17 @@ describe("object list", () => {
       const store = await open(backend);
       store.declare?.("note", ["tag"]);
       store.declare?.("task", ["tag"]);
-      store.put("note", "a", { tag: "work" }, "seed");
-      store.put("note", "b", { tag: "work" }, "seed");
-      store.put("task", "t1", { tag: "work" }, "seed");
-      store.put("task", "t2", { tag: "work" }, "seed");
+      await store.put("note", "a", { tag: "work" }, "seed");
+      await store.put("note", "b", { tag: "work" }, "seed");
+      await store.put("task", "t1", { tag: "work" }, "seed");
+      await store.put("task", "t2", { tag: "work" }, "seed");
 
       const taskPage = await store.list("task", { limit: 1 });
       const cursor = taskPage.next;
       expect(cursor).toBeDefined();
       expect(() => store.list("note", { cursor })).toThrow(CursorError);
       try {
-        store.list("note", { cursor });
+        await store.list("note", { cursor });
       } catch (error) {
         expect((error as Error).message).toContain('object type "task"');
       }
@@ -189,10 +189,10 @@ describe("store lifecycle and concurrency", () => {
   test("refuses any filter when the type declares an empty index (sqlite)", async () => {
     const store = await open("sqlite");
     store.declare?.("note", []);
-    store.put("note", "a", { title: "One" }, "seed");
+    await store.put("note", "a", { title: "One" }, "seed");
     expect(() => store.list("note", { where: { title: "One" } })).toThrow(WhereError);
     try {
-      store.list("note", { where: { title: "One" } });
+      await store.list("note", { where: { title: "One" } });
     } catch (error) {
       expect((error as Error).message).toContain("this type declares no index");
     }
@@ -410,9 +410,9 @@ describe("object facts", () => {
   for (const backend of BACKENDS) {
     test(`pages an object's facts in sequence order (${backend})`, async () => {
       const store = await open(backend);
-      store.put("note", "n1", { text: "one" }, "edit");
-      store.put("note", "n1", { text: "two" }, "edit");
-      store.put("note", "n1", { text: "three" }, "edit");
+      await store.put("note", "n1", { text: "one" }, "edit");
+      await store.put("note", "n1", { text: "two" }, "edit");
+      await store.put("note", "n1", { text: "three" }, "edit");
       await store.append({
         type: "note.seen",
         object: { type: "note", id: "n1" },
@@ -434,10 +434,10 @@ describe("object facts", () => {
 
     test(`refuses a facts cursor from another object (${backend})`, async () => {
       const store = await open(backend);
-      store.put("note", "n1", { text: "one" }, "edit");
-      store.put("note", "n1", { text: "two" }, "edit");
-      store.put("note", "n2", { text: "other" }, "edit");
-      store.put("note", "n2", { text: "again" }, "edit");
+      await store.put("note", "n1", { text: "one" }, "edit");
+      await store.put("note", "n1", { text: "two" }, "edit");
+      await store.put("note", "n2", { text: "other" }, "edit");
+      await store.put("note", "n2", { text: "again" }, "edit");
 
       const page = store.facts({ type: "note", id: "n1" }, { limit: 1 });
       expect(page.next).toBeDefined();
@@ -454,9 +454,9 @@ describe("object facts", () => {
     test(`a subscription after a cursor gets only later facts (${backend})`, async () => {
       const store = await open(backend);
       const object = { type: "note", id: "n1" } as const;
-      store.put("note", "n1", { text: "one" }, "edit");
-      store.put("note", "n1", { text: "two" }, "edit");
-      store.put("note", "n1", { text: "three" }, "edit");
+      await store.put("note", "n1", { text: "one" }, "edit");
+      await store.put("note", "n1", { text: "two" }, "edit");
+      await store.put("note", "n1", { text: "three" }, "edit");
 
       const page = store.facts(object, { limit: 1 });
       const cursor = page.next;
@@ -477,12 +477,12 @@ describe("object facts", () => {
       expect(first).toEqual([2, 3]);
       expect(second).toEqual([2, 3]);
 
-      store.put("note", "n1", { text: "four" }, "edit");
+      await store.put("note", "n1", { text: "four" }, "edit");
       expect(first).toEqual([2, 3, 4]);
       expect(second).toEqual([2, 3, 4]);
 
       stopFirst?.();
-      store.put("note", "n1", { text: "five" }, "edit");
+      await store.put("note", "n1", { text: "five" }, "edit");
       expect(first).toEqual([2, 3, 4]);
       expect(second).toEqual([2, 3, 4, 5]);
       stopSecond?.();
@@ -495,7 +495,7 @@ describe("object facts hold changes", () => {
   for (const backend of BACKENDS) {
     test(`put records only changed and removed fields (${backend})`, async () => {
       const store = await open(backend);
-      store.put(
+      await store.put(
         "note",
         "n1",
         { title: "One", brief: "long", tags: ["a"], meta: { nested: true } },
@@ -508,13 +508,13 @@ describe("object facts hold changes", () => {
         removed: [],
       });
 
-      store.put(
+      await store.put(
         "note",
         "n1",
         { title: "One", brief: "short", tags: ["a"], meta: { nested: true } },
         "edit",
       );
-      store.put("note", "n1", { title: "One", tags: ["a", "b"] }, "edit");
+      await store.put("note", "n1", { title: "One", tags: ["a", "b"] }, "edit");
       const facts = store.facts({ type: "note", id: "n1" }).facts;
       expect(facts[1]?.data).toEqual({ changed: { brief: "short" }, removed: [] });
       expect(facts[2]?.data).toEqual({
