@@ -185,7 +185,8 @@ describe("`operad init` finds the agent on PATH", () => {
     expect(config.plugins.cron).toEqual({ module: "@operad-io/source-cron", enabled: true });
     const out = capture();
     expect(await main(["routines", "list"], { home, io: out.io })).toBe(0);
-    expect(out.errors()).not.toContain("unknown command");
+    expect(out.errors()).toBe("");
+    expect(out.text()).not.toContain("unknown command");
   });
 
   test("only claude is enabled, and its package is not a CLI dependency", async () => {
