@@ -96,6 +96,7 @@ export interface Rig {
     readonly effortDefault?: string;
     readonly refresh?: string;
     readonly cwd?: string;
+    readonly channels?: readonly string[];
   }): Promise<string>;
   /** A person's message as a fact, without the event. */
   say(chat: string, text: string, attachments?: readonly unknown[]): Promise<string>;
@@ -167,6 +168,7 @@ export async function rig(
           ...(extra?.effort === undefined ? {} : { effort: extra.effort }),
           ...(extra?.effortDefault === undefined ? {} : { effortDefault: extra.effortDefault }),
           ...(extra?.refresh === undefined ? {} : { refresh: extra.refresh }),
+          ...(extra?.channels === undefined ? {} : { channels: extra.channels }),
         },
         "test",
       );
