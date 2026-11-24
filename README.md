@@ -29,6 +29,8 @@ operad runs coding agents (radian, Claude Code, Codex, pi and others) through fl
 
 Everything else is a plugin.
 
+Orchestrating agents here means composing the flow a task follows, not handing out roles. A flow fixes the steps a task goes through and the checks between them; which agent does a step is a setting you can change.
+
 ```text
 $ operad pending
 4c1e9a02  dev  confirm

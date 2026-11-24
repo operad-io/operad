@@ -6,6 +6,8 @@ description: The operad user manual: what operad is and a page for each subject.
 
 operad is an open orchestration layer for coding agents. It runs an agent (radian, Claude Code, pi and others) through verified flows, keeps what happened as history, and reaches a person where the work needs one: the terminal client, the phone app, a notification, a chat. You see three things: flows, things that wait for a person (pending), and what each step did and why (history). Plugins add the rest, such as the `dev` plugin's plans and tasks.
 
+Orchestrating agents here means composing the flow a task follows, not handing out roles. A flow fixes the steps a task goes through and the checks between them; which agent does a step is a setting you can change.
+
 ## Pages
 
 - [quickstart](quickstart.md): create the home, start `serve`, open the client.

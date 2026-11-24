@@ -29,6 +29,8 @@ operad 让编码 agent（radian、Claude Code、Codex、pi 等）走一条会检
 
 其余都是插件。
 
+在 operad 里，编排多个 agent 就是编排任务要走的流程，而不是给 agent 分派角色。流程定下一个任务要经过哪些步骤、步骤之间做哪些检查；哪一步由哪个 agent 来做，只是一项可以改的设置。
+
 ```text
 $ operad pending
 4c1e9a02  dev  confirm
