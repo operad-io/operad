@@ -1,6 +1,8 @@
 // The lint (`bunx oxlint packages scripts`, run by verify.sh and check-changed.sh)
 // reports each of the four rules CLAUDE.md names. A fixture breaks each rule once;
-// a config that silently stops checking a rule fails here.
+// a config that silently stops checking a rule fails here. The lint is not part of
+// the checks (ADR 0036 D5), and the test is skipped where oxlint cannot start
+// (the test host's CPU has no AVX2, so its native binding crashes).
 
 import { afterAll, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
@@ -25,7 +27,10 @@ async function work(): Promise<void> {}
 work();
 `;
 
-test("the lint reports each of its four rules on a fixture that breaks each", () => {
+const oxlint = join(root, "node_modules", ".bin", "oxlint");
+const starts = spawnSync(oxlint, ["--version"], { encoding: "utf8" }).status === 0;
+
+test.skipIf(!starts)("the lint reports each of its four rules on a fixture that breaks each", () => {
   const dir = mkdtempSync(join(tmpdir(), "oxlint-"));
   dirs.push(dir);
   mkdirSync(join(dir, "packages"));
@@ -38,7 +43,7 @@ test("the lint reports each of its four rules on a fixture that breaks each", ()
     }),
   );
   const result = spawnSync(
-    join(root, "node_modules", ".bin", "oxlint"),
+    oxlint,
     ["-c", join(root, ".oxlintrc.json"), "--format", "unix", "packages"],
     {
       cwd: dir,

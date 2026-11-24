@@ -8,6 +8,7 @@
   ],
   "scripts": {
     "typecheck": "tsc -b",
+    "lint": "oxlint packages scripts",
     "test": "bun test",
     "verify": "bash scripts/verify.sh"
   },

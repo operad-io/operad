@@ -46,9 +46,10 @@ of adding it.
 - Add a runtime dependency only when a task says so. The engine has none.
 - Strict TypeScript (`tsconfig.base.json`). No `any`, no `@ts-ignore`, no
   non-null `!` to silence the checker, and no floating promise (await it, or
-  mark it `void` where it is meant to run on). `bunx oxlint packages scripts`
-  enforces these four (`.oxlintrc.json`, ADR 0036 D5); do not disable a rule for
-  a file or add a disable comment.
+  mark it `void` where it is meant to run on). `bun run lint`
+  (oxlint, `.oxlintrc.json`, ADR 0036 D5) checks these four when a person runs
+  it; the checks do not. Do not disable a rule for a file or add a disable
+  comment.
 - Every behaviour has a test. A test that needs time uses an injected clock; a
   test that needs a crash kills a real child process. No sleeps to wait for
   something: wait for the event.
@@ -112,7 +113,9 @@ merge.
 bash scripts/verify.sh
 ```
 
-It runs `bun install --frozen-lockfile`, `bunx tsc -b`, `bunx oxlint packages scripts` (the lint, about 3 s, over the whole tree: `no-explicit-any`, `ban-ts-comment`, `no-non-null-assertion` and the type-aware `no-floating-promises`) and the tests. `scripts/check-changed.sh` runs the same lint.
+It runs `bun install --frozen-lockfile`, `bunx tsc -b` and `bun test`.
+
+The lint is not part of `verify.sh` or `check-changed.sh`: the test host's CPU has no AVX2 and oxlint's native binding crashes there with an illegal instruction. Run `bun run lint` by hand before a change is done; it enforces `no-explicit-any`, `ban-ts-comment`, `no-non-null-assertion` and the type-aware `no-floating-promises` (ADR 0036 D5).
 
 A task that changes how checks run (the gate, integration or rerun commands in
 `.operad/dev.json`, `scripts/remote-check.sh`, `scripts/run-tests.sh`,
