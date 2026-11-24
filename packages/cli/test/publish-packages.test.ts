@@ -97,10 +97,8 @@ describe("the packages a publish needs", () => {
 
   test("only what the CLI does not need at runtime stays private", () => {
     const privatePackages = packageDirectories().filter((directory) => manifestOf(directory).private === true);
-    expect(privatePackages).toEqual(["source-cron", "test-support"]);
-    // Nothing published imports it, and no command reads it.
-    const users = publishable.filter((directory) => manifestOf(directory).dependencies?.["@operad-io/source-cron"] !== undefined);
-    expect(users).toEqual([]);
+    expect(privatePackages).toEqual(["test-support"]);
+    expect(manifestOf("cli").dependencies?.["@operad-io/source-cron"]).toBe("workspace:*");
   });
 
   test("the CLI depends on no package whose runtime code imports a third-party package", () => {

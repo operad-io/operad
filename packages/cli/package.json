@@ -15,6 +15,7 @@
     "@operad-io/engine": "workspace:*",
     "@operad-io/mcp": "workspace:*",
     "@operad-io/shell": "workspace:*",
+    "@operad-io/source-cron": "workspace:*",
     "@operad-io/chat": "workspace:*",
     "@operad-io/dev": "workspace:*",
     "@operad-io/harness-codex": "workspace:*",

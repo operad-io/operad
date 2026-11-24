@@ -1,12 +1,23 @@
 {
   "name": "@operad-io/source-cron",
-  "version": "0.0.0",
-  "private": true,
+  "version": "0.4.0",
+  "description": "operad: the cron source that starts flow routines",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
   },
   "dependencies": {
     "@operad-io/engine": "workspace:*"
-  }
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/operad-io/operad.git",
+    "directory": "packages/source-cron"
+  },
+  "license": "MIT",
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ]
 }

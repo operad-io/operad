@@ -442,3 +442,9 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0791-M2 | packages/cli/src/main.ts | serve closed the plugin store inline instead of calling `closeServeContext` | `serve ends its context through closeServeContext, not an inline close` |
+
+## T-0802 — the cron source ships with the CLI
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0802-M1 | packages/cli/src/defaults.ts | `defaultPluginModule` no longer mapped `cron` to `@operad-io/source-cron`, so a fresh home named a package that does not exist | ``operad init` finds the agent on PATH > a fresh home loads cron from its package, so routines is a known command` |

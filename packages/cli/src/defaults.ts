@@ -12,7 +12,7 @@ import {
  * those a new home leaves off (`shell`, `dev`, `pool`) and those a home made
  * before the current defaults may still need (`bot`, `memory`, the harnesses).
  */
-export const OPTIONAL_PLUGINS: readonly string[] = ["shell", "pi", "claude", "codex", "pool", "bot", "telegram", "memory", "dev"];
+export const OPTIONAL_PLUGINS: readonly string[] = ["shell", "cron", "pi", "claude", "codex", "pool", "bot", "telegram", "memory", "dev"];
 
 /** The shipped plugins a plugin needs; enabling it enables these first (ADR 0012 D2). */
 export const PLUGIN_NEEDS: Readonly<Record<string, readonly string[]>> = {
@@ -40,6 +40,7 @@ const HARNESS_PLUGINS: readonly string[] = ["claude", "codex", "pi", "radian"];
 
 /** The package name of a plugin shipped with operad. */
 export function defaultPluginModule(name: string): string {
+  if (name === "cron") return "@operad-io/source-cron";
   return HARNESS_PLUGINS.includes(name) ? `@operad-io/harness-${name}` : `@operad-io/${name}`;
 }
 
@@ -51,7 +52,7 @@ export const DEFAULT_CONFIRM_ACTIONS: readonly string[] = ["chat:close"];
 
 /** The plugins of a new home: the assistant's fixed ones plus its harnesses. */
 export function defaultPluginsFor(harnesses: readonly string[]): readonly string[] {
-  return ["chat", "bot", "memory", ...harnesses];
+  return ["chat", "bot", "memory", "cron", ...harnesses];
 }
 
 /** The config a new home starts with, with the harness plugins passed in place of the fallback. */
