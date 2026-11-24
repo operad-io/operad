@@ -131,11 +131,14 @@ export const repoViews: ObjectViews = {
   row(object: StoredObject): ObjectRow {
     const repository = repositoryData(object.data);
     const state = repository.removed ? "removed" : "active";
+    const openPlans = repository.openPlans ?? 0;
+    const openTasks = repository.openTasks ?? 0;
     return {
       id: repository.name,
       title: repository.name,
       state,
-      note: `plans: ${repository.openPlans ?? 0} · tasks: ${repository.openTasks ?? 0}`,
+      note: `${openPlans} ${openPlans === 1 ? "plan" : "plans"} · ${openTasks} ${openTasks === 1 ? "task" : "tasks"} open`,
+      data: { openPlans, openTasks },
       final: repository.removed,
       mark: repositoryMark(repository),
     };
