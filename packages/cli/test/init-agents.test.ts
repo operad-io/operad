@@ -174,11 +174,25 @@ async function initWith(
 }
 
 describe("`operad init` finds the agent on PATH", () => {
+  test("a fresh home loads cron from its package, so routines is a known command", async () => {
+    const root = await tempRoot();
+    const { code } = await initWith(root, ["radian"]);
+    expect(code).toBe(0);
+    const home = join(root, "home");
+    const config = JSON.parse(readFileSync(join(home, "config.json"), "utf8")) as {
+      plugins: Record<string, { module: string; enabled: boolean }>;
+    };
+    expect(config.plugins.cron).toEqual({ module: "@operad-io/source-cron", enabled: true });
+    const out = capture();
+    expect(await main(["routines", "list"], { home, io: out.io })).toBe(0);
+    expect(out.errors()).not.toContain("unknown command");
+  });
+
   test("only claude is enabled, and its package is not a CLI dependency", async () => {
     const root = await tempRoot();
     const { code, output, plugins } = await initWith(root, ["claude"]);
     expect(code).toBe(0);
-    expect(plugins).toEqual(["chat", "bot", "memory", "claude"]);
+    expect(plugins).toEqual(["chat", "bot", "memory", "cron", "claude"]);
     expect(output.text()).toContain("claude: claude 2.1.319");
     expect(output.text()).not.toContain("radian:");
     expect(output.text()).not.toContain("pi:");
@@ -197,7 +211,7 @@ describe("`operad init` finds the agent on PATH", () => {
     const root = await tempRoot();
     const { code, output, plugins } = await initWith(root, ["pi"]);
     expect(code).toBe(0);
-    expect(plugins).toEqual(["chat", "bot", "memory", "pi"]);
+    expect(plugins).toEqual(["chat", "bot", "memory", "cron", "pi"]);
     expect(output.text()).toContain("pi: pi 1.5.0");
     expect(output.text()).not.toContain("radian:");
     expect(output.text()).not.toContain("claude:");
@@ -207,14 +221,14 @@ describe("`operad init` finds the agent on PATH", () => {
     const root = await tempRoot();
     const { code, plugins } = await initWith(root, ["radian", "claude", "pi"]);
     expect(code).toBe(0);
-    expect(plugins).toEqual(["chat", "bot", "memory", "claude", "pi", "radian"]);
+    expect(plugins).toEqual(["chat", "bot", "memory", "cron", "claude", "pi", "radian"]);
   });
 
   test("only radian is enabled", async () => {
     const root = await tempRoot();
     const { code, output, plugins } = await initWith(root, ["radian"]);
     expect(code).toBe(0);
-    expect(plugins).toEqual(["chat", "bot", "memory", "radian"]);
+    expect(plugins).toEqual(["chat", "bot", "memory", "cron", "radian"]);
     expect(output.text()).toContain("radian: radian is available");
     expect(output.text()).not.toContain("claude:");
     expect(output.text()).not.toContain("pi:");
@@ -224,7 +238,7 @@ describe("`operad init` finds the agent on PATH", () => {
     const root = await tempRoot();
     const { code, output, plugins } = await initWith(root, [], { piTarball: packPiFixture(root) });
     expect(code).toBe(0);
-    expect(plugins).toEqual(["chat", "bot", "memory", "pi"]);
+    expect(plugins).toEqual(["chat", "bot", "memory", "cron", "pi"]);
     expect(output.text()).toContain("no agent found on PATH: installing operad's own pi");
     expect(output.text()).toContain("pi: pi 1.6.0");
     expect(output.errors()).toBe("");

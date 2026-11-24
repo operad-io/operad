@@ -32,12 +32,12 @@ describe("plugins the CLI offers", () => {
 describe("the distribution's defaults", () => {
   test("a fresh home's config lists the assistant's plugins and the lead actions explicitly", () => {
     const config = distributionConfig("/h");
-    expect(config.plugins.map((entry) => entry.name)).toEqual(["chat", "bot", "memory", "radian"]);
+    expect(config.plugins.map((entry) => entry.name)).toEqual(["chat", "bot", "memory", "cron", "radian"]);
     expect(config.mcp.actions).toEqual(["chat:close"]);
     expect(config.mcp.confirmActions).toEqual(["chat:close"]);
   });
 
   test("a fresh home adds the harnesses it finds after the assistant's plugins", () => {
-    expect(defaultPluginsFor(["claude", "pi"])).toEqual(["chat", "bot", "memory", "claude", "pi"]);
+    expect(defaultPluginsFor(["claude", "pi"])).toEqual(["chat", "bot", "memory", "cron", "claude", "pi"]);
   });
 });

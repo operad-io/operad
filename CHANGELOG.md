@@ -7,6 +7,10 @@ the same version.
 
 ## [Unreleased]
 
+### Fixed
+
+- The cron source (`operad routines`) is published and loaded by default; 0.4.0 from npm did not have it.
+
 ## [0.4.0] - 2026-11-24
 
 The release turns scheduled prompts and scheduled flows into Routines, adds

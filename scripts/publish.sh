@@ -40,6 +40,7 @@ packages=(
   access-match
   harness/process
   shell
+  source-cron
   chat
   memory
   review-grading

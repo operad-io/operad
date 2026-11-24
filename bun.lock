@@ -75,6 +75,7 @@
         "@operad-io/memory": "workspace:*",
         "@operad-io/pool": "workspace:*",
         "@operad-io/shell": "workspace:*",
+        "@operad-io/source-cron": "workspace:*",
         "@operad-io/telegram": "workspace:*",
       },
       "devDependencies": {
@@ -194,7 +195,7 @@
     },
     "packages/source-cron": {
       "name": "@operad-io/source-cron",
-      "version": "0.0.0",
+      "version": "0.4.0",
       "dependencies": {
         "@operad-io/engine": "workspace:*",
       },
