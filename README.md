@@ -15,7 +15,7 @@ A desktop app and an open kernel that run agents through verified flows: plan, w
 <a href="https://x.com/zyinghai"><img alt="X: @zyinghai" src="https://img.shields.io/badge/%40zyinghai-000000?logo=x&logoColor=white"></a>
 </p>
 
-<p align="center"><a href="https://github.com/operad-io/operad/releases/download/v0.3.1/operad-0.3.1-arm64.dmg"><b>Download for macOS</b></a> (Apple Silicon) · <a href="#install">Install the CLI</a></p>
+<p align="center"><a href="https://github.com/operad-io/operad/releases/download/v0.4.1/operad-0.4.1-arm64.dmg"><b>Download for macOS</b></a> (Apple Silicon) · <a href="#install">Install the CLI</a></p>
 
 <p align="center"><img alt="The operad desktop app: one plan, its tasks and their states" src="docs/assets/desktop-plan.png" width="820"></p>
 
