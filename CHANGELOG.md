@@ -13,6 +13,10 @@ the same version.
 
 - The cron source (`operad routines`) is published and loaded by default; 0.4.0 from npm did not have it. A home made by `operad init` from now on loads the cron source. A home made with 0.4.0 runs `operad plugin enable cron` once.
 
+### Changed
+
+- The README and the manual now say that orchestrating agents in operad means composing the flow a task follows, not handing out roles.
+
 ## [0.4.0] - 2026-11-24
 
 The release turns scheduled prompts and scheduled flows into Routines, adds
