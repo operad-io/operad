@@ -646,7 +646,7 @@ describe("operad command", () => {
         plugins: Record<string, unknown>;
         mcp: { actions: string[] };
       };
-      expect(Object.keys(written.plugins)).toEqual(["chat", "bot", "memory", "radian", "pool"]);
+      expect(Object.keys(written.plugins)).toEqual(["chat", "bot", "memory", "cron", "radian", "pool"]);
       expect(written.mcp.actions).toEqual(["chat:close"]);
       expect(written.mcp.actions.some((name) => name.startsWith("bot:"))).toBe(false);
     }
