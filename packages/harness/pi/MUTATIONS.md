@@ -319,8 +319,6 @@ the row fields.
 
 ## T-0766 — pi compacts a long chat
 
-_This section repeats the T-0766 rows above it; the rows above stand._
-
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0766-M1 | packages/harness/pi/src/worker.ts | the compaction ran whatever the context size | `a context under the share is not compacted and runs no flush turn` |
@@ -329,6 +327,8 @@ _This section repeats the T-0766 rows above it; the rows above stand._
 | T-0766-M4 | packages/harness/pi/src/worker.ts | a failed flush turn left its error set, so the whole reply failed | `a failed flush turn does not stop the compaction or fail the reply` |
 | T-0766-M5 | packages/harness/pi/src/worker.ts | the context after a compaction was not reported, so the chat saw the old size | `a context over the share runs one silent flush turn and then compacts; the reply stays the first turn's` |
 | T-0766-M6 | packages/harness/pi/src/worker.ts | a compact-only run still sent the prompt to the model | `compact.only compacts a resumed session without a prompt and without a reply` |
+
+_This section repeats the T-0766 rows above it; the rows above stand._
 
 ## T-0767 — pi prunes old tool results
 
