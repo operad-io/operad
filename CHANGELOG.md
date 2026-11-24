@@ -7,9 +7,11 @@ the same version.
 
 ## [Unreleased]
 
+## [0.4.1] - 2026-11-24
+
 ### Fixed
 
-- The cron source (`operad routines`) is published and loaded by default; 0.4.0 from npm did not have it.
+- The cron source (`operad routines`) is published and loaded by default; 0.4.0 from npm did not have it. A home made by `operad init` from now on loads the cron source. A home made with 0.4.0 runs `operad plugin enable cron` once.
 
 ## [0.4.0] - 2026-11-24
 
@@ -430,7 +432,8 @@ The first public release. Install it with `bun add -g @operad-io/cli`; it needs
   `operad http token rotate` replaces it. The app itself is not in this
   repository.
 
-[Unreleased]: https://github.com/operad-io/operad/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/operad-io/operad/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/operad-io/operad/compare/49eb3b93...v0.4.1
 [0.4.0]: https://github.com/operad-io/operad/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/operad-io/operad/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/operad-io/operad/compare/v0.2.0...v0.3.0
