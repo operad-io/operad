@@ -23,3 +23,7 @@ A test does not replay a whole incident as one scenario. The behaviours it showe
 ### D4: The slowest cases are listed, never enforced
 
 The log of a check lists the ten slowest cases for a person to read. No duration limit fails a check.
+
+### D5: A lint enforces the code rules the checks can see
+
+`bunx oxlint packages scripts` runs in `scripts/verify.sh` and `scripts/check-changed.sh` right after `bunx tsc -b`, over the whole tree in both. The root `.oxlintrc.json` turns every category off and enables four rules as errors, with type-aware linting: `typescript/no-explicit-any`, `typescript/ban-ts-comment`, `typescript/no-non-null-assertion` and `typescript/no-floating-promises`. A file or a directory does not switch a rule off and no source line carries a disable comment; a promise is awaited, or marked `void` where the code means to leave it running. `bunx tsc -b` stays the type check. `typescript/await-thenable` is not enabled: it reports the `await expect(...).rejects` of tests, which is correct. The lint tools are root development dependencies at exact versions, not dependencies of any package. A test lints a fixture that breaks each rule and expects each to be reported, so a configuration that stops checking a rule fails the suite. The tests that forbid `linkSync(`, `process.kill(-`, `fs.watch(` and `stdio[3]` stay, because the lint has no rule for them.

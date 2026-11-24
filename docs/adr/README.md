@@ -51,7 +51,7 @@ An ADR states a decision that is in force, as if it had always been the decision
 | [0033](0033-telegram.md) | The Telegram Plugin | In-process channel and source, automatic binding, buttons and replies |
 | [0034](0034-open-framework-boundary.md) | The Boundary Between operad and a Project's Way of Working | Flaky rule and command from `failed`, `prepare` in the main clone, defaults in the CLI, the engine names no plugin |
 | [0035](0035-sqlite-only-storage.md) | Storage Is `sqlite` Only | One implementation, `store.backend` accepts only `sqlite` |
-| [0036](0036-test-rules.md) | How Tests Are Kept Fast and Few | Simulation first, `test/heavy/`, no incident replays, slowest listed |
+| [0036](0036-test-rules.md) | How Tests Are Kept Fast and Few | Simulation first, `test/heavy/`, no incident replays, slowest listed, oxlint rules in the checks |
 | [0037](0037-chat-commands.md) | Chat Commands | `command` on an action, `chat:send` runs it, one transcript entry, `/help` |
 | [0038](0038-full-text-search.md) | Full-Text Search | One FTS5 index per home, trigram with a substring fallback, scopes bound to a bot, `search` and `read` tools, search inside one chat |
 | [0039](0039-where-a-repository-works.md) | Where a Repository Works | `workIn` `branch` or `worktree`, concurrency 1 and `pool` required for `branch`, `dev.json` read once per attempt, a folder needs git only to create a task, "Set up git here" |
