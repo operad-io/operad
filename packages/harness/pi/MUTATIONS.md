@@ -319,6 +319,8 @@ the row fields.
 
 ## T-0766 — pi compacts a long chat
 
+_This section repeats the T-0766 rows above it; the rows above stand._
+
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0766-M1 | packages/harness/pi/src/worker.ts | the compaction ran whatever the context size | `a context under the share is not compacted and runs no flush turn` |

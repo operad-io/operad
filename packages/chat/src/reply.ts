@@ -174,7 +174,8 @@ const TITLE_SOURCE_CHARS = 1500;
 /**
  * Names the segment whose first exchange has just ended, when it has no title:
  * one cheap call with the first question and answer, on the agent's background
- * model when it declares one. It never holds the reply back: a call that cannot
+ * model when it declares one. The reply is already a fact when this runs, so the
+ * reader has it; only the end of the step waits for the call. A call that cannot
  * be made, or fails, leaves the first words of the question as the title, so a
  * segment is named once and the call is never repeated.
  */

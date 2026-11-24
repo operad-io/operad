@@ -340,7 +340,9 @@ export async function tidyWork(
       notes.push({
         path,
         content: cut(await file.text(), 8_000),
-        date: localDate(file.lastModified),
+        // A checkout or restore can reset a file's time, so the date stays
+        // inside the period the tidy checks: not before the last tidy, not after now.
+        date: localDate(Math.min(now, Math.max(file.lastModified, memory.since ?? 0))),
       });
     } catch {
       // A note that vanished between the check and this read is not work.

@@ -185,7 +185,6 @@ describe("the nightly memory check", () => {
       s.views.close();
     }
   });
-});
 
   test("the first check only sets a baseline", async () => {
     const s = await setup(
@@ -265,6 +264,7 @@ describe("the nightly memory check", () => {
       s.views.close();
     }
   });
+});
 
 describe("dates in the tidy prompt", () => {
   test("the prompt names today, each note's date, and the rules for dating facts", () => {
@@ -292,6 +292,22 @@ describe("dates in the tidy prompt", () => {
       expect(work.today).toBe("2026-11-23");
       expect(work.notes.find((n) => n.path === "topics/trip.md")?.date).toBe("2026-07-03");
       expect(tidyPrompt("default", work)).toContain("### topics/trip.md (changed 2026-07-03)");
+    } finally {
+      s.views.close();
+    }
+  });
+
+  test("a note's date is never later than today", async () => {
+    const s = await setup();
+    try {
+      note(s.memory, "trip.md", "Going to Singapore next week\n");
+      const stamp = new Date("2027-03-01T12:00:00");
+      utimesSync(join(s.memory, "topics", "trip.md"), stamp, stamp);
+      const work = await tidyWork(s.r.store, "default", join(s.r.home, "bot", "default"), {
+        home: s.r.home,
+        now: new Date("2026-11-23T03:30:00").getTime(),
+      });
+      expect(work.notes.find((n) => n.path === "topics/trip.md")?.date).toBe("2026-11-23");
     } finally {
       s.views.close();
     }

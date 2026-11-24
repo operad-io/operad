@@ -288,6 +288,8 @@ and the row fields.
 
 ## T-0766 — pi compacts a long chat
 
+_This section repeats the T-0766 rows above it; the rows above stand._
+
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0766-M7 | packages/harness/process/src/keep.ts | the kept-worker key included `compact`, so a `/compact` run missed the chat's kept worker | `what a reply asks for in compact does not change which kept worker serves it` |
