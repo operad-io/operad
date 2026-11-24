@@ -70,6 +70,9 @@ as `data.queued` with `data.queuedCount`, and has neither field when the queue i
 empty. The `transcript` section returns the same data on every read. Each entry
 has `id`, `text`, `at` and `attachments`.
 
+The row also returns the chat's channels as `data.channels`, a list of strings such as
+`telegram:<id>`, and has no such field when the chat is bound to none.
+
 `chat:withdraw <chat> --message <id>` records a `chat.message_change` fact of
 kind `withdraw`; the message leaves the transcript and is never part of a
 prompt, and the transcript shows one history entry saying it was withdrawn.

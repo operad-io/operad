@@ -494,6 +494,8 @@ it only as a section of the routine's page. The record carries `data.scheduled`,
 which names its bot and the routine, and `data.run`. Every chat a person has has
 neither.
 
+A chat bound to channels carries `data.channels`, the list of channel names as strings (for example `telegram:<id>`); a client shows a Telegram badge when one starts with `telegram:`. An unbound chat has no `data.channels`.
+
 A chat with messages that no run has taken carries `data.queued`, in sending
 order, and `data.queuedCount`; it has neither when nothing is queued. Each entry
 is:
