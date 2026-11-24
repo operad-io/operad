@@ -347,7 +347,7 @@ function startProcess(
       send({ jsonrpc: "2.0", method });
     },
     async close() {
-      child.stdin.end();
+      void child.stdin.end();
       const timer = setTimeout(() => child.kill("SIGKILL"), 10_000);
       try {
         const [err, code] = await Promise.all([

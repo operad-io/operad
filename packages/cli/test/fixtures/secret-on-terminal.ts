@@ -8,7 +8,7 @@ import { expect, mock, test } from "bun:test";
 const home = process.env["OPERAD_TEST_SECRET_HOME"] ?? "";
 
 test("secret set with terminal stdin does not read process.stdin", async () => {
-  mock.module("node:tty", () => ({
+  await mock.module("node:tty", () => ({
     isatty: (fd: number) => fd === 0,
   }));
   const saved = {

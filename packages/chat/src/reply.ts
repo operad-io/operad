@@ -1497,19 +1497,19 @@ async function runAfterStep(ctx: StepContext, step: string | undefined, object: 
   const runStep = ctx.runStep;
   if (runStep === undefined) return undefined;
   if (ctx.stepLoaded !== undefined && !ctx.stepLoaded(step)) {
-    ctx.logger.write(`after ${step}: the step is not loaded\n`);
+    await ctx.logger.write(`after ${step}: the step is not loaded\n`);
     return undefined;
   }
   try {
     const outcome = await runStep(step, { chat: object.id }, { runId: ctx.runId, object, params: ctx.params, signal: ctx.signal });
     if (outcome.result !== "done") {
       const message = isRecord(outcome.data) && typeof outcome.data.message === "string" ? outcome.data.message : `it ended ${outcome.result}`;
-      ctx.logger.write(`after ${step}: ${message}\n`);
+      await ctx.logger.write(`after ${step}: ${message}\n`);
       return undefined;
     }
     return isRecord(outcome.data) ? outcome.data : undefined;
   } catch (error) {
-    ctx.logger.write(`after ${step}: ${messageOf(error)}\n`);
+    await ctx.logger.write(`after ${step}: ${messageOf(error)}\n`);
     return undefined;
   }
 }

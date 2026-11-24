@@ -7,8 +7,8 @@ afterAll(cleanupTempRoots);
 
 const chat = { type: "chat", id: "C-1" } as const;
 
-function appendMessage(store: PluginStore): void {
-  store.append({
+async function appendMessage(store: PluginStore): Promise<void> {
+  await store.append({
     type: "chat.message",
     object: chat,
     cause: "test",
@@ -16,25 +16,25 @@ function appendMessage(store: PluginStore): void {
   });
 }
 
-function check(store: PluginStore): void {
+async function check(store: PluginStore): Promise<void> {
   expect(store.latestFactSequence?.(chat)).toBe(0);
-  store.put(chat.type, chat.id, { title: "Test" }, "test");
+  await store.put(chat.type, chat.id, { title: "Test" }, "test");
   expect(store.latestFactSequence?.(chat)).toBe(1);
-  appendMessage(store);
+  await appendMessage(store);
   expect(store.latestFactSequence?.(chat)).toBe(2);
 }
 
 describe("the latest fact sequence of an object", () => {
-  test("the in-memory store follows the object from no facts to two", () => {
+  test("the in-memory store follows the object from no facts to two", async () => {
     const store = new MemoryPluginStore({ root: "unused" });
-    check(store);
+    await check(store);
   });
 
   test("the SQLite store follows the object from no facts to two", async () => {
     const root = await tempRoot();
     const store = new SqlitePluginStore({ root: join(root, "store") });
     try {
-      check(store);
+      await check(store);
     } finally {
       store.close();
     }

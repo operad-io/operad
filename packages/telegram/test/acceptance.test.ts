@@ -171,7 +171,7 @@ function startPlugin(ctx: SourceContext, api: BotApi) {
   return {
     ready: sent.ready,
     async stop(): Promise<void> {
-      source.stop();
+      await source.stop();
       await replies.stop();
       await sent.stop();
     },

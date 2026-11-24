@@ -112,7 +112,8 @@ function put(
   id: string,
   data: Record<string, unknown>,
 ): void {
-  s.store.put(type, id, data, "test");
+  // The test store applies the put before it returns; no caller waits for a promise.
+  void s.store.put(type, id, data, "test");
 }
 
 describe("the channel's sources", () => {

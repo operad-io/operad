@@ -53,7 +53,7 @@ describe("the stdio program", () => {
       stderr: "pipe",
     });
     child.stdin.write(`${JSON.stringify({ jsonrpc: "2.0", id: 1, method: "tools/list" })}\n`);
-    child.stdin.end();
+    void child.stdin.end();
     const [out, code] = await Promise.all([new Response(child.stdout).text(), child.exited]);
     expect(code).toBe(0);
     const reply = JSON.parse(out.trim().split("\n")[0] ?? "{}") as { result?: { tools?: { name: string }[] } };

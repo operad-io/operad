@@ -86,9 +86,9 @@ describe("jsonl log", () => {
       },
     }, undefined, () => now);
 
-    push(log, JSON.stringify({ type: "text_delta", text: "a" }));
+    void push(log, JSON.stringify({ type: "text_delta", text: "a" }));
     now = 1_250;
-    push(log, JSON.stringify({ type: "text_delta", text: "b" }));
+    void push(log, JSON.stringify({ type: "text_delta", text: "b" }));
     await log.end();
 
     const lines = writes.join("").trim().split("\n").map((line) => JSON.parse(line) as Record<string, unknown>);
@@ -124,7 +124,7 @@ describe("jsonl log flush timing", () => {
   test("a line is written when its 250 ms are up, without more lines", async () => {
     const clock = manualClock();
     const { log, writes } = recording(clock);
-    push(log, "first");
+    void push(log, "first");
     // The timer asks for FLUSH_MS and no more.
     expect(clock.fireUpTo(FLUSH_MS - 1)).toBe(0);
     expect(writes).toEqual([]);
@@ -136,14 +136,14 @@ describe("jsonl log flush timing", () => {
   test("a timer that fires writes the buffer by itself, before end", async () => {
     const clock = manualClock();
     const { log, writes } = recording(clock);
-    push(log, "a");
-    push(log, "b");
+    void push(log, "a");
+    void push(log, "b");
     // One timer for the buffer: the second line does not start another.
     expect(clock.fireUpTo(FLUSH_MS)).toBe(1);
     await Promise.resolve();
     await Promise.resolve();
     expect(writes).toEqual(["a\nb\n"]);
-    push(log, "c");
+    void push(log, "c");
     expect(clock.fireUpTo(FLUSH_MS)).toBe(1);
     await log.end();
     expect(writes).toEqual(["a\nb\n", "c\n"]);
@@ -152,10 +152,10 @@ describe("jsonl log flush timing", () => {
   test("a full buffer and end cancel the timer", async () => {
     const clock = manualClock();
     const { log, writes } = recording(clock);
-    push(log, "small");
+    void push(log, "small");
     await push(log, "x".repeat(FLUSH_CHARS));
     expect(clock.fireUpTo()).toBe(0);
-    push(log, "tail");
+    void push(log, "tail");
     await log.end();
     expect(clock.fireUpTo()).toBe(0);
     expect(writes).toHaveLength(2);

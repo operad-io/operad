@@ -69,7 +69,7 @@ async function runReal(
     stderr: "pipe",
   });
   if (input !== undefined) child.stdin.write(input);
-  child.stdin.end();
+  void child.stdin.end();
   const [out, err, code] = await Promise.all([
     new Response(child.stdout).text(),
     new Response(child.stderr).text(),
@@ -185,7 +185,7 @@ describe("operad with the dev plugin", () => {
     const store = openPluginStore({
       root: join(root, "store"),
     });
-    store.put(
+    await store.put(
       "plan",
       `${repositoryName}/PL0001-old`,
       {
@@ -202,7 +202,7 @@ describe("operad with the dev plugin", () => {
       },
       "seed",
     );
-    store.put(
+    await store.put(
       "task",
       `${repositoryName}/TK0001-old`,
       {
@@ -217,7 +217,7 @@ describe("operad with the dev plugin", () => {
       },
       "seed",
     );
-    store.put(
+    await store.put(
       "plan",
       `${otherName}/PL0001-old`,
       {
@@ -234,7 +234,7 @@ describe("operad with the dev plugin", () => {
       },
       "seed",
     );
-    store.put(
+    await store.put(
       "task",
       `${otherName}/TK0001-old`,
       {
