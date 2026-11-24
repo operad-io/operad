@@ -26,7 +26,7 @@ compaction. `operad scheduled` is removed.
 - A routine's result is delivered to its bot's main chat and shown in the chat
   transcript with the routine's name.
 - Dreaming (梦境整理): the nightly memory tidy, now a built-in routine, dates
-  the facts it keeps.
+  the notes it keeps.
 - Recap: when you write after being away (`chat.awayMinutes`, 240 minutes by
   default, 0 turns it off), the chat adds one recap of the routine results and
   replies that came meanwhile.
@@ -43,7 +43,7 @@ compaction. `operad scheduled` is removed.
 - A chat row shows its channels, including Telegram, and a repository row shows
   its counts as "1 plan · 3 tasks open".
 - A set of regression questions can be built from the chat record to check that
-  memory still answers with the exact facts.
+  memory still answers with the exact details.
 
 ### Changed
 
