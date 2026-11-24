@@ -7,6 +7,44 @@ the same version.
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-24
+
+The release turns scheduled prompts and scheduled flows into Routines, adds
+Dreaming, a recap when you come back, `/private`, and a way to start a fresh
+session with a brief, and keeps long chats working with segments and
+compaction. `operad scheduled` is removed.
+
+### Added
+
+- Routines: one list for what runs on a schedule, bot routines and flow routines
+  together, with `operad routines list|add|edit|pause|resume|remove`.
+  `operad routines add --command "<line>" --cwd <dir>` runs one command line on
+  a schedule through the `shell:command` flow.
+- `operad routines to-flow <id>` turns a routine that runs a command into a flow
+  file in your home that you can edit (`<home>/flows/<name>.flow.ts`); flows in
+  `<home>/flows` load as `home:<file>`.
+- A routine's result is delivered to its bot's main chat and shown in the chat
+  transcript with the routine's name.
+- Dreaming (梦境整理): the nightly memory tidy, now a built-in routine, dates
+  the notes it keeps.
+- Recap: when you write after being away (`chat.awayMinutes`, 240 minutes by
+  default, 0 turns it off), the chat adds one recap of the routine results and
+  replies that came meanwhile.
+- `/private` in a bot chat starts a stretch that is not remembered; `/private`
+  again ends it. Telegram lists it in its command menu.
+- `/new` starts a new agent session in the same chat, and `/new <goal>` starts
+  it with a short brief of the old one; its first message points to the chat's
+  earlier record.
+- `/compact`, and automatic compaction of a long chat with the pi agent after
+  one silent turn to save memory; old tool results are pruned once the prompt
+  cache has expired.
+- Segments in a long chat: a divider shows the title and the date.
+- A reply shows the memory it wrote and used.
+- A chat row shows its channels, including Telegram, and a repository row shows
+  its counts as "1 plan · 3 tasks open".
+- A set of regression questions can be built from the chat record to check that
+  memory still answers with the exact details.
+
 ### Changed
 
 - Scheduled flows are Routines too: `operad routines list|add|edit|pause|resume|remove`
@@ -24,6 +62,19 @@ the same version.
 - `operad` with no command returns to the default bot's main chat (its Telegram
   chat, else its latest open chat) instead of starting a new one; with no open
   chat it starts one as before. `bot:chat` is how to start another.
+- Idle chats that no bot or repository holds are closed after 7 days, and a
+  routine's runs older than 30 days are removed together with their records.
+- A compaction that leaves the context full is not repeated, and its summary
+  keeps the file lists.
+
+### Fixed
+
+- A routine's run no longer appears in chat lists or chat search.
+- The memory tidy cannot change `instructions.md` while it runs, and its card
+  ends as failed when its run ends without a commit, also after a restart.
+- Waiting work finishes before the old store closes when the bot reloads or
+  stops, and items already read are kept after a late failure.
+- The `/private` lines are shorter and use no internal words.
 
 ## [0.3.1] - 2026-11-23
 
@@ -375,7 +426,8 @@ The first public release. Install it with `bun add -g @operad-io/cli`; it needs
   `operad http token rotate` replaces it. The app itself is not in this
   repository.
 
-[Unreleased]: https://github.com/operad-io/operad/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/operad-io/operad/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/operad-io/operad/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/operad-io/operad/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/operad-io/operad/compare/v0.2.0...v0.3.0
 [0.2.0]: https://github.com/operad-io/operad/compare/v0.1.1...v0.2.0
