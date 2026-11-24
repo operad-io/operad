@@ -1,7 +1,8 @@
-// The lint (`bun run lint`, run by hand) reports each of the
-// four rules CLAUDE.md names. A fixture breaks each rule once; a config that silently stops checking a rule fails here. The lint is not part of
-// the checks (ADR 0036 D5), and the test is skipped where oxlint cannot start
-// (the test host's CPU has no AVX2, so its native binding crashes).
+// The lint (`bun run lint`, run by hand) reports each of the four rules
+// CLAUDE.md names. A fixture breaks each rule once; a config that silently
+// stops checking a rule fails here. The lint is not part of the checks
+// (ADR 0036 D5), and the test is skipped where oxlint cannot start (the test
+// host's CPU has no AVX2, so its native binding crashes).
 
 import { afterAll, expect, test } from "bun:test";
 import { spawnSync } from "node:child_process";
