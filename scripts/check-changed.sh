@@ -13,6 +13,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 bun install --frozen-lockfile
 bunx tsc -b
+bunx oxlint packages scripts
 selection=$(bun scripts/changed-packages.ts "$PWD")
 echo "check-changed: testing ${selection}"
 case "$selection" in

@@ -239,3 +239,4 @@ passing after it.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0686-M1 | scripts/remote-check.sh | the wait line was no longer printed, so a check waiting for a slot said nothing | `remote-check.sh > slots and the integration lane > a check waiting for a slot says which one, at once and again while it waits` (timed out waiting) |
+| T-0789-M2 | .oxlintrc.json | removed `typescript/no-floating-promises` from the enabled rules | `the lint reports each of its four rules on a fixture that breaks each` (scripts/test/oxlint.test.ts) |
