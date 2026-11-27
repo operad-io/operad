@@ -80,6 +80,10 @@ A source reads `capabilities.backgroundModel` through `ctx.harnessCapabilities`,
 
 A chat reads `capabilities.accessLevels` the same way. `claude` and `pi` list `plan`, `ask`, `edits` and `full`; `codex` and `radian` list none, so a chat at any level refuses the reply at its start with a message naming the level.
 
+## When the agent is missing
+
+A harness may declare `agentMissing(settings, context)`. While it returns a sentence saying how to set the agent up, the plugin stays loaded but the harness is not set up: it is not among `ctx.harnesses`, its `signedIn`, model list and `check` are not asked, and the check reports the one missing item `agent` with that sentence. Return `undefined` when the agent is there, or when a setting names its command, so that `check` reports a wrong one. It is asked often, so it only looks and starts nothing.
+
 ## Skills
 
 A step may give skill directories in its `skills` param. A harness that declares `capabilities.loadsSkills: true` (`claude`, `pi`) loads them itself, and the prompt stays exactly what the step gives. For any other harness, `promptWithSkills(prompt, paths, capabilities)` of `@operad-io/harness-process` appends a short list: each skill's name, the description from its `SKILL.md` frontmatter and the path of that file, with one sentence to read the file before doing what it describes. It carries no skill body.

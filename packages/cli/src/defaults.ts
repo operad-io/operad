@@ -8,9 +8,9 @@ import {
 } from "@operad-io/engine";
 
 /**
- * Plugins shipped with operad that `plugin enable <name>` can add, including
- * those a new home leaves off (`shell`, `dev`, `pool`, `terminal`) and those a home made
- * before the current defaults may still need (`bot`, `memory`, the harnesses).
+ * Plugins shipped with operad that `plugin enable <name>` can add: those a new
+ * home leaves off (`terminal`, and `claude` with no `claude` on `PATH`) and
+ * those a home made before the current defaults may still need.
  */
 export const OPTIONAL_PLUGINS: readonly string[] = ["shell", "cron", "pi", "claude", "codex", "pool", "bot", "telegram", "memory", "dev", "terminal"];
 
@@ -44,25 +44,37 @@ export function defaultPluginModule(name: string): string {
   return HARNESS_PLUGINS.includes(name) ? `@operad-io/harness-${name}` : `@operad-io/${name}`;
 }
 
-/** The actions `operad init` lets a lead run: only actions of the plugins a new home enables. */
+/** The actions `operad init` lets a lead run; any other is added by hand. */
 export const DEFAULT_LEAD_ACTIONS: readonly string[] = ["chat:close"];
 
 /** The allowed actions that also need the confirmation. */
 export const DEFAULT_CONFIRM_ACTIONS: readonly string[] = ["chat:close"];
 
-/** The plugins of a new home: the assistant's fixed ones plus its harnesses. */
-export function defaultPluginsFor(harnesses: readonly string[]): readonly string[] {
-  return ["chat", "bot", "memory", "cron", ...harnesses];
+/** The plugins of every new home; a plugin comes after the ones it needs. */
+const NEW_HOME_PLUGINS: readonly string[] = ["chat", "bot", "memory", "cron", "shell", "pool", "dev", "telegram"];
+
+/**
+ * The harnesses every new home turns on: each loads without its agent. `claude`
+ * is not one, because turning it on downloads its package (ADR 0012 D4).
+ */
+const NEW_HOME_HARNESSES: readonly string[] = ["pi", "codex", "radian"];
+
+/**
+ * The plugins of a new home. `found` names the agents on this machine: their
+ * harnesses come first, so a new chat's default agent is one that is there.
+ */
+export function defaultPluginsFor(found: readonly string[]): readonly string[] {
+  return [...NEW_HOME_PLUGINS, ...new Set([...found, ...NEW_HOME_HARNESSES])];
 }
 
-/** The config a new home starts with, with the harness plugins passed in place of the fallback. */
+/** The config a new home starts with; `found` names the agents on this machine. */
 export function distributionConfig(
   home: string,
-  harnesses: readonly string[] = ["radian"],
+  found: readonly string[] = [],
 ): OperadConfig {
   return {
     ...defaultConfig(home),
-    plugins: defaultPluginsFor(harnesses).map((name) => ({
+    plugins: defaultPluginsFor(found).map((name) => ({
       name,
       module: defaultPluginModule(name),
       enabled: true,

@@ -59,7 +59,7 @@ import {
   piModelWindows,
   readPiModelList,
 } from "./model-list.ts";
-import { DEFAULT_PI_COMMAND, findPi, PI_FLOOR, PI_VERSION } from "./pi-install.ts";
+import { DEFAULT_PI_COMMAND, findPi, PI_FLOOR, PI_VERSION, piPresent } from "./pi-install.ts";
 import { runLoginStep, type LoginRunOptions } from "./login.ts";
 import {
   DEFAULT_BASH_TIMEOUT_SECS,
@@ -417,6 +417,13 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
     modelsReady: (settings, context) => piModels(settings, context, true),
     efforts: piEfforts,
     capabilities: { loadsSkills: true, takesMessagesMidRun: true, accessLevels: ["plan", "ask", "edits", "full"] },
+    // A command the owner set, or a replaced worker, is the check's to judge.
+    agentMissing: (settings, context) =>
+      options.command !== undefined ||
+      (settings.command !== undefined && settings.command !== DEFAULT_PI_COMMAND) ||
+      piPresent(context.home)
+        ? undefined
+        : "pi is not installed; run `operad plugin enable pi` to install operad's own",
     signedIn: async (settings) => {
       const authPath = expandHome(
         typeof settings.authPath === "string" ? settings.authPath : DEFAULT_AUTH_PATH,

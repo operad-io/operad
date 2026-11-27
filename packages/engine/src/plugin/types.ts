@@ -1245,6 +1245,12 @@ export interface HarnessModelContext {
   readonly log: (message: string) => void;
 }
 
+/** A harness plugin's answer to whether its agent is on this machine. */
+export type AgentMissing = (
+  settings: Readonly<Record<string, JsonValue>>,
+  context: HarnessModelContext,
+) => string | undefined;
+
 /**
  * The efforts a harness plugin declares: those a chat may pick, the one used
  * when none is set, and the step argument that sets it (`--effort` when absent).
@@ -1764,6 +1770,13 @@ export interface PluginShape {
   readonly signedIn?:
     | ((settings: Readonly<Record<string, JsonValue>>) => MaybePromise<boolean | undefined>)
     | undefined;
+  /**
+   * A harness plugin: one sentence saying how to set its agent up when the
+   * agent is not on this machine, `undefined` when it is. While it answers a
+   * sentence the harness stays loaded and is not set up: it is not offered as
+   * an agent, its sign-in is not asked and its check is not run.
+   */
+  readonly agentMissing?: AgentMissing | undefined;
   /** Access profile fields this plugin's steps apply. */
   readonly enforces?: readonly string[] | undefined;
   /** What this plugin needs loaded before it can be used. */

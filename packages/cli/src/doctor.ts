@@ -29,6 +29,8 @@ export interface DoctorAgent {
   readonly loginBot?: string | undefined;
   /** Why the agent cannot be used, when it cannot. */
   readonly problem?: string | undefined;
+  /** How to set the agent up, when it is not on this machine; not a problem while another agent is. */
+  readonly notSetUp?: string | undefined;
 }
 
 /** What `operad pending` reports as a setup problem. */
@@ -142,7 +144,9 @@ export async function runDoctor(env: DoctorEnv): Promise<DoctorReport> {
       for (const agent of agents) {
         const id = `agent:${agent.name}`;
         const version = agent.version === undefined ? "" : ` ${agent.version}`;
-        if (agent.problem !== undefined) {
+        if (agent.notSetUp !== undefined) {
+          checks.push(good(id, `agent ${agent.name} is not set up: ${agent.notSetUp}`));
+        } else if (agent.problem !== undefined) {
           checks.push(
             bad(id, `agent ${agent.name} cannot be used: ${agent.problem}`, "operad init"),
           );
@@ -167,6 +171,8 @@ export async function runDoctor(env: DoctorEnv): Promise<DoctorReport> {
       }
       if (agents.length === 0) {
         checks.push(bad("agents", "no agent is enabled", "operad plugin enable pi"));
+      } else if (agents.every((agent) => agent.notSetUp !== undefined)) {
+        checks.push(bad("agents", "no agent is set up", "operad plugin enable pi"));
       }
     } catch (error) {
       checks.push(bad("plugins", `plugins could not be read: ${reasonOf(error)}`, "operad doctor"));

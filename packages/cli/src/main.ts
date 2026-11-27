@@ -764,20 +764,26 @@ async function ensureHomeConfig(
   readonly config: OperadConfig;
   readonly harnesses: readonly string[];
 }> {
-  // A new home turns on the agents this machine has. With none, it turns on pi
-  // and operad installs its own pi, so a first run needs no agent installed
-  // beforehand (ADR 0012 D2, ADR 0022 D6).
+  // A new home turns on every shipped plugin, with the agents this machine has
+  // first. With none, operad installs its own pi, so a first run needs no agent
+  // installed beforehand (ADR 0012 D2, ADR 0022 D6).
   const path = process.env.PATH ?? "";
   const found = INIT_HARNESS_PLUGINS.filter(
     (name) => Bun.which(name, { PATH: path }) !== null,
   );
   const noAgent = found.length === 0;
   const harnesses = noAgent ? ["pi"] : found;
-  const ensured = await ensureConfig(home, distributionConfig(home, harnesses));
+  const ensured = await ensureConfig(home, distributionConfig(home, found));
   onConfig?.({ created: ensured.created, path: ensured.path, harnesses, noAgent });
   // Reading the config first makes a second init retry an install that failed
   // after the config was written.
+  const hasOtherAgent = ensured.config.plugins.some(
+    (entry) => entry.enabled && entry.name !== "pi" && found.some((name) => name === entry.name),
+  );
   for (const entry of ensured.config.plugins) {
+    // A home with another agent does not wait for pi's library: pi stays not
+    // set up until `plugin enable pi` installs it (ADR 0023 D9).
+    if (entry.name === "pi" && hasOtherAgent) continue;
     await installPluginPackage({
       home,
       entry,
@@ -897,6 +903,9 @@ function systemDoctorEnv(home: string, io: CliIo): DoctorEnv & { close(): Promis
           ...(loginBot === undefined ? {} : { loginBot }),
           ...(check !== undefined && !check.ok ? { problem: check.message } : {}),
         });
+      }
+      for (const missing of registry.missingAgents()) {
+        agents.push({ name: missing.name, notSetUp: missing.description });
       }
       return agents;
     },

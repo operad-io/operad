@@ -75,7 +75,22 @@ function harnessPlugin(name: string | undefined, module: unknown): string | unde
 }
 
 /**
- * The first enabled harness in the home's `config.json`, in `DEFAULT_HARNESS_ORDER`.
+ * True when a harness has something to start: a command its entry sets, the
+ * agent's command on PATH, or for pi the copy operad installed in the home.
+ */
+function agentPresent(harness: string, entry: unknown, home: string): boolean {
+  const settings = isRecord(entry) && isRecord(entry.settings) ? entry.settings : {};
+  if (settings.command !== undefined) return true;
+  if (Bun.which(harness, { PATH: process.env.PATH ?? "" }) !== null) return true;
+  return (
+    harness === "pi" &&
+    existsSync(join(home, "plugins", "node_modules", "@earendil-works", "pi-coding-agent", "package.json"))
+  );
+}
+
+/**
+ * The first enabled harness in the home's `config.json`, in `DEFAULT_HARNESS_ORDER`,
+ * whose agent is on this machine; with none there, the first enabled one.
  * A missing or unreadable file keeps the old radian default.
  */
 export function defaultAgentUse(home: string = defaultOperadHome()): string {
@@ -87,12 +102,13 @@ export function defaultAgentUse(home: string = defaultOperadHome()): string {
   }
   if (!isRecord(raw)) return DEFAULT_WORKER_USE;
   const plugins = raw.plugins;
-  const enabled = new Set<string>();
+  /** The enabled harnesses, each with its entry. */
+  const enabled = new Map<string, unknown>();
   if (Array.isArray(plugins)) {
     for (const entry of plugins) {
       if (typeof entry === "string") {
         const found = harnessPlugin(undefined, entry);
-        if (found !== undefined) enabled.add(found);
+        if (found !== undefined) enabled.set(found, entry);
         continue;
       }
       const record = isRecord(entry) ? entry : undefined;
@@ -100,7 +116,7 @@ export function defaultAgentUse(home: string = defaultOperadHome()): string {
       const name = typeof record?.name === "string" ? record.name : undefined;
       const module = record?.module;
       const found = harnessPlugin(name, module) ?? harnessPlugin(undefined, module);
-      if (found !== undefined) enabled.add(found);
+      if (found !== undefined) enabled.set(found, entry);
     }
   } else if (isRecord(plugins)) {
     for (const [name, entry] of Object.entries(plugins)) {
@@ -108,10 +124,11 @@ export function defaultAgentUse(home: string = defaultOperadHome()): string {
       if (record?.enabled === false) continue;
       const module = typeof entry === "string" ? entry : record?.module;
       const found = harnessPlugin(name, module) ?? harnessPlugin(undefined, module);
-      if (found !== undefined) enabled.add(found);
+      if (found !== undefined) enabled.set(found, entry);
     }
   }
-  const first = DEFAULT_HARNESS_ORDER.find((name) => enabled.has(name));
+  const ordered = DEFAULT_HARNESS_ORDER.filter((name) => enabled.has(name));
+  const first = ordered.find((name) => agentPresent(name, enabled.get(name), home)) ?? ordered[0];
   return first === undefined ? DEFAULT_WORKER_USE : `${first}/agent`;
 }
 

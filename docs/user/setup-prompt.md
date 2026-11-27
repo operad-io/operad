@@ -4,7 +4,7 @@ description: Setup Dev: have your bot read a repository and propose the settings
 
 # Setup Dev
 
-Setup Dev (配置开发流程) turns operad's dev on for one repository. A new home starts as the personal assistant and leaves `dev`, `shell` and `pool` off; Setup Dev has your bot read the repository's CI and scripts and propose what to turn on. Nothing changes until you approve it.
+Setup Dev (配置开发流程) turns operad's dev on for one repository. A new home has `dev`, `shell` and `pool` on (a home made earlier may not); Setup Dev has your bot read the repository's CI and scripts and propose the settings, and what to turn on. Nothing changes until you approve it.
 
 Start it in any of these ways:
 

@@ -275,9 +275,9 @@ describe("publishing and installing the packages", () => {
     expect(config.plugins.chat?.enabled).toBe(true);
     expect(config.plugins.bot?.enabled).toBe(true);
     expect(config.plugins.memory?.enabled).toBe(true);
-    expect(config.plugins.shell).toBeUndefined();
-    expect(config.plugins.dev).toBeUndefined();
-    expect(config.plugins.pool).toBeUndefined();
+    expect(config.plugins.shell?.enabled).toBe(true);
+    expect(config.plugins.dev?.enabled).toBe(true);
+    expect(config.plugins.pool?.enabled).toBe(true);
     expect(config.plugins.claude?.enabled).toBe(true);
 
     const check = run([binary, "plugin", "check", "claude"], scratchRoot, env);

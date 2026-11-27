@@ -27,7 +27,8 @@ HTTP, so [`http.enabled`](http.md#the-http-section) must be true. There is no
   so it sees the `PATH` and the variables your shell sets up. `TERM` is
   `xterm-256color`.
 - **A shell.** An empty command line opens the login shell itself.
-- **An agent.** For each enabled harness among `claude`, `codex` and `pi`, a
+- **An agent.** For each enabled harness among `claude`, `codex` and `pi` whose
+  agent is on the machine, a
   client may offer that name as a command line to fill in. It is an ordinary
   command: it uses the agent's own screen and login, not an access profile.
   Flows and chats do not use terminals.

@@ -217,6 +217,13 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
     efforts: claudeEfforts,
     capabilities: { backgroundModel: "haiku", loadsSkills: true, takesMessagesMidRun: true, accessLevels: ["plan", "ask", "edits", "full"] },
     signedIn: (settings) => claudeSignedInCached(settings),
+    // A command the owner set, or a replaced worker, is the check's to judge.
+    agentMissing: (settings) =>
+      options.command !== undefined ||
+      (settings.command !== undefined && settings.command !== DEFAULT_CLAUDE_COMMAND) ||
+      Bun.which(DEFAULT_CLAUDE_COMMAND, { PATH: process.env.PATH ?? "" }) !== null
+        ? undefined
+        : "claude is not on PATH; install Claude Code, then run `claude auth login`",
     settings: PLUGIN_SETTINGS,
     steps: [
       {

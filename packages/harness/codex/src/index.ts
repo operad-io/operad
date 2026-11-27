@@ -311,6 +311,13 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
     efforts: CODEX_EFFORTS,
     capabilities: { takesMessagesMidRun: true },
     signedIn: (_settings: Readonly<Record<string, unknown>>) => codexSignedInCached(),
+    // A command the owner set, or a replaced codex, is the check's to judge.
+    agentMissing: (settings) =>
+      options.codex !== undefined ||
+      settings.command !== undefined ||
+      Bun.which("codex", { PATH: process.env.PATH ?? "" }) !== null
+        ? undefined
+        : "codex is not on PATH; install Codex, then run `codex login`",
     settings: PLUGIN_SETTINGS,
     steps: [
       {

@@ -7,8 +7,8 @@ description: The Telegram plugin: talk to a bot chat from Telegram and answer wh
 The `telegram` plugin lets you write to a bot from Telegram and answer there what
 waits for a person. A message you send opens a [chat](chats-and-bots.md) on a bot;
 the bot's replies come back to Telegram; a question the agent asks arrives as a
-message with one button per choice. It is optional and works only while
-`operad serve` runs.
+message with one button per choice. A new home has it on; it does nothing until
+it has a token, and works only while `operad serve` runs.
 
 ## Why it exists
 
@@ -155,7 +155,8 @@ start.
 
 ## When it does not work
 
-- `the telegram plugin has no token`: run `operad secret set telegram token`.
+- `not set up: the telegram plugin has no token` (from `operad init`, and in the
+  plugin's log): run `operad secret set telegram token`, then restart `serve`.
 - The bot answers nobody: the id is not in `telegram.users`, or the message was in
   a group.
 - Messages from the bot stop coming and another program uses the same token: make a

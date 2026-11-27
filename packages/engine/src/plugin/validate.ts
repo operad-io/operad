@@ -18,6 +18,7 @@ import {
   OPERAD_PLUGIN_VERSION,
   type ActionArgsSchema,
   type ActionTypeDefinition,
+  type AgentMissing,
   type AskRequest,
   type CommandDefinition,
   type HarnessCapabilities,
@@ -95,6 +96,7 @@ export interface NormalizedPlugin {
   readonly signedIn:
     | ((settings: Readonly<Record<string, JsonValue>>) => MaybePromise<boolean | undefined>)
     | undefined;
+  readonly agentMissing: AgentMissing | undefined;
   readonly requires: PluginRequires | undefined;
 }
 
@@ -870,6 +872,7 @@ export function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     efforts: normalizeEfforts(raw.efforts, kind, at),
     capabilities: normalizeCapabilities(raw.capabilities, kind, at),
     signedIn: normalizeSignedIn(raw.signedIn, kind, at),
+    agentMissing: normalizeAgentMissing(raw.agentMissing, kind, at),
     requires: normalizeRequires(raw.requires, at),
   };
 }
@@ -1171,6 +1174,19 @@ function normalizeSignedIn(
     const answer = await source(settings);
     if (answer === undefined || answer === true || answer === false) return answer;
     throw new PluginError(`${at}: signedIn: must return true, false or undefined`);
+  };
+}
+
+/** A harness plugin's `agentMissing` hook: a sentence, or undefined when the agent is there. */
+function normalizeAgentMissing(value: unknown, kind: string, at: string): AgentMissing | undefined {
+  if (value === undefined) return undefined;
+  if (kind !== "harness") throw new PluginError(`${at}: agentMissing: only a harness plugin declares agentMissing`);
+  if (typeof value !== "function") throw new PluginError(`${at}: agentMissing: must be a function`);
+  const source = value as (...args: Parameters<AgentMissing>) => unknown;
+  return (settings, context) => {
+    const answer = source(settings, context);
+    if (answer === undefined || (typeof answer === "string" && answer.length > 0)) return answer;
+    throw new PluginError(`${at}: agentMissing: must return a sentence or undefined`);
   };
 }
 
