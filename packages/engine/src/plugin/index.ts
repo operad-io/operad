@@ -24,7 +24,15 @@ export {
 } from "./load.ts";
 export type { LoadPluginRegistryOptions } from "./load.ts";
 export { createPluginLogger } from "./logger.ts";
-export { OPTIONAL_PLUGINS_ENV, parseOptionalPlugins, shareOptionalPlugins, sharedOptionalPlugins } from "./offer.ts";
+export {
+  OPTIONAL_PLUGINS_ENV,
+  parseOptionalPlugins,
+  shareOptionalPlugins,
+  sharedOptionalPlugins,
+  STAND_IN_PLUGINS_ENV,
+  shareStandInPlugins,
+  sharedStandInPlugins,
+} from "./offer.ts";
 export { guideBody, PluginRegistry, splitActionName } from "./registry.ts";
 export type {
   ActionInfo,

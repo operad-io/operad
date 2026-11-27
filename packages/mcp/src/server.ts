@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Kernel, ViewError, defaultOperadHome, isRecord, listPending, loadTriggerRules, messageOf, openHome, type ActionInfo, type LogBackend, type OperadConfig, type PluginRegistry, type Views,
   sharedOptionalPlugins,
+  sharedStandInPlugins,
 } from "@operad-io/engine";
 import { InvalidToolArguments } from "./arguments.ts";
 import { actionInfoNamed, actionMayRun, mcpPolicy } from "./policy.ts";
@@ -113,6 +114,8 @@ export interface McpServerOptions {
    * their setup guides are readable; absent, the list this process was handed.
    */
   readonly optional?: Readonly<Record<string, string>> | undefined;
+  /** What loads in place of a package not installed yet; absent, the ones this process was handed. */
+  readonly standIns?: Readonly<Record<string, string>> | undefined;
 }
 
 interface OpenContext {
@@ -188,6 +191,7 @@ async function openContext(
   onLog: (message: string) => void | Promise<void>,
   installOnEnable: readonly string[] | undefined,
   optional: Readonly<Record<string, string>> | undefined = sharedOptionalPlugins(),
+  standIns: Readonly<Record<string, string>> | undefined = sharedStandInPlugins(),
 ): Promise<OpenContext> {
   const opened = await openHome({
     home,
@@ -195,6 +199,7 @@ async function openContext(
     clock,
     ...(installOnEnable === undefined ? {} : { installOnEnable }),
     ...(optional === undefined ? {} : { optional }),
+    ...(standIns === undefined ? {} : { standIns }),
     cancelSource: "mcp",
     onLog: (message) => {
       void onLog(message);
@@ -441,7 +446,15 @@ export async function runMcpServer(
   const send = lineWriter(write);
   const input = options.input ?? Bun.stdin.stream();
 
-  const opened = await openContext(home, cwd, clock, log, options.installOnEnable, options.optional);
+  const opened = await openContext(
+    home,
+    cwd,
+    clock,
+    log,
+    options.installOnEnable,
+    options.optional,
+    options.standIns,
+  );
   let channel: ChannelHandle | undefined;
   try {
     if (options.claudeChannel === true) {

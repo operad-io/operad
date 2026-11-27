@@ -95,7 +95,8 @@ async function freshHome(agents: Readonly<Record<string, string>>, prepare: (hom
 describe("serve on a new home with nothing set up", () => {
   test("with no agent but operad's pi and no token, only the bot's login waits", async () => {
     const started = await freshHome({}, homePi);
-    expect(started.plugins).toEqual(expect.arrayContaining(["telegram", "dev", "pool", "codex", "radian"]));
+    expect(started.plugins).toEqual(expect.arrayContaining(["telegram", "dev", "pool", "terminal", "codex", "radian"]));
+    expect(started.doctor).toContain("ok       plugin terminal is loaded");
     expect(started.serveErrors).toBe("");
     // The login of the one agent the home has; nothing from the plugins that are not set up.
     expect(started.pending.map((item) => item.runId)).toEqual(["bot:login:default"]);
@@ -111,6 +112,7 @@ describe("serve on a new home with nothing set up", () => {
     ].join("\n");
     const started = await freshHome({ claude }, () => undefined);
     expect(started.plugins).toContain("pi");
+    expect(started.doctor).toContain("ok       plugin terminal is loaded");
     expect(started.serveErrors).toBe("");
     expect(started.pending).toEqual([]);
     expect(started.doctor).toContain("ok       agent pi is not set up: ");

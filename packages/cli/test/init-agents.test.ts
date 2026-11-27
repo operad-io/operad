@@ -36,7 +36,7 @@ function executable(path: string, text: string): void {
 }
 
 // The plugins of every new home, before its harnesses.
-const FIXED = ["chat", "bot", "memory", "cron", "shell", "pool", "dev", "telegram"];
+const FIXED = ["chat", "bot", "memory", "cron", "shell", "pool", "dev", "telegram", "terminal"];
 
 /** A fake `claude` that passes the harness check without a real agent. */
 function fakeClaude(bin: string, emptyFirst?: string): void {

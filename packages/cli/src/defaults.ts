@@ -6,11 +6,12 @@ import {
   type OperadConfig,
   type PluginOffer,
 } from "@operad-io/engine";
+import { join } from "node:path";
 
 /**
- * Plugins shipped with operad that `plugin enable <name>` can add: those a new
- * home leaves off (`terminal`, and `claude` with no `claude` on `PATH`) and
- * those a home made before the current defaults may still need.
+ * Plugins shipped with operad that `plugin enable <name>` can add: the one a
+ * new home may leave off (`claude`, with no `claude` on `PATH`) and those a
+ * home made before the current defaults may still need.
  */
 export const OPTIONAL_PLUGINS: readonly string[] = ["shell", "cron", "pi", "claude", "codex", "pool", "bot", "telegram", "memory", "dev", "terminal"];
 
@@ -21,6 +22,17 @@ export const PLUGIN_NEEDS: Readonly<Record<string, readonly string[]>> = {
 
 /** The plugins whose package is installed into the home rather than shipped with the CLI. */
 export const INSTALL_ON_ENABLE: readonly string[] = ["claude", "terminal"];
+
+/**
+ * The installed plugins no start waits for (ADR 0012 D4): `operad init` leaves
+ * them, and `operad serve` installs them once it is serving.
+ */
+export const INSTALL_AFTER_START: readonly string[] = ["terminal"];
+
+/** What loads in place of each of those packages until it is installed, by module name. */
+export function standInPlugins(): Readonly<Record<string, string>> {
+  return { "@operad-io/terminal": join(import.meta.dir, "stand-in", "terminal", "plugin.ts") };
+}
 
 /** The pi library operad installs into the home when no agent is on `PATH` (ADR 0023 D9). */
 export const PI_CODING_AGENT_PACKAGE = "@earendil-works/pi-coding-agent";
@@ -51,11 +63,22 @@ export const DEFAULT_LEAD_ACTIONS: readonly string[] = ["chat:close"];
 export const DEFAULT_CONFIRM_ACTIONS: readonly string[] = ["chat:close"];
 
 /** The plugins of every new home; a plugin comes after the ones it needs. */
-const NEW_HOME_PLUGINS: readonly string[] = ["chat", "bot", "memory", "cron", "shell", "pool", "dev", "telegram"];
+const NEW_HOME_PLUGINS: readonly string[] = [
+  "chat",
+  "bot",
+  "memory",
+  "cron",
+  "shell",
+  "pool",
+  "dev",
+  "telegram",
+  "terminal",
+];
 
 /**
  * The harnesses every new home turns on: each loads without its agent. `claude`
- * is not one, because turning it on downloads its package (ADR 0012 D4).
+ * is not one: without a `claude` on the machine its download would serve nothing
+ * (ADR 0012 D2).
  */
 const NEW_HOME_HARNESSES: readonly string[] = ["pi", "codex", "radian"];
 

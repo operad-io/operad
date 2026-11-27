@@ -1,5 +1,6 @@
 import {
   INIT_HARNESS_PLUGINS,
+  INSTALL_AFTER_START,
   INSTALL_ON_ENABLE,
   OPTIONAL_PLUGINS,
   PLUGIN_NEEDS,
@@ -8,7 +9,9 @@ import {
   defaultPluginModule,
   distributionConfig,
   pluginOffer,
+  standInPlugins,
 } from "./defaults.ts";
+import { installAfterStart } from "./after-start.ts";
 import { pluginDescription } from "./plugin-description.ts";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { userInfo } from "node:os";
@@ -50,6 +53,7 @@ import {
   type RunningItem,
   loadConfiguredPlugins,
   loadPlugin,
+  createPluginLogger,
   loadPluginRegistry,
   loadSourcedTriggerRules,
   loadTriggerRules,
@@ -85,6 +89,7 @@ import {
   serveLockPath,
   setPluginEnabled,
   shareOptionalPlugins,
+  shareStandInPlugins,
   splitActionName,
   startHttpServer,
   storeRootOf,
@@ -595,6 +600,8 @@ export async function openContext(
   const { optional } = pluginOffer(home);
   // The tools server a harness opens for an agent reads the same list.
   shareOptionalPlugins(optional);
+  const standIns = standInPlugins();
+  shareStandInPlugins(standIns);
   const context = await openHome({
     home,
     cwd,
@@ -602,6 +609,7 @@ export async function openContext(
     follow,
     installOnEnable: INSTALL_ON_ENABLE,
     optional,
+    standIns,
     ...(scope === undefined ? {} : { scope }),
     ...(viewsCwd === undefined ? {} : { viewsCwd }),
     cancelSource: "cli",
@@ -699,6 +707,10 @@ interface PluginInstallOptions {
   readonly run?: InstallRunner | undefined;
   /** Receives each install line with the plugin it belongs to. */
   readonly onProgress?: ((name: string, line: string) => void) | undefined;
+  /** Ends the install when aborted. */
+  readonly signal?: AbortSignal | undefined;
+  /** Called when a plugin's package has to be installed. */
+  readonly onInstall?: (() => void) | undefined;
 }
 
 /**
@@ -730,6 +742,8 @@ async function installPluginPackage(options: PluginInstallOptions): Promise<void
       omitOptional: true,
       ...(options.run === undefined ? {} : { run: options.run }),
       ...(report === undefined ? {} : { onProgress: report }),
+      signal: options.signal,
+      onInstall: options.onInstall,
     });
     return;
   }
@@ -795,6 +809,8 @@ async function ensureHomeConfig(
     // A home with another agent does not wait for pi's library: pi stays not
     // set up until `plugin enable pi` installs it (ADR 0023 D9).
     if (entry.name === "pi" && hasOtherAgent) continue;
+    // `serve` installs these once it is serving, so no start waits for them.
+    if (entry.name !== undefined && INSTALL_AFTER_START.includes(entry.name)) continue;
     await installPluginPackage({
       home,
       entry,
@@ -830,6 +846,7 @@ async function commandInit(home: string, io: CliIo, installRun?: InstallRunner):
   const storeRoot = storeRootOf(config);
   const registry = await loadPluginRegistry({
     installOnEnable: INSTALL_ON_ENABLE,
+    standIns: standInPlugins(),
     home,
     cwd: home,
     store: openPluginStore({
@@ -2249,6 +2266,8 @@ async function commandServe(
   let outcome = "stopped" as "stopped" | "reload";
   let unreleased: HttpStopError | undefined;
   let watch: CodeWatch | undefined;
+  const installStop = new AbortController();
+  let installing: Promise<void> | undefined;
   const olderNotice = olderCodeNotice(context.home);
   olderNotice.clear();
   try {
@@ -2324,6 +2343,36 @@ async function commandServe(
       const watching = watch;
       controller.signal.addEventListener("abort", () => watching.stop(), { once: true });
     }
+    // A stop ends an install under way, as the end of the loop does below.
+    controller.signal.addEventListener("abort", () => installStop.abort(), { once: true });
+    if (controller.signal.aborted) installStop.abort();
+    installing = installAfterStart({
+      entries: context.config.plugins.filter(
+        (entry) => entry.name !== undefined && INSTALL_AFTER_START.includes(entry.name),
+      ),
+      signal: installStop.signal,
+      install: async (entry) => {
+        let installed = false;
+        await installPluginPackage({
+          home: context.home,
+          entry,
+          signal: installStop.signal,
+          onInstall: () => {
+            installed = true;
+          },
+        });
+        return installed;
+      },
+      onFailure: async (name, reason) => {
+        await createPluginLogger(context.storeRoot, name, "install").write(`not set up: ${reason}`);
+      },
+    }).then((installed) => {
+      // The new package is loaded by a fresh process, as changed code is.
+      if (installed.length === 0 || controller.signal.aborted) return;
+      io.write(`reloading: installed ${installed.join(", ")}\n`);
+      outcome = "reload";
+      controller.abort();
+    });
     await serve({
       home: context.home,
       lock,
@@ -2345,6 +2394,10 @@ async function commandServe(
     });
   } finally {
     serveStage("stopping");
+    installStop.abort();
+    await installing?.catch((error: unknown) => {
+      io.error(`operad: ${messageOf(error)}\n`);
+    });
     watch?.stop();
     olderNotice.clear();
     // A kept worker would keep running the code this serve loaded.
@@ -3542,6 +3595,7 @@ export async function main(
           error: (text) => io.error(text),
           installOnEnable: INSTALL_ON_ENABLE,
           optional: pluginOffer(home).optional,
+          standIns: standInPlugins(),
           ...(claudeChannel ? { claudeChannel: true } : {}),
           ...(types === undefined ? {} : { types }),
         });

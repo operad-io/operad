@@ -1,6 +1,6 @@
 /**
  * The MCP server as a program a harness starts:
- * `bun stdio.ts [--home <dir>] [--optional <json>]`.
+ * `bun stdio.ts [--home <dir>] [--optional <json>] [--stand-ins <json>]`.
  * It is `operad mcp` without the `operad` command, for a harness that is given
  * the tools as a server to start (the home is `OPERAD_HOME` when no `--home`).
  */
@@ -21,11 +21,18 @@ export function optionalFromArgs(args: readonly string[]): Readonly<Record<strin
   return at < 0 ? undefined : parseOptionalPlugins(args[at + 1]);
 }
 
+/** The stand-ins `--stand-ins <json>` lists; undefined without it. */
+export function standInsFromArgs(args: readonly string[]): Readonly<Record<string, string>> | undefined {
+  const at = args.indexOf("--stand-ins");
+  return at < 0 ? undefined : parseOptionalPlugins(args[at + 1]);
+}
+
 if (import.meta.main) {
   const args = process.argv.slice(2);
   await runMcpServer({
     home: homeFromArgs(args),
     cwd: process.cwd(),
     optional: optionalFromArgs(args),
+    standIns: standInsFromArgs(args),
   });
 }

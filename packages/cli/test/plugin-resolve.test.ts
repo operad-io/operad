@@ -1,14 +1,16 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  INSTALL_AFTER_START,
   INSTALL_ON_ENABLE,
   OPTIONAL_PLUGINS,
   PLUGIN_NEEDS,
   defaultPluginModule,
   defaultPluginsFor,
   distributionConfig,
+  standInPlugins,
 } from "../src/defaults.ts";
 
 const cliDir = dirname(dirname(fileURLToPath(import.meta.url)));
@@ -37,11 +39,9 @@ describe("plugins the CLI offers", () => {
 });
 
 describe("the distribution's defaults", () => {
-  // Every shipped plugin but those that need a download to be turned on.
-  const shipped = [...new Set([...OPTIONAL_PLUGINS, "chat", "radian"])].filter(
-    (name) => !INSTALL_ON_ENABLE.includes(name),
-  );
-  const fixed = ["chat", "bot", "memory", "cron", "shell", "pool", "dev", "telegram"];
+  // Every shipped plugin; `claude` joins only a home whose machine has it.
+  const shipped = [...new Set([...OPTIONAL_PLUGINS, "chat", "radian"])].filter((name) => name !== "claude");
+  const fixed = ["chat", "bot", "memory", "cron", "shell", "pool", "dev", "telegram", "terminal"];
 
   test("a fresh home turns every shipped plugin on, and lists the lead actions explicitly", () => {
     const config = distributionConfig("/h");
@@ -50,6 +50,14 @@ describe("the distribution's defaults", () => {
     expect(config.plugins.every((entry) => entry.enabled)).toBe(true);
     expect(config.mcp.actions).toEqual(["chat:close"]);
     expect(config.mcp.confirmActions).toEqual(["chat:close"]);
+  });
+
+  test("no start waits only for packages that are installed on enable, and each has a stand-in", () => {
+    for (const name of INSTALL_AFTER_START) {
+      expect(INSTALL_ON_ENABLE).toContain(name);
+      expect(existsSync(standInPlugins()[defaultPluginModule(name)] ?? "")).toBe(true);
+    }
+    expect(INSTALL_AFTER_START).toEqual(["terminal"]);
   });
 
   test("a fresh home puts the agents it finds first among the harnesses", () => {
