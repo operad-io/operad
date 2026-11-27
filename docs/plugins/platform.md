@@ -48,6 +48,27 @@ A plugin that runs a command starts it in a process group of its own and stops o
 `LineOutcome` is `{ exitCode, signal, timedOut, cancelled, spawnError, log, tail }`: the exit code (or `null`), the signal name, whether the timeout or a cancel ended it, the error text when the shell could not start, the log's path, and the last lines of output (a bounded tail of 64 KiB).
 The process the line starts leads its own group through a *sentinel*: it ignores SIGTERM, announces `ready` on a control pipe, runs the line in the same group, reports the line's status, and stays alive until the stop's last SIGKILL, so the group id cannot be reused by an unrelated group in between. It also watches the process that started it, and kills the whole group if that process is killed before it can stop it. A line that reported its own status is stopped with SIGKILL at once, and the stop looks again for a child forked as the signal went out, so neither the line's own work nor the sentinel's `sleep` outlives it.
 
+## Pseudo terminals
+
+A program that needs a terminal runs on one from Bun, with no native module. POSIX only. The child leads a process group of its own and has three stdio entries, all on the terminal.
+
+| Export | Type | What it does |
+|---|---|---|
+| `spawnPty(options)` | function | Starts `argv` on a new pseudo terminal and returns a `Pty`. It throws when the program or the directory does not exist, or when this Bun has no pseudo terminal. The group is stopped on `kill` and when the child exits (SIGTERM, then SIGKILL after `KILL_GRACE_MS`). A process that moved to another group, such as a job of an interactive shell, is not part of that stop |
+
+`spawnPty` options:
+
+| Option | Type | Default | Meaning |
+|---|---|---|---|
+| `argv` | non-empty array of strings | required | The program and its arguments; no shell reads them |
+| `cwd` | string | required | The working directory |
+| `env` | record | `process.env` plus the step marker | Added to the environment; `TERM` is not set for the caller |
+| `cols`, `rows` | number | required | The size of the terminal |
+| `onData` | function | required | Receives the output bytes as they come |
+| `clock` | `Clock` | `systemClock` | Timers; a test injects its own |
+
+A `Pty` has `pid` (also the group id), `write(data)`, `resize(cols, rows)`, `kill()` and `exited`. `write` and `resize` do nothing once the terminal is closed. `exited` resolves with `{ code, signal }` after the child exited, its group was stopped and the output was delivered (waiting at most `DRAIN_GRACE_MS` for the end of the output); a child that a signal ended has the code 128 plus the signal number.
+
 ## What a step leaves behind
 
 Every process a step starts through the platform carries an environment marker naming the run and the step. When the step ends the platform finds the live processes of the same user that still carry the marker and stops them (TERM, a bounded wait, KILL). A step that started no marked process has nothing to find and reads no process table. The same sweep runs at `serve` start for markers of runs that are no longer active. A process that removes the variable from its own environment is not found. A process that has ended and waits for its parent to reap it (a zombie) runs nothing and cannot be stopped, so the process table leaves it out: no sweep waits its grace out or reports it as left running.
