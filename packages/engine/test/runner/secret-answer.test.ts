@@ -3,7 +3,7 @@
 // way every time.
 
 import { afterAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readdirSync, statSync, utimesSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, rmSync, statSync, utimesSync } from "node:fs";
 import { join } from "node:path";
 import {
   MemoryPluginStore,
@@ -21,6 +21,7 @@ import { answerAsk, scanAsks } from "../../src/runner/ask.ts";
 import { inputIdFor } from "../../src/log/facts.ts";
 import {
   SECRET_ANSWER_STALE_MS,
+  SECRET_ANSWER_SWEEP_MS,
   putSecretAnswers,
   sweepSecretAnswers,
 } from "../../src/runner/secret-answers.ts";
@@ -222,6 +223,27 @@ describe("a secret answer's hand-over", () => {
     }
   }, 30_000);
 
+  test("a step whose claimed answer is gone fails instead of reading it as skipped", async () => {
+    const env = await setup();
+    try {
+      let waitId = "";
+      const held = heldBeforeReading(env.log, env.runId, () => waitId);
+      const run = env.run(held.view);
+      waitId = await opened(env.log, env.runId);
+      await env.answer(SECRET, waitId);
+      await held.written;
+      const [name = ""] = handedOver(env.home);
+      rmSync(join(env.home, "secrets", "answers", name));
+      held.release();
+      await run;
+      const received = JSON.stringify(await facts(env.log, env.runId));
+      expect(received).toContain("the secret answer is no longer there");
+      expect(await env.received()).not.toMatchObject({ data: { answers: [{ id: "key", skipped: true }] } });
+    } finally {
+      await env.log.close();
+    }
+  }, 30_000);
+
   test("an answer the question closed before leaves nothing behind", async () => {
     const env = await setup();
     try {
@@ -303,6 +325,38 @@ describe("a secret answer's hand-over", () => {
       await env.answer(SECRET, waitId);
       expect(await run).toBe("ended");
       expect(await env.received()).toMatchObject({ data: { answers: [{ id: "key", text: SECRET }] } });
+    } finally {
+      await env.log.close();
+    }
+  }, 30_000);
+
+  test("a running serve removes a left-over answer within a sweep of it turning stale", async () => {
+    const env = await setup();
+    try {
+      let now = 2_000_000_000_000;
+      await putSecretAnswers(env.home, "run", "wait", [{ id: "key", text: SECRET }]);
+      const [name = ""] = handedOver(env.home);
+      // Stale one sweep after serve starts, not before.
+      const mtime = now - SECRET_ANSWER_STALE_MS;
+      utimesSync(join(env.home, "secrets", "answers", name), mtime / 1000, mtime / 1000);
+      const stopped = new AbortController();
+      const left: number[] = [];
+      await serve({
+        home: env.home,
+        log: env.log,
+        registry: env.registry,
+        lockRoot: env.storeRoot,
+        signal: stopped.signal,
+        clock: () => now,
+        spawnRun: () => undefined,
+        sleep: async () => undefined,
+        onPass: () => {
+          left.push(handedOver(env.home).length);
+          if (left.length === 2) stopped.abort();
+          now += SECRET_ANSWER_SWEEP_MS;
+        },
+      });
+      expect(left).toEqual([1, 0]);
     } finally {
       await env.log.close();
     }

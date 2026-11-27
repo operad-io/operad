@@ -1614,3 +1614,10 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0822-M10 | packages/engine/src/runner/ask.ts | a secret answer with no home was taken as success without reaching the step | `a secret answer's hand-over > an answer that cannot name a home to hand it through is refused before it is claimed` |
 | T-0822-M11 | packages/engine/src/loop/serve.ts | `serve` did not remove left-over texts when it started | `a secret answer's hand-over > a left-over answer is removed once it is stale, by a sweep and when serve starts` |
 | T-0822-M12 | packages/engine/src/runner/secret-answers.ts | the sweep removed a text that was not stale yet | `a secret answer's hand-over > a left-over answer is removed once it is stale, by a sweep and when serve starts` |
+
+## T-0823 — a lost secret answer, and the sweep of a running serve
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0823-M1 | packages/engine/src/runner/ask.ts | a step whose claimed text was gone got the redacted answer, as before the fix | `a secret answer's hand-over > a step whose claimed answer is gone fails instead of reading it as skipped` |
+| T-0823-M2 | packages/engine/src/loop/serve.ts | `serve` removed left-over texts only when it started, as before the fix | `a secret answer's hand-over > a running serve removes a left-over answer within a sweep of it turning stale` |

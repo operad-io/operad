@@ -20,6 +20,9 @@ import { isMissingFile, isRecord } from "../util.ts";
  */
 export const SECRET_ANSWER_STALE_MS = 10 * 60 * 1000;
 
+/** How often a running `serve` looks for such files. */
+export const SECRET_ANSWER_SWEEP_MS = 60 * 1000;
+
 const REF = /^[0-9a-f-]{36}$/;
 
 function answersDirectory(home: string): string {
