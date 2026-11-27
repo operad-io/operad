@@ -1,5 +1,5 @@
 import type { ClientApi } from "../views/presentation.ts";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { DRAIN_TIMEOUT_MS, InFlight } from "./in-flight.ts";
 import type { FlowDefinition, StepType } from "../flow/types.ts";
 import { loadFlow as loadFlowFile } from "../flow/load.ts";
@@ -7,7 +7,14 @@ import { FlowError, validateFlow } from "../flow/validate.ts";
 import type { JsonValue } from "../log/types.ts";
 import { validateActionArgs } from "./action-schema.ts";
 import { readDeclaredFlows, writeDeclaredFlow } from "./declared-flows.ts";
-import { HOME_FLOW_OWNER, homeFlowPath, homeFlowsDirectory, loadHomeFlows } from "./home-flows.ts";
+import {
+  HOME_FLOW_OWNER,
+  homeFlowPath,
+  homeFlowsDirectory,
+  linkEngineIntoHome,
+  loadHomeFlow,
+  loadHomeFlows,
+} from "./home-flows.ts";
 import type { HomeFlowRefusal } from "./home-flows.ts";
 import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
@@ -774,6 +781,27 @@ export class PluginRegistry {
     this.homeFlowFiles = new Map(found.flows.map((item) => [item.flow.name, join(directory, item.file)]));
     this.homeFlowRefusals = found.refused;
     return found.refused;
+  }
+
+  /**
+   * Reads the file of one flow of the home that is not held yet: it was added,
+   * or fixed, after the last read. A flow already held keeps its definition.
+   * A file that does not load adds nothing.
+   */
+  async readHomeFlow(name: string): Promise<void> {
+    const path = homeFlowPath(this.home, name);
+    if (path === undefined || this.flow(name) !== undefined || !existsSync(path)) return;
+    linkEngineIntoHome(this.home);
+    let flow: FlowDefinition;
+    try {
+      flow = await loadHomeFlow(path, name, this.stepTypes());
+    } catch {
+      // The run's own process reads the file afresh and says why it does not load.
+      return;
+    }
+    this.homeFlowMap = new Map(this.homeFlowMap).set(name, flow);
+    this.homeFlowFiles = new Map(this.homeFlowFiles).set(name, path);
+    this.homeFlowRefusals = this.homeFlowRefusals.filter((item) => item.file !== basename(path));
   }
 
   /** The file a flow of the home was read from; undefined for any other flow. */

@@ -2,6 +2,7 @@
 
 import { basename } from "node:path";
 import {
+  HAND_START_FACT,
   HOME_FLOW_PREFIX,
   isRecord,
   messageOf,
@@ -59,7 +60,7 @@ export function flowStarterFor(kernel: Kernel, onLog: (message: string) => void)
       // The run exists, so a record that cannot be written does not undo the start.
       try {
         await log.appendGlobal({
-          kind: "flow_started_by_hand",
+          kind: HAND_START_FACT,
           payload: { flow, runId: result.runId, actor: { via: actor.via, id: actor.id } },
           cause: `run:${result.runId}`,
         });

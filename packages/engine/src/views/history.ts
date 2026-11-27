@@ -1,6 +1,7 @@
 /** The history view: one line per recorded step, in order, in words. */
 
-import type { JsonValue } from "../log/types.ts";
+import type { JsonValue, LogBackend, RunInfo } from "../log/types.ts";
+import { HOME_FLOW_PREFIX } from "../plugin/home-flows.ts";
 import type { Actor } from "../plugin/types.ts";
 import { formatElapsed, isRecord } from "../util.ts";
 
@@ -18,6 +19,44 @@ export interface HistoryEntry {
   readonly why: string;
   /** Who answered, when a person did. */
   readonly actor?: Actor | undefined;
+}
+
+/**
+ * The record that a person started a run by hand. It belongs to no run (its
+ * cause names one), so a run's history has to look for it.
+ */
+export const HAND_START_FACT = "flow_started_by_hand";
+
+/**
+ * The hand starts of these runs, by run id. Only a flow of the home starts by
+ * hand, so the log's global facts are read only when one of the runs is such.
+ */
+export async function handStarts(
+  log: Pick<LogBackend, "readGlobal">,
+  runs: readonly Pick<RunInfo, "runId" | "flow">[],
+): Promise<ReadonlyMap<string, HistoryFact>> {
+  const found = new Map<string, HistoryFact>();
+  const wanted = new Map(
+    runs
+      .filter((run) => run.flow.startsWith(HOME_FLOW_PREFIX))
+      .map((run) => [`run:${run.runId}`, run.runId]),
+  );
+  if (wanted.size === 0) return found;
+  for await (const fact of log.readGlobal()) {
+    if (fact.kind !== HAND_START_FACT || typeof fact.cause !== "string") continue;
+    const runId = wanted.get(fact.cause);
+    if (runId !== undefined) found.set(runId, fact);
+  }
+  return found;
+}
+
+/** A run's facts for its history: who started it by hand, then its own. */
+export async function* runFacts(
+  start: HistoryFact | undefined,
+  facts: AsyncIterable<HistoryFact>,
+): AsyncGenerator<HistoryFact> {
+  if (start !== undefined) yield start;
+  yield* facts;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -92,6 +131,22 @@ export function historyEntry(fact: HistoryFact): HistoryEntry {
         step,
         what: "run started",
         why,
+      };
+    }
+
+    case HAND_START_FACT: {
+      const actorValue = record(payload.actor);
+      const via = text(actorValue.via);
+      const id = text(actorValue.id);
+      const whyParts: string[] = [];
+      if (via !== undefined) whyParts.push(`via ${via}`);
+      if (id !== undefined) whyParts.push(`as ${id}`);
+      return {
+        time,
+        step,
+        what: "you started it",
+        why: whyParts.join(", "),
+        ...(via === undefined || id === undefined ? {} : { actor: { via, id } }),
       };
     }
 

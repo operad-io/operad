@@ -37,6 +37,10 @@ import {
   formatHistoryEntry,
   historyEntry,
   historyEntries,
+  handStarts,
+  runFacts,
+  type HistoryFact,
+  type SpawnRun,
   installedPackageFile,
   listPending,
   listFlows,
@@ -1797,11 +1801,12 @@ async function findHistoryRuns(
 async function streamEntriesJson(
   log: LogBackend,
   runId: string,
+  start: HistoryFact | undefined,
   io: CliIo,
   indent: string,
 ): Promise<void> {
   let first = true;
-  for await (const entry of historyEntries(log.read(runId))) {
+  for await (const entry of historyEntries(runFacts(start, log.read(runId)))) {
     if (!first) io.write(",\n");
     first = false;
     io.write(
@@ -1966,7 +1971,10 @@ async function commandKernelAction(
   action: "start" | "dismiss",
   argv: readonly string[],
 ): Promise<void> {
-  if (action === "start" && argv[0]?.startsWith(HOME_FLOW_PREFIX) === true) {
+  if (
+    action === "start" &&
+    takeValueFlag(argv, "--params").args[0]?.startsWith(HOME_FLOW_PREFIX) === true
+  ) {
     await commandStartFlow(context, io, argv);
     return;
   }
@@ -2059,11 +2067,13 @@ async function commandHistory(
     (left, right) => left.startedAt - right.startedAt,
   );
 
+  const starts = await handStarts(context.log, ordered);
+
   if (json && ordered.length === 1) {
     const run = ordered[0];
     if (run === undefined) return;
     io.write("[\n");
-    await streamEntriesJson(context.log, run.runId, io, "  ");
+    await streamEntriesJson(context.log, run.runId, starts.get(run.runId), io, "  ");
     io.write("\n]\n");
     return;
   }
@@ -2075,7 +2085,7 @@ async function commandHistory(
       io.write(
         `${JSON.stringify({ id: run.runId, flow: run.flow }).slice(0, -1)},"entries":[\n`,
       );
-      await streamEntriesJson(context.log, run.runId, io, "    ");
+      await streamEntriesJson(context.log, run.runId, starts.get(run.runId), io, "    ");
       io.write("\n  ]}");
     }
     io.write("\n]\n");
@@ -2087,7 +2097,8 @@ async function commandHistory(
     if (ordered.length > 1) {
       io.write(`run ${run.runId} (${run.flow})\n`);
     }
-    for await (const entry of historyEntries(context.log.read(run.runId))) {
+    const facts = runFacts(starts.get(run.runId), context.log.read(run.runId));
+    for await (const entry of historyEntries(facts)) {
       io.write(`${formatHistoryEntry(entry)}\n`);
     }
   }
@@ -2151,7 +2162,7 @@ const CLI_ENTRY = fileURLToPath(new URL("../bin/operad.ts", import.meta.url));
 function spawnChild(
   home: string,
   storeRoot: string,
-): (runId: string, options: { readonly recover: boolean }) => void {
+): SpawnRun {
   return (runId, options) => {
     const directory = join(storeRoot, "logs", "runs");
     mkdirSync(directory, { recursive: true });
@@ -2165,6 +2176,7 @@ function spawnChild(
           "run-internal",
           runId,
           ...(options.recover ? ["--recover"] : []),
+          ...(options.held === true ? ["--held"] : []),
         ],
         cwd: home,
         env: { ...process.env, OPERAD_HOME: home },
@@ -2358,15 +2370,19 @@ async function commandRunInternal(
   io: CliIo,
   argv: readonly string[],
 ): Promise<void> {
-  const { args, present } = splitFlag(argv, "--recover");
-  const runId = args[0];
+  const recover = splitFlag(argv, "--recover");
+  // `serve` says it holds this run's flow, perhaps as older code than the files.
+  const held = splitFlag(recover.args, "--held");
+  const runId = held.args[0];
   if (runId === undefined) throw new UsageError("run-internal needs a run id");
 
   const run = await context.log.run(runId);
   if (run === undefined) throw new Error(`no run "${runId}"`);
   const found = context.registry.flow(run.flow);
   const missing = `flow "${run.flow}" is not loaded`;
-  if (found === undefined && !run.flow.startsWith(HOME_FLOW_PREFIX)) {
+  // A flow `serve` holds is not failed here: this process exits and the run
+  // waits for a file that loads.
+  if (found === undefined && (held.present || !run.flow.startsWith(HOME_FLOW_PREFIX))) {
     throw new StateError(`run "${runId}": ${missing}`);
   }
   const problem = context.registry.startProblem(run.flow);
@@ -2390,8 +2406,8 @@ async function commandRunInternal(
   }
   const startProblems = [...context.problems];
   const kernel = kernelFor(context, io, rules);
-  // serve leaves a flow of the home it has not read to this process, which read
-  // the file now: when it does not load here either, the run fails.
+  // serve does not hold this flow of the home and left it to this process, which
+  // read the file now: when it does not load here either, the run fails.
   if (found === undefined) {
     io.error(`run ${runId}: ${missing}\n`);
     await kernel.failRun(runId, missing);
@@ -2409,7 +2425,7 @@ async function commandRunInternal(
     registry: context.registry,
     lockRoot: context.storeRoot,
     askGraceSecs: context.config.ask.graceSecs,
-    recover: present,
+    recover: recover.present,
     ...(run.access === undefined ? {} : { access: run.access }),
     ...(object === undefined ? {} : { object }),
     ...(startInput === undefined ? {} : { startInput }),

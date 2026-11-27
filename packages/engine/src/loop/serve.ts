@@ -23,6 +23,8 @@ import { isRecord, objectKey } from "../util.ts";
 export interface SpawnRunOptions {
   /** The previous process died mid-step; recover before doing anything else. */
   readonly recover: boolean;
+  /** This loop has the run's flow, perhaps as it read it before a later edit. */
+  readonly held?: boolean | undefined;
 }
 
 export type SpawnRun = (
@@ -307,6 +309,14 @@ export async function serveOnce(
     // store leaves them in place, so the next pass tries the same starts again.
     options.registry.takeStartedRuns(requests.length);
 
+    // A flow of the home may be newer than what this loop read. It is read for
+    // an active run of it, which then takes answers and a cancel here, and is
+    // not given a process while a step it needs is missing.
+    for (const run of await options.log.runs({ active: true })) {
+      if (options.shouldStop?.() === true) break;
+      await options.registry.readHomeFlow(run.flow);
+    }
+
     if (options.shouldStop?.() !== true) {
       await applyRecordedAnswers({
         log: options.log,
@@ -341,8 +351,8 @@ export async function serveOnce(
 
       // A run no loaded plugin declares has no graph to drive it. It fails now,
       // naming its flow, instead of sitting at starting while a child retries.
-      // A flow of the home whose file is there is not such a run: the file may
-      // be newer than what this serve read, and the run's own process reads it.
+      // A flow of the home whose file is there is not such a run, even when this
+      // loop could not read it: the run's own process reads it afresh.
       if (
         options.registry.flow(run.flow) === undefined &&
         !options.registry.hasHomeFlowFile(run.flow)
@@ -382,6 +392,7 @@ export async function serveOnce(
           state.status === "running" &&
           state.effect !== null &&
           state.effectStarted === state.effect.id,
+        held: options.registry.flow(run.flow) !== undefined,
       });
       spawned.push(run.runId);
     }
