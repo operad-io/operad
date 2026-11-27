@@ -570,3 +570,15 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 | T-0816-M4 | packages/cli/src/main.ts | init installed pi's library beside another agent | ``operad init` finds the agent on PATH > a new home with another agent installs no pi` |
 | T-0816-M5 | packages/cli/src/main.ts | doctor was not told of the agents that are not set up | `serve on a new home with nothing set up > with only a signed-in claude, nothing waits: the pi that is not there asks for no login` |
 | T-0816-M6 | packages/cli/src/doctor.ts | a home with no agent set up passed doctor | `operad doctor > an agent that is not set up is no problem, unless no agent is set up` |
+
+## T-0816 — terminal on in a new home
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0816-M33 | packages/cli/src/defaults.ts | a new home left `terminal` off | `the distribution's defaults > a fresh home turns every shipped plugin on, and lists the lead actions explicitly` |
+| T-0816-M34 | packages/cli/src/main.ts | `init` waited for the package of `terminal`, so a failed download failed it | `terminal in a new home of the packed CLI > no start fails with a download that does, and the next start installs and loads it` |
+| T-0816-M35 | packages/cli/src/main.ts | serve installed nothing after its start | `terminal in a new home of the packed CLI > no start fails with a download that does, and the next start installs and loads it` |
+| T-0816-M36 | packages/cli/src/main.ts | serve did not reload after it installed | `terminal in a new home of the packed CLI > no start fails with a download that does, and the next start installs and loads it` |
+| T-0816-M37 | packages/cli/src/after-start.ts | a failed install failed serve instead of being reported | `installing after the start > reports a failure as one line and goes on, without failing` |
+| T-0816-M38 | packages/cli/src/after-start.ts | the next install started after a stop | `installing after the start > a stop ends it quietly: no report, and nothing more starts` |
+| T-0816-M39 | packages/cli/src/stand-in/terminal/plugin.ts | the stand-in said it was set up | `terminal in a new home of the packed CLI > no start fails with a download that does, and the next start installs and loads it` |
