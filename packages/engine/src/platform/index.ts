@@ -6,7 +6,9 @@
 
 export * from "./atomic-write.ts";
 export * from "./file-lock.ts";
+export * from "./folder-holds.ts";
 export * from "./process-group.ts";
+export * from "./process-tree.ts";
 export * from "./pty.ts";
 export * from "./sqlite-open.ts";
 export * from "./watch.ts";

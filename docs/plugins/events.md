@@ -58,9 +58,24 @@ An action's `ctx.emit({ source, type, key, object?, summary?, data? })` is an ev
 
 ## A source plugin
 
-A plugin of kind `source` declares `start(ctx)`; `serve` calls it once and calls `stop()` of the returned handle on exit.
+A plugin of kind `source` declares `start(ctx)`; `serve` calls it once and calls `stop()` of the returned handle on exit. A plugin of another kind that declares `start` is started the same way.
+The context also has `repositories()`, the repositories the loaded plugins registered (their [project settings](settings.md#project-settings)), read when called.
 Its context adds `rules` (the routing rules, already checked), `clock` (a `() => number` of the kernel's time), `client` and `emit(event)`, which sends `{ source?, key, type, object?, summary?, data?, link? }` through the rules with `source` defaulting to the plugin's name and `hops` 0.
 `client` is the client API that HTTP and the TUI use, the same object and not a copy: `list`, `get`, `section`, `events` (the ids that changed, as they happen), `act`, `pending` (what waits for a person) and `answer` (the answer to one question of a pending item). A source plugin that shows items to people and takes their answers needs nothing more from the kernel: it watches `events`, reads `pending`, and answers with `act(name, id, { actor })` or `answer({ runId, waitId, choice, actor })`. Both need an `actor`, `{ via, id }`, naming the person and the surface they answered on (for example `{ via: "telegram", id: "<user id>" }`); a call without one is refused (`action "<name>" needs an actor: { via, id } says who asked`, or `answer needs an actor: { via, id } says who answered`), and history names that actor. The action's own rules still decide who may do what, and a second answer to an item that was answered is refused the way it is for any client. The settings calls of the full client are not part of this API.
+## A running plugin's routes and events
+
+The handle `start` returns may carry `http`, a `PluginHttp`, which `operad serve` serves behind its token:
+
+- `request({ method, path, local, body })` answers a request under `/v1/<plugin name>`: `path` is the decoded segments after the name, `body()` reads the JSON body once, and the answer is `{ status, body }`, or `undefined` for no such endpoint. A built-in endpoint is never handed to a plugin.
+- `stream({ values, local })` is called for a `GET /v1/events` whose query names the plugin, with that parameter's values. It returns `{ open(send) }`, and `send({ name, data })` writes the event `<plugin>.<name>`; the function `open` returns is called when the stream closes. It may return `{ status, body }` instead, which refuses the whole request. Plugin events have no id and are not replayed. A stream that holds more than `MAX_PLUGIN_STREAM_BYTES` of them unread is closed.
+
+`local` is true only for a request that came over loopback from this machine, to a loopback host name, with no forwarding header. A route that must not be reached from elsewhere checks it.
+
+| Export | What it is |
+|---|---|
+| `isLocalRequest(peer, request)` | The test behind `local`, from the peer's address and the request |
+| `MAX_PLUGIN_STREAM_BYTES` | 32 MiB: how much unread plugin event data one stream holds |
+
 A `start` that throws is logged and skipped, so one broken source does not stop the others. An `emit` that fails is logged as `emit failed: <message>`.
 `source-cron` is a source that sends a `tick` event for each rule schedule that is due; `parseCron(text)`, `cronMatches`, `cronMinutesBetween`, `latestCronMinute` and `minuteStart` are the helpers it uses and `CronError` is what a bad expression throws.
 

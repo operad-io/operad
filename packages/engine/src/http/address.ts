@@ -112,6 +112,39 @@ export function listenAddressKind(
   return undefined;
 }
 
+/** Headers a proxy adds when it passes on a request from somewhere else. */
+const FORWARDING_HEADERS = [
+  "forwarded",
+  "x-forwarded-for",
+  "x-forwarded-host",
+  "x-real-ip",
+  "tailscale-user-login",
+  "tailscale-funnel-request",
+] as const;
+
+function isLoopbackName(name: string): boolean {
+  const bare = name.replace(/^\[|\]$/g, "").replace(/^::ffff:(?=[0-9]+\.)/i, "");
+  return bare === "localhost" || listenAddressKind(bare) === "loopback";
+}
+
+/**
+ * Whether a request came over loopback from this machine and through no proxy:
+ * the peer is a loopback address, the request names a loopback host, and it
+ * carries no forwarding header. A proxy on this machine connects over loopback
+ * too, which is why the last two are asked.
+ */
+export function isLocalRequest(peer: string | undefined, request: Request): boolean {
+  if (peer === undefined || peer === "localhost" || !isLoopbackName(peer)) return false;
+  if (FORWARDING_HEADERS.some((header) => request.headers.has(header))) return false;
+  let host: string;
+  try {
+    host = new URL(request.url).hostname;
+  } catch {
+    return false;
+  }
+  return isLoopbackName(host);
+}
+
 /** True when `address` may be named in `http.listen`. */
 export function isAllowedListenAddress(address: string): boolean {
   return listenAddressKind(address) !== undefined;
