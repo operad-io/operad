@@ -114,8 +114,9 @@ those checks.
 
 `ctx.ask` accepts `command`: one command line the person runs themselves, in
 their own terminal, such as the login of another program. The kernel checks
-before anyone is asked that it is a non-empty single line with no control
-character, at most 2048 characters, and never runs it. It carries the line
+before anyone is asked that it is a non-empty single line with no control or
+format character (such as a bidirectional override or a zero-width space), at
+most 2048 characters, and never runs it. It carries the line
 unchanged: into the wait's record, the pending view, the HTTP pending read and
 the MCP `pending` tool, and a question that runs out of grace keeps it on the
 wait that follows. `operad pending` prints it on a line of its own, so it can be
