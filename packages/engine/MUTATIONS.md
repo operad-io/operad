@@ -1554,7 +1554,7 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0815-M17 | packages/engine/src/http/server.ts | an HTTP start did not carry the client's name as the actor | `serve lists the flows over HTTP and runs one a client starts to its end` |
 | T-0815-M19 | packages/engine/src/loop/serve.ts | serve failed a run of a home flow it had not read, as before | `serve runs a flow added after it read the home to its end`, `a run of a flow whose file no longer loads fails, or is handed to its own process to fail` |
 | T-0815-M20 | packages/engine/src/plugin/registry.ts | a home flow with no file counted as having one | `a run of a flow whose file no longer loads fails, or is handed to its own process to fail` |
-
+| | | | |
 | T-0815-M22 | packages/engine/src/http/server.ts | `flows` was not a built-in endpoint, so a plugin of that name answered under `/v1/flows` | `never answer a built-in endpoint` |
 
 ## T-0817 — what the reviews of the terminal tasks found
@@ -1572,11 +1572,6 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0817-M25 | packages/engine/src/plugin/validate.ts | a plugin of any kind could declare `interactiveCommand` | `a harness plugin's interactiveCommand > only a harness plugin declares one` |
 | T-0817-M28 | packages/engine/src/http/address.ts | `Via` was not a forwarding header | `a request from this machine > is not one from another address, to another name, or through a proxy` |
 | T-0817-M29 | packages/engine/src/http/address.ts | `X-Forwarded-*` and `CF-*` were not forwarding headers | `a request from this machine > is not one from another address, to another name, or through a proxy` |
-
-## T-0815 — home flows listed and started by hand
-
-| id | file | mutation | failing test |
-|---|---|---|---|
 
 ## T-0819 — follow-ups of the home flows' listing and start
 
