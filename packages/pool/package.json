@@ -8,7 +8,7 @@
   "dependencies": {
     "@operad-io/engine": "workspace:*"
   },
-  "description": "operad: the pool plugin, workers shared by runs",
+  "description": "shared workers that spread agent work across models within limits you set",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/operad-io/operad.git",

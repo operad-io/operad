@@ -94,6 +94,8 @@ describe("plugin enable", () => {
 
     const listed = capture();
     expect(await main(["plugin", "list"], { home, io: listed.io })).toBe(0);
-    expect(listed.text()).toMatch(/^memory {2}\d+\.\d+\.\d+ {2}enabled$/m);
+    expect(listed.text()).toMatch(
+      /^memory {2}\d+\.\d+\.\d+ {2}enabled {2}a wiki and memory that agents search and keep up to date$/m,
+    );
   });
 });

@@ -22,7 +22,7 @@
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "1.6.0"
   },
-  "description": "operad: the pi harness, a client of the pi coding agent library",
+  "description": "chats and tasks run by the pi coding agent",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/operad-io/operad.git",

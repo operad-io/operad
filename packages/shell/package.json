@@ -9,7 +9,7 @@
     "@operad-io/access-match": "workspace:*",
     "@operad-io/engine": "workspace:*"
   },
-  "description": "operad: the shell plugin's command and check steps",
+  "description": "run commands and checks as part of your flows",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/operad-io/operad.git",

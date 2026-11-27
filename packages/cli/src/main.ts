@@ -9,6 +9,7 @@ import {
   distributionConfig,
   pluginOffer,
 } from "./defaults.ts";
+import { pluginDescription } from "./plugin-description.ts";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { userInfo } from "node:os";
 import { join, resolve } from "node:path";
@@ -2449,9 +2450,39 @@ async function pluginRows(
       version: identity?.version ?? null,
       enabled: entry.enabled,
       origin: entry.module.startsWith("@operad-io/") ? "builtin" : "home",
+      ...describedBy(entry.module, home),
     });
   }
   return rows;
+}
+
+/** The `description` field of a plugin's row, absent when its package says none. */
+function describedBy(module: string, home: string): { readonly description?: string } {
+  const description = pluginDescription(module, home);
+  return description === undefined ? {} : { description };
+}
+
+/**
+ * A row, off, for each shipped optional plugin the file does not name: neither
+ * `rows` nor a configured module is that plugin.
+ */
+function offeredRows(
+  home: string,
+  plugins: OperadConfig["plugins"],
+  rows: readonly (PluginInfo & { readonly key: string })[],
+): (PluginInfo & { readonly key: string })[] {
+  return OPTIONAL_PLUGINS.filter(
+    (name) =>
+      !rows.some((row) => row.key === name || row.name === name) &&
+      !plugins.some((entry) => entry.module === defaultPluginModule(name)),
+  ).map((name) => ({
+    key: name,
+    name,
+    version: ENGINE_VERSION,
+    enabled: false,
+    origin: "builtin",
+    ...describedBy(defaultPluginModule(name), home),
+  }));
 }
 
 async function commandPluginList(context: Context, io: CliIo): Promise<number> {
@@ -2460,7 +2491,8 @@ async function commandPluginList(context: Context, io: CliIo): Promise<number> {
     return 0;
   }
   for (const row of await pluginRows(context.home, context.config.plugins)) {
-    io.write(`${row.name}  ${row.version ?? "-"}  ${row.enabled ? "enabled" : "disabled"}\n`);
+    const description = row.description === undefined ? "" : `  ${row.description}`;
+    io.write(`${row.name}  ${row.version ?? "-"}  ${row.enabled ? "enabled" : "disabled"}${description}\n`);
   }
   return 0;
 }
@@ -2825,8 +2857,12 @@ export function pluginAdminFor(
   const loaded = new Map<string, PluginIdentity | null>();
   /** The latest install line of a plugin being installed now, by plugin name. */
   const installing = new Map<string, string>();
-  const rowsNow = async (): Promise<(PluginInfo & { readonly key: string })[]> =>
-    pluginRows(context.home, (await readConfig(context.home)).plugins, loaded, load);
+  /** The configured plugins, then the shipped optional ones the file does not name. */
+  const rowsNow = async (): Promise<(PluginInfo & { readonly key: string })[]> => {
+    const { plugins } = await readConfig(context.home);
+    const rows = await pluginRows(context.home, plugins, loaded, load);
+    return [...rows, ...offeredRows(context.home, plugins, rows)];
+  };
   const publicRow = ({ key: _key, ...row }: PluginInfo & { readonly key: string }): PluginInfo => row;
   // The plugin list already reaches every client; a harness adds its agent's
   // login and its models there, so a client never needs a session to know them.
@@ -2842,21 +2878,15 @@ export function pluginAdminFor(
       ...(capabilities === undefined ? {} : { accessLevels: capabilities.accessLevels ?? [] }),
     };
   };
-  /** The rows, plus a plugin still being installed before the file names it. */
-  const rowsPublic = async (): Promise<PluginInfo[]> => {
-    const rows = await Promise.all(
-      (await rowsNow()).map(async ({ key: _key, ...row }) => withHarness(row)),
+  /** The rows, with the install line on a plugin that is being installed. */
+  const rowsPublic = async (): Promise<PluginInfo[]> =>
+    Promise.all(
+      (await rowsNow()).map(async ({ key, ...row }) => {
+        const answered = await withHarness(row);
+        const progress = installing.get(key);
+        return progress === undefined ? answered : { ...answered, progress };
+      }),
     );
-    for (const [name, line] of installing) {
-      const row = rows.find((item) => item.name === name);
-      if (row === undefined) {
-        rows.push({ name, version: null, enabled: false, origin: "builtin", progress: line });
-      } else {
-        rows[rows.indexOf(row)] = { ...row, progress: line };
-      }
-    }
-    return rows;
-  };
   const withGuides = async (): Promise<PluginInfo[]> => {
     const rows = await rowsPublic();
     const guides = await context.registry.setupReader().list();

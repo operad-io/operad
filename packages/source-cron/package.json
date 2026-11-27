@@ -1,7 +1,7 @@
 {
   "name": "@operad-io/source-cron",
   "version": "0.4.1",
-  "description": "operad: the cron source that starts flow routines",
+  "description": "routines that start work on a schedule",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"
