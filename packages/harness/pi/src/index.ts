@@ -281,21 +281,25 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
       : DEFAULT_MODELS_PATH;
   }
 
-  /** The files the model list is read from, when a credentials file is configured. */
+  /**
+   * The files the model list is read from, which a login and a step use too.
+   * Undefined when they are the two in pi's own folder (the one
+   * `PI_CODING_AGENT_DIR` may name), where pi finds them itself.
+   */
   function listFilesOf(settings: Readonly<Record<string, unknown>>): PiListFiles | undefined {
+    const agentDir = expandHome(
+      options.piAgentDir ?? (process.env.PI_CODING_AGENT_DIR || dirname(DEFAULT_AUTH_PATH)),
+    );
     const authPath = expandHome(
       typeof settings.authPath === "string" && settings.authPath !== ""
         ? settings.authPath
         : DEFAULT_AUTH_PATH,
     );
-    if (authPath === expandHome(DEFAULT_AUTH_PATH)) return undefined;
-    return {
-      agentDir: expandHome(
-        options.piAgentDir ?? (process.env.PI_CODING_AGENT_DIR || dirname(DEFAULT_AUTH_PATH)),
-      ),
-      authPath,
-      modelsPath: expandHome(modelsPathOf(settings)),
-    };
+    const modelsPath = expandHome(modelsPathOf(settings));
+    const piFindsThem =
+      resolve(authPath) === resolve(agentDir, "auth.json") &&
+      resolve(modelsPath) === resolve(agentDir, "models.json");
+    return piFindsThem ? undefined : { agentDir, authPath, modelsPath };
   }
 
   function listOptions(settings: Readonly<Record<string, unknown>>, context: HarnessModelContext) {
