@@ -55,4 +55,4 @@ An ADR states a decision that is in force, as if it had always been the decision
 | [0037](0037-chat-commands.md) | Chat Commands | `command` on an action, `chat:send` runs it, one transcript entry, `/help` |
 | [0038](0038-full-text-search.md) | Full-Text Search | One FTS5 index per home, trigram with a substring fallback, scopes bound to a bot, `search` and `read` tools, search inside one chat |
 | [0039](0039-where-a-repository-works.md) | Where a Repository Works | `workIn` `branch` or `worktree`, concurrency 1 and `pool` required for `branch`, `dev.json` read once per attempt, a folder needs git only to create a task, "Set up git here" |
-| [0040](0040-terminal-plugin.md) | The Terminal Plugin | An optional `terminal` plugin: a command on a pseudo terminal kept by serve, output on the event stream, this machine only, replay, folder release, groups |
+| [0040](0040-terminal-plugin.md) | The Terminal Plugin | The `terminal` plugin: a command on a pseudo terminal kept by serve, output on the event stream, this machine only, replay, folder release, groups |

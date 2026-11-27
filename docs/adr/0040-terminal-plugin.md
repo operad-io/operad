@@ -10,7 +10,9 @@ A person wants to run a command where the work is: a dev server in a task's work
 
 ### D1: Terminals are a plugin, `terminal`
 
-The kernel has no terminal (ADR 0002): it runs no command. The `terminal` plugin owns them, and a home that does not enable it has none. It is optional: `operad plugin enable terminal` adds it, and a new home does not load it, because no plugin that hands out a shell or brings a third-party dependency is on without a person choosing it. The user word is **Terminal** (终端).
+The kernel has no terminal (ADR 0002): it runs no command. The `terminal` plugin owns them, and a home that does not enable it has none. A new home has it on (ADR 0012 D2), because the desktop's Terminal entry needs it and a new person should not have to enable it first; a person turns it off with `operad plugin disable terminal`. What holds a shell to this machine is D5's rule for who may start and use one, not the switch. The user word is **Terminal** (终端).
+
+The package brings third-party dependencies, so it is not in the base install, and no start waits for it: `operad serve` installs it once it is serving and reloads (ADR 0012 D4). Until then the plugin is not set up: it runs nothing, its check reports the one missing item `install`, and its setup guide, Setup Terminal, comes with `operad` itself. A failed install is not a failure of `serve` or `init`: it writes one line to the plugin's own log and the next start of `serve` tries again.
 
 ### D2: A terminal is a command in a folder on a pseudo terminal, kept by serve
 

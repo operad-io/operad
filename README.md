@@ -60,7 +60,7 @@ A folder needs no git and no remote to be added and chatted with; git is needed 
 
 The agent needs a model. When it is not signed in to one, `operad doctor` and `operad pending` say so and name the command to type next: `operad bot:login default` takes an API key, and a ChatGPT plan logs in with pi's own `pi auth login openai-codex`.
 
-A new home turns every shipped plugin on, except `terminal`, and `claude` when `claude` is not on your `PATH`: both need a download, so you turn them on with `operad plugin enable`. A plugin you have not set up stays quiet. When no agent is found operad installs its own pi, so a first run needs no agent installed beforehand.
+A new home turns every shipped plugin on, except `claude` when `claude` is not on your `PATH`: it needs a download, so you turn it on with `operad plugin enable claude`. A plugin you have not set up stays quiet. When no agent is found operad installs its own pi, so a first run needs no agent installed beforehand.
 
 ## Quickstart
 

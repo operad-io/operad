@@ -110,7 +110,7 @@ nothing in this manual prints a secret.
 
 `operad init` writes a `config.json` when the home has none, with the shipped
 plugins on: `chat`, `bot`, `memory`, `cron`, `shell`, `pool`, `dev`,
-`telegram`, then the harnesses. Those of `claude`, `pi` and `radian` whose
+`telegram`, `terminal`, then the harnesses. Those of `claude`, `pi` and `radian` whose
 command is on `PATH` come first, followed by the rest of `pi`, `codex` and
 `radian`; `claude` is written only when it is found. When none of the three is
 found, operad installs its own pinned pi in the home (this needs the network
@@ -150,7 +150,7 @@ plugin and the field.
 
 | Key | Type | Default | Allowed values | When it takes effect | Wrong value |
 |---|---|---|---|---|---|
-| `plugins` | object, or an array of module names | every shipped plugin but `terminal`, and `claude` only when found on `PATH` | plugin name to a module name, a path, or an options object | At every command start, and when a running `serve` reloads after a change | Refused: `plugins: must be an object of plugin options or an array of module names` |
+| `plugins` | object, or an array of module names | every shipped plugin; `claude` only when found on `PATH` | plugin name to a module name, a path, or an options object | At every command start, and when a running `serve` reloads after a change | Refused: `plugins: must be an object of plugin options or an array of module names` |
 | `store` | object | sqlite at `<home>/store/log.sqlite` | the keys below | At every command start | Refused: `store: must be an object` |
 | `http` | object | on, port `8765`, `127.0.0.1` | the keys on [the HTTP page](http.md#the-http-section) | When `operad serve` starts; a reload when the new config loads | Refused: `http: must be an object`, or the field's own message |
 | `notify` | object | command `null`, `on` `["waiting"]` | the keys on [notifications](notifications.md) | When `operad serve` starts; a reload when the new config loads | Refused: `notify: must be an object`, or the field's own message |
@@ -181,18 +181,20 @@ still loads, and `serve` and `operad plugin check` print the line that says why.
 `operad plugin list`, `operad plugin enable`, `operad plugin disable` and
 `operad plugin check` are on [the CLI page](cli.md).
 
-`operad init` turns every shipped plugin on in a new home, except two that
-need a download. `claude` is on only when its command is on `PATH` as the home
-is created; the home then also gets `@operad-io/harness-claude` and its Agent
-SDK in `~/.operad/plugins`. `terminal` is off; enable one with
-`operad plugin enable <name>`. A plugin that is on and not set up stays quiet:
-a harness whose agent is missing is not offered as an agent, and `telegram`
-without a token starts nothing. A home made earlier keeps the plugins it has.
-A client of `serve` also lists
-the shipped plugins the file does not name, as off, and turns one on; see
-[Plugins](http.md#plugins). Outside a workspace checkout, enabling
-[`terminal`](terminal.md) installs `@operad-io/terminal` and its two packages
-into the home.
+`operad init` turns every shipped plugin on in a new home, with one exception.
+`claude` is on only when its command is on `PATH` as the home is created; the
+home then also gets `@operad-io/harness-claude` and its Agent SDK in
+`~/.operad/plugins`. Enable it later with `operad plugin enable claude`. A
+plugin that is on and not set up stays quiet: a harness whose agent is missing
+is not offered as an agent, `telegram` without a token starts nothing, and
+`terminal` runs nothing until its package is installed. A home made earlier
+keeps the plugins it has. A client of `serve` also lists the shipped plugins the
+file does not name, as off, and turns one on; see [Plugins](http.md#plugins).
+
+Outside a workspace checkout, [`terminal`](terminal.md) needs
+`@operad-io/terminal` and its two packages in the home. `operad init` does not
+wait for them: `operad serve` installs them once it is serving and reloads.
+`operad plugin enable terminal` installs them at once.
 
 ### `store`
 

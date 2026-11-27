@@ -11,13 +11,20 @@ what a terminal does; its routes and events are on [the HTTP page](http.md#termi
 
 ## Turn it on
 
-The `terminal` plugin is off until you enable it:
+A new home has the `terminal` plugin on. In a home made earlier, enable it:
 
 ```sh
 operad plugin enable terminal
 ```
 
-Restart `serve` if it does not reload by itself. A client opens terminals over
+Restart `serve` if it does not reload by itself. In an installed operad the
+plugin's package is downloaded into the home: `operad serve` does it in the
+background once it is serving, then reloads, so no start waits for it. Until
+then `terminal` is not set up (`/setup terminal`, Setup Terminal). A download
+that fails is written to `<home>/store/logs/terminal/install.log` and tried
+again at the next start of `serve`; `operad plugin enable terminal` tries at
+once and says why it fails. To turn terminals off:
+`operad plugin disable terminal`. A client opens terminals over
 HTTP, so [`http.enabled`](http.md#the-http-section) must be true. There is no
 `operad` command that opens one.
 
