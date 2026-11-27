@@ -41,6 +41,7 @@ packages=(
   harness/process
   shell
   source-cron
+  terminal
   chat
   memory
   review-grading

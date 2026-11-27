@@ -1,0 +1,78 @@
+---
+description: Terminals that operad serve keeps: any command or a shell in a repository or a worktree, from this Mac only.
+---
+
+# Terminals
+
+A terminal runs a command in a folder and is kept by `operad serve`, so it goes
+on when you close the window that shows it. Use one for a dev server in a task's
+worktree, a shell in a project's folder, or an agent's own screen. This page has
+what a terminal does; its routes and events are on [the HTTP page](http.md#terminals).
+
+## Turn it on
+
+The `terminal` plugin is off until you enable it:
+
+```sh
+operad plugin enable terminal
+```
+
+Restart `serve` if it does not reload by itself. A client opens terminals over
+HTTP, so [`http.enabled`](http.md#the-http-section) must be true. There is no
+`operad` command that opens one.
+
+## What you can start
+
+- **Any command line.** It runs in your login shell as `$SHELL -ilc <command>`,
+  so it sees the `PATH` and the variables your shell sets up. `TERM` is
+  `xterm-256color`.
+- **A shell.** An empty command line opens the login shell itself.
+- **An agent.** For each enabled harness among `claude`, `codex` and `pi`, a
+  client may offer that name as a command line to fill in. It is an ordinary
+  command: it uses the agent's own screen and login, not an access profile.
+  Flows and chats do not use terminals.
+
+The folder must be a repository you registered with `dev`, or one of its git
+worktrees, such as a task's. A folder inside one is refused.
+
+Two worktrees running the same dev server will compete for its port.
+
+## How a terminal ends
+
+A terminal keeps running while no client is connected. It ends when:
+
+| What happens | What you see |
+|---|---|
+| Its command ends | The terminal stays in the list with its exit code (128 plus the signal number when a signal ended it) until you close it |
+| You close it | Everything it started is stopped, and it leaves the list |
+| Its folder is removed | It is stopped, and says `stopped because its folder was removed` |
+| `serve` stops or restarts | Every terminal ends and the new `serve` lists none, also when `serve` restarts by itself to load changed code |
+
+When `dev` cleans up a task after a merge, the terminals in the task's worktree
+are stopped before the worktree is removed. A cancelled or rejected task keeps
+its worktree, and its terminals keep running. A folder you remove yourself is
+noticed within about a second.
+
+A cleanup command of your own in [`dev.hooks.afterMerge`](dev.md#work-review-integration-and-cleanup)
+stops them first when it names `$OPERAD_WORKTREE` or runs `git worktree remove`.
+
+## Coming back
+
+A client that connects again gets the screen and up to 5000 lines above it, then
+the new output.
+
+## Groups
+
+You can make named groups and put terminals from any folders in one, for example
+the dev servers of several worktrees. A terminal is in one group or none. A group
+stays when its terminals end and after `serve` restarts (empty, as the terminals
+are gone). Deleting a group stops nothing.
+
+## This Mac only
+
+A terminal is a shell on your machine. Starting one, typing in it, resizing,
+closing, changing groups and reading its screen work only from the machine
+`serve` runs on, over loopback (`http://127.0.0.1:<port>`). A request from your
+network or your tailnet, also one passed on by a proxy on your machine, is
+refused. Another device may still read the list: each terminal's command line,
+folder and state, and the group names. It needs the token like any request.

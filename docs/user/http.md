@@ -90,6 +90,9 @@ otherwise. An object id in a path is URL-encoded; `<id>` may be the bare id or
 | `POST /v1/answer` | Answers an open question of a pending item. The body is `{ "runId": "<item runId>", "waitId": "<item waitId>", "choice"?: "<one of the item's choices>", "answers"?: [{ "id", "choices"?: ["<label>"], "text"? , "skipped"?: true }], "note": "...", "confirmed": true }`; `runId`, `waitId` and a `choice` or `answers` are required, and `note` and `confirmed` are optional. `answers` fills in a form: one entry per question, with the labels picked, the person's own text, or `skipped`; a question left out counts as skipped, and a missing answer to a required question is not invented. A `choice` answers a question that offers choices; for a form of one question it is that question's answer too. `note` is the person's note for the whole question or form; a plan review's `Request changes` carries what to change in it. The server checks every answer against the form before it records anything. When every choice is also an action on the item's object (a `dev` wait), it runs that action, so the action's note and confirmation apply; a confirmed action needs `"confirmed": true` just as it does for `/v1/act`. An answer to a question that is already closed gets `409` and is not applied. |
 | `GET /v1/events` | An SSE stream of changes. |
 
+A running plugin may add its own endpoints under `/v1/<plugin name>` and its own
+events on this stream; [terminals](#terminals) are the ones operad ships.
+
 An action that targets no object is sent with no `id`. `dev:repo-add` is one: it registers a repository on the serve's machine, given the repository's `path` there, exactly as `operad dev repo add <path>` does; see [adding a repository from a client](dev.md#adding-a-repository-from-a-client).
 
 ```json
@@ -583,6 +586,55 @@ while nothing changes. A client that stops reading is disconnected once its
 backlog reaches the size of the resume window; it reconnects and gets a
 `reset`.
 
+## Terminals
+
+These endpoints exist when the [`terminal` plugin](terminal.md) is enabled and
+`serve` is running it. Reading the list works from any address. Everything else
+works only over loopback from the machine `serve` runs on, to a loopback host
+name (`127.0.0.1`, `localhost`, `::1`) and with no forwarding header; otherwise
+the answer is `403` with the kind `refused` and the reason in `message`.
+
+| Method and path | What it does |
+|---|---|
+| `GET /v1/terminal` | `{ "terminals": [...], "groups": [{ "id", "name", "terminals": ["<id>"] }], "presets": [{ "command": "claude" }] }`. `presets` are command lines a client may offer, one for each enabled harness among `claude`, `codex` and `pi`. Groups are in name order. |
+| `POST /v1/terminal` | Starts a terminal. The body is `{ "folder": "/path", "cols": 80, "rows": 24, "command"?: "bun run dev", "group"?: "<group id>" }`; an empty or absent `command` opens the login shell. The answer is `201` and `{ "terminal": { ... } }`. A folder that is not a registered repository or one of its worktrees is `422`; an unknown group is `404`. |
+| `POST /v1/terminal/<id>/input` | Types into it: `{ "data": "ls\r" }`. An ended terminal is `409`. |
+| `POST /v1/terminal/<id>/resize` | `{ "cols": 100, "rows": 30 }`, each from 1 to 1000. An ended terminal is `409`. |
+| `POST /v1/terminal/<id>/close` | Stops everything it started when it runs, takes it off the list and answers `{ "terminal": { ... } }` as it ended. The body is `{}`. |
+| `POST /v1/terminal/<id>/group` | Puts it in a group, or in none: `{ "group": "<group id>" }` or `{ "group": null }`. |
+| `POST /v1/terminal/groups` | Creates a group: `{ "name": "servers" }` (1 to 100 characters). The answer is `201` and `{ "group": { ... } }`. |
+| `POST /v1/terminal/groups/<group id>` | Renames it: `{ "name": "dev servers" }`. |
+| `POST /v1/terminal/groups/<group id>/delete` | Deletes it; its terminals keep running, in no group. The body is `{}`. |
+
+A terminal is `{ "id", "command", "folder", "cols", "rows", "group", "state",
+"exitCode", "signal", "reason", "startedAt", "endedAt" }`. `state` is `running`
+or `ended`. `exitCode` is 128 plus the signal number for a signal. `reason` says
+why it ended when neither its command nor a person ended it, such as `stopped
+because its folder was removed`. `group` is a group id or `null`.
+
+A stream gets terminal events when its query names `terminal`.
+`GET /v1/events?terminal=` gets the changes to the list.
+`GET /v1/events?terminal=<id>&terminal=<id>` also gets the screen and output of
+those terminals; from another machine that request is `403`. Input never goes
+over the stream.
+
+| Event | `data` | When |
+|---|---|---|
+| `terminal.change` | `{ "id" }` or `{ "group" }` | A terminal started, resized, ended, changed group or was closed, or a group was created, renamed or deleted. Read the list again. |
+| `terminal.screen` | The terminal's fields and `"data"` | First, for each terminal the stream names: the screen and up to 5000 lines above it, as text with escape sequences to write into an empty terminal of `cols` by `rows`. |
+| `terminal.output` | `{ "id", "data" }` | Output that follows the screen, in order. It never ends inside a character or an escape sequence. |
+| `terminal.resize` | `{ "id", "cols", "rows" }` | The size changed at this point of the output. |
+| `terminal.exit` | `{ "id", "exitCode", "signal", "reason" }` | It ended, after its last output. |
+| `terminal.closed` | `{ "id" }` | A named terminal was closed, or there is none by that id (after a `serve` restart, for one). |
+
+These events have no `id:` and are not replayed: a client that reconnects gets a
+new `terminal.screen` and replaces what it shows. While no stream names a
+terminal, `serve` answers the questions a program asks its terminal, such as the
+cursor position; while one does, the client's terminal answers, and the client
+sends the answer as input. A client that stops reading is disconnected once 32
+MiB of terminal events wait for it. The 64 KiB line limit above does not apply
+to terminal events.
+
 ## Errors
 
 Every error body is:
@@ -595,6 +647,7 @@ Every error body is:
 |---|---|
 | `400` | Bad arguments, an unknown filter, a malformed cursor, or an ambiguous id. |
 | `401` | A missing or wrong bearer token. |
+| `403` | A [terminal](#terminals) request from anywhere but this machine over loopback. |
 | `404` | No such object, section or action, or no endpoint. |
 | `405` | The endpoint exists but not for that method; the body says `this endpoint takes GET` or `this endpoint takes POST`. |
 | `409` | The action is not available now, it needs confirmation, or its plugin is not loaded. |

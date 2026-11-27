@@ -1,0 +1,30 @@
+{
+  "name": "@operad-io/terminal",
+  "version": "0.4.1",
+  "description": "operad: terminals that serve keeps, on this machine",
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@operad-io/engine": "workspace:*",
+    "@xterm/addon-serialize": "0.13.0",
+    "@xterm/headless": "5.5.0"
+  },
+  "devDependencies": {
+    "@operad-io/chat": "workspace:*",
+    "@operad-io/dev": "workspace:*",
+    "@operad-io/shell": "workspace:*"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/operad-io/operad.git",
+    "directory": "packages/terminal"
+  },
+  "license": "MIT",
+  "files": [
+    "src",
+    "README.md",
+    "LICENSE"
+  ]
+}

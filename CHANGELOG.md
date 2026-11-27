@@ -7,6 +7,10 @@ the same version.
 
 ## [Unreleased]
 
+### Added
+
+- Terminals, an optional plugin (`operad plugin enable terminal`): `operad serve` runs any command or your login shell in a repository or one of its worktrees, keeps it when a client disconnects, and replays its screen to a client that comes back. Starting and using one works only from the machine `serve` runs on. See [terminals](docs/user/terminal.md).
+
 ## [0.4.1] - 2026-11-24
 
 ### Fixed

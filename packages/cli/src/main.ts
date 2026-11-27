@@ -2180,6 +2180,7 @@ async function commandServe(
           registry: context.registry,
           kernel,
           plugins: pluginAdminFor(context),
+          pluginHttp: (name) => kernel.pluginHttp(name),
           onListen: (url) => io.write(`http ${url}\n`),
           onLog: (message) => io.error(`${message}\n`),
         });
