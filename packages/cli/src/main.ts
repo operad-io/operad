@@ -1815,6 +1815,7 @@ async function streamEntriesJson(
         step: entry.step,
         what: entry.what,
         why: entry.why,
+        ...(entry.command === undefined ? {} : { command: entry.command }),
         ...(entry.actor === undefined ? {} : { actor: entry.actor }),
       })}`,
     );

@@ -860,6 +860,12 @@ function rowFromPending(item: PendingItem): TuiRow {
       ? []
       : [`choices: ${answer.choices.join(", ")}`]),
   ];
+  // The row is cut to one line, so it says first where a command is read whole
+  // (ADR 0008 D9).
+  const commandAt =
+    item.command === undefined
+      ? []
+      : [answer?.command === undefined ? "operad pending shows the command" : "a shows the command"];
   // A server that sends the object's row saves a read per item: the row names
   // the object, and the question stays visible as the note. An older server
   // sends no row, and the item shows its question and flow as before.
@@ -868,8 +874,8 @@ function rowFromPending(item: PendingItem): TuiRow {
       id: sanitize(item.object ?? item.runId),
       title: sanitize(item.row.title),
       state: sanitize(item.row.state),
-      note: sanitize(item.prompt),
-      detail: detailOf([item.prompt, repositoryOf(item.object), ...answerDetail]),
+      note: sanitize([...commandAt, item.prompt].join(" · ")),
+      detail: detailOf([...commandAt, item.prompt, repositoryOf(item.object), ...answerDetail]),
       waiting: true,
       running: false,
       ...(answer === undefined ? {} : { answer }),
@@ -884,7 +890,7 @@ function rowFromPending(item: PendingItem): TuiRow {
     title: sanitize(item.prompt),
     state: sanitize(item.flow),
     ...(item.step === null ? {} : { note: sanitize(item.step) }),
-    detail: detailOf([item.flow, item.step ?? "", repositoryOf(item.object), ...answerDetail]),
+    detail: detailOf([...commandAt, item.flow, item.step ?? "", repositoryOf(item.object), ...answerDetail]),
     waiting: true,
     running: false,
     ...(answer === undefined ? {} : { answer }),

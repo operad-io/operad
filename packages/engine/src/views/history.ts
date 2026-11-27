@@ -2,6 +2,7 @@
 
 import type { JsonValue, LogBackend, RunInfo } from "../log/types.ts";
 import { HOME_FLOW_PREFIX } from "../plugin/home-flows.ts";
+import { storedAskCommand } from "../plugin/ask-command.ts";
 import type { Actor } from "../plugin/types.ts";
 import { formatElapsed, isRecord } from "../util.ts";
 
@@ -17,6 +18,8 @@ export interface HistoryEntry {
   readonly step: string | null;
   readonly what: string;
   readonly why: string;
+  /** The command line the question asked the person to run (ADR 0008 D9). */
+  readonly command?: string | undefined;
   /** Who answered, when a person did. */
   readonly actor?: Actor | undefined;
 }
@@ -69,6 +72,12 @@ function text(value: unknown): string | undefined {
 
 function number(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
+}
+
+/** A question's command, as the part of an entry that carries it. */
+function commandOf(payload: Record<string, unknown>): { readonly command?: string } {
+  const command = storedAskCommand(payload.command);
+  return command === undefined ? {} : { command };
 }
 
 /** The person's answers as one line: each answer's labels or text, in order. */
@@ -236,6 +245,7 @@ export function historyEntry(fact: HistoryFact): HistoryEntry {
         step,
         what: "waiting for you",
         why: text(payload.prompt) ?? "",
+        ...commandOf(payload),
       };
 
     case "person_answered": {
@@ -268,6 +278,7 @@ export function historyEntry(fact: HistoryFact): HistoryEntry {
         step: text(payload.step) ?? step,
         what: "asked you",
         why: text(payload.prompt) ?? "",
+        ...commandOf(payload),
       };
 
     case "ask_answered": {
@@ -397,7 +408,9 @@ export function historyEntry(fact: HistoryFact): HistoryEntry {
 /** Formats one entry for a terminal: time, what happened, and why. */
 export function formatHistoryEntry(entry: HistoryEntry): string {
   const why = entry.why.length > 0 ? `: ${entry.why}` : "";
-  return `${iso(entry.time)}  ${entry.what}${why}`;
+  // A line of its own, so it can be copied whole (ADR 0008 D9).
+  const command = entry.command === undefined ? "" : `\n    ${entry.command}`;
+  return `${iso(entry.time)}  ${entry.what}${why}${command}`;
 }
 
 export async function* historyEntries(
@@ -454,6 +467,18 @@ function detailLine(value: string, full: boolean): string {
   const flat = value.replace(/\s*\n\s*/g, " ").replace(/[ \t]+/g, " ").trim();
   if (full || flat.length <= SHORT_DETAIL) return flat;
   return `${flat.slice(0, SHORT_DETAIL - 1).trimEnd()}…`;
+}
+
+/**
+ * A fenced block under a history line's list item, never cut: the command shows
+ * as written, whatever Markdown it looks like. The fence is longer than any run
+ * of backticks inside.
+ */
+function commandBlock(command: string | undefined): string {
+  if (command === undefined) return "";
+  const longest = Math.max(0, ...(command.match(/`+/g) ?? []).map((run) => run.length));
+  const fence = "`".repeat(Math.max(3, longest + 1));
+  return `\n  ${fence}\n  ${command}\n  ${fence}`;
 }
 
 interface Attempt {
@@ -639,7 +664,10 @@ export function runHistoryLines(
           open.detail = text(payload.prompt) ?? "";
         } else if (open === undefined) {
           const entry = historyEntry(fact);
-          items.push({ time: fact.time, text: `${entry.what}: ${detailLine(entry.why, options.full)}` });
+          items.push({
+            time: fact.time,
+            text: `${entry.what}: ${detailLine(entry.why, options.full)}${commandBlock(entry.command)}`,
+          });
         }
         break;
       case "edge_taken": {
@@ -664,7 +692,7 @@ export function runHistoryLines(
         const entry = historyEntry(fact);
         items.push({
           time: fact.time,
-          text: `${entry.what}${entry.why.length > 0 ? `: ${detailLine(entry.why, options.full)}` : ""}`,
+          text: `${entry.what}${entry.why.length > 0 ? `: ${detailLine(entry.why, options.full)}` : ""}${commandBlock(entry.command)}`,
         });
       }
     }
