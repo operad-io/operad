@@ -1488,3 +1488,25 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0805-M15 | packages/engine/src/platform/pty.ts | a child started without a terminal was not killed | `spawnPty > a Bun that gives no terminal throws and the child is killed` |
 | T-0805-M16 | packages/engine/src/platform/pty.ts | the child did not get the step's marker | `spawnPty > a child started by a step carries its marker and is stopped with it` |
 | T-0805-M17 | packages/engine/src/platform/pty.ts | the child was not named to the step's tracker | `spawnPty > a child started by a step carries its marker and is stopped with it` |
+
+## T-0810 — plugin routes and events, folder holds, hang up
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0810-M45 | packages/engine/src/http/server.ts | no request reached a plugin | `a running plugin's routes > are answered under its name, with the decoded path, the body and where it came from` |
+| T-0810-M46 | packages/engine/src/http/server.ts | a built-in endpoint with another method was handed to a plugin | `a running plugin's routes > never answer a built-in endpoint` |
+| T-0810-M47 | packages/engine/src/http/server.ts | a plugin's refusal of a stream was ignored | `a running plugin's events > join a stream that names the plugin, and stop when the client goes` |
+| T-0810-M48 | packages/engine/src/http/server.ts | a closed stream did not close the plugin's part | `a running plugin's events > join a stream that names the plugin, and stop when the client goes`, `a running plugin's events > a stream holds more events than the change window, up to a byte limit` |
+| T-0810-M49 | packages/engine/src/http/server.ts | plugin events counted against the kernel's own queue | `a running plugin's events > a stream holds more events than the change window, up to a byte limit` |
+| T-0810-M50 | packages/engine/src/http/server.ts | unread plugin events had no limit | `a running plugin's events > a stream holds more events than the change window, up to a byte limit` |
+| T-0810-M51 | packages/engine/src/http/address.ts | a forwarding header did not matter | `a running plugin's routes > are answered under its name, with the decoded path, the body and where it came from`, `a request from this machine > is not one from another address, to another name, or through a proxy` |
+| T-0810-M52 | packages/engine/src/http/address.ts | the host a request names did not matter | `a request from this machine > is not one from another address, to another name, or through a proxy` |
+| T-0810-M53 | packages/engine/src/http/address.ts | any peer counted as this machine | `a request from this machine > is not one from another address, to another name, or through a proxy` |
+| T-0810-M54 | packages/engine/src/plugin/registry.ts | a source context listed no repositories | `starting a terminal > runs the command in the folder, passes output on, and takes input`, `starting a terminal > resize reaches the program, the list and the readers` |
+| T-0810-M55 | packages/engine/src/trigger/kernel.ts | the kernel gave no running plugin's routes | `starting a terminal > runs the command in the folder, passes output on, and takes input`, `starting a terminal > resize reaches the program, the list and the readers` |
+| T-0810-M56 | packages/engine/src/platform/pty.ts | `hangUp` signaled only the leader's group | `a terminal that hangs up > stops a job in another process group that ignores TERM and HUP` |
+| T-0810-M57 | packages/engine/src/platform/folder-holds.ts | a release marked the hold and signaled nothing | `folder holds > releasing a folder stops the trees held in it and below it, and tells their holders`, `folder holds > a release never fails: no list, a broken entry or an unreadable table` |
+| T-0810-M58 | packages/engine/src/platform/folder-holds.ts | a release did not tell the holder | `folder holds > releasing a folder stops the trees held in it and below it, and tells their holders` |
+| T-0810-M59 | packages/engine/src/platform/folder-holds.ts | a release stopped a process that is not its holder's child | `folder holds > a hold whose process is not its holder's child is dropped, and nothing is signaled` |
+| T-0810-M60 | packages/engine/src/platform/folder-holds.ts | a release matched folders by name prefix | `folder holds > releasing a folder stops the trees held in it and below it, and tells their holders` |
+| T-0810-M61 | packages/engine/src/platform/folder-holds.ts | a release that failed threw | `folder holds > a release never fails: no list, a broken entry or an unreadable table` |

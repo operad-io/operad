@@ -448,3 +448,10 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0802-M1 | packages/cli/src/defaults.ts | `defaultPluginModule` no longer mapped `cron` to `@operad-io/source-cron`, so a fresh home named a package that does not exist | ``operad init` finds the agent on PATH > a fresh home loads cron from its package, so routines is a known command` |
+
+## T-0810 — the terminal plugin behind serve
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0810-M64 | packages/cli/src/main.ts | serve did not hand its plugins' routes to the HTTP server | `a home that enables terminal serves it, and stopping serve ends its terminals` |
+| T-0810-M65 | packages/cli/src/defaults.ts | `plugin enable terminal` was not offered | `a home that enables terminal serves it, and stopping serve ends its terminals` |

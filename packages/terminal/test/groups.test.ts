@@ -71,6 +71,7 @@ describe("groups", () => {
       group: group.id,
     });
     await served.request("POST", `/v1/terminal/groups/${group.id}/delete`, {});
+    await served.outlast(world.repository);
     expect((await served.list()).terminals).toMatchObject([
       { id: terminal.id, state: "running", group: null },
     ]);

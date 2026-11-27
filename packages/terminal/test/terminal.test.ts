@@ -205,8 +205,10 @@ describe("clients come and go", () => {
     const first = await served.stream(terminal.id);
     await first.until((event) => event.name === "screen");
     first.close();
+    await served.left();
+    await served.outlast(world.repository);
+    expect((await served.list()).terminals).toMatchObject([{ id: terminal.id, state: "running" }]);
     await served.input(terminal.id, "a\r");
-    expect((await served.list()).terminals[0]).toMatchObject({ state: "running" });
     const second = await served.stream(terminal.id);
     await second.shows(terminal.id, /one:a/);
     await served.input(terminal.id, "b\r");

@@ -120,6 +120,13 @@ export interface Served {
   stream(...ids: string[]): Promise<Stream>;
   /** Settles when the terminal ended, with how. */
   ended(id: string): Promise<TerminalInfo>;
+  /** Settles once serve noticed that a client left an event stream. */
+  left(): Promise<void>;
+  /**
+   * Closes a terminal that ignores the hang up, which takes serve the whole
+   * grace: a stop begun before this call has ended when it returns.
+   */
+  outlast(folder: string): Promise<void>;
   stop(): Promise<void>;
 }
 
@@ -175,13 +182,37 @@ export async function serve(world: World, options: ServeOptions = {}): Promise<S
     client: views,
     onLog,
   });
+  let departed = (): void => undefined;
+  const leaving = new Promise<void>((resolve) => {
+    departed = resolve;
+  });
   const server = await startHttpServer({
     home: world.home,
     config: { enabled: true, port: 0, listen: ["127.0.0.1"] },
     views,
     log,
     registry,
-    pluginHttp: (name) => kernel.pluginHttp(name),
+    pluginHttp: (name) => {
+      const served = kernel.pluginHttp(name);
+      const stream = served?.stream?.bind(served);
+      if (served === undefined || stream === undefined) return served;
+      return {
+        request: served.request.bind(served),
+        stream(request) {
+          const joined = stream(request);
+          if (!("open" in joined)) return joined;
+          return {
+            open(send) {
+              const end = joined.open(send);
+              return () => {
+                end();
+                departed();
+              };
+            },
+          };
+        },
+      };
+    },
     onLog,
     ...options.server,
   });
@@ -237,12 +268,20 @@ export async function serve(world: World, options: ServeOptions = {}): Promise<S
     return opened;
   };
 
-  return {
+  const served: Served = {
     url,
     request,
     list,
     stream,
     stop,
+    left: () => leaving,
+    async outlast(folder) {
+      const slow = await served.start({ command: "trap '' HUP TERM; echo ready-$((1+1)); read x", folder });
+      const watching = await stream(slow.id);
+      await watching.shows(slow.id, /ready-2/);
+      expectStatus(await request("POST", `/v1/terminal/${slow.id}/close`, {}), 200);
+      watching.close();
+    },
     async start(input) {
       const answer = await request<{ terminal: TerminalInfo }>("POST", "/v1/terminal", {
         cols: 80,
@@ -275,6 +314,7 @@ export async function serve(world: World, options: ServeOptions = {}): Promise<S
       }
     },
   };
+  return served;
 }
 
 async function openStream(url: string, headers: Record<string, string>): Promise<Stream> {
