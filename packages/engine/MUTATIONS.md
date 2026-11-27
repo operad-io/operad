@@ -1466,3 +1466,25 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0791-M1 | packages/engine/src/plugin/registry.ts | a standing failure after the drain returned an empty list again | `a late failure keeps the items earlier plugins already gave` |
+
+## T-0805 — a command on a pseudo terminal
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0805-M1 | packages/engine/src/platform/pty.ts | the output bytes were not passed to `onData` | `spawnPty > the output of printf arrives, all of it before the exit settles` |
+| T-0805-M2 | packages/engine/src/platform/pty.ts | `write` dropped the input | `spawnPty > input written is echoed by cat` |
+| T-0805-M3 | packages/engine/src/platform/pty.ts | `resize` did not set the size | `spawnPty > the size is the one given, and a resize is seen by stty` |
+| T-0805-M4 | packages/engine/src/platform/pty.ts | the child started in this process's directory instead of `cwd` | `spawnPty > the child starts in the directory, with the variables over this environment` |
+| T-0805-M5 | packages/engine/src/platform/pty.ts | the given variables were left out of the child's environment | `spawnPty > the child starts in the directory, with the variables over this environment` |
+| T-0805-M6 | packages/engine/src/platform/pty.ts | the exit code was reported as 0 | `spawnPty > the exit code is reported` |
+| T-0805-M7 | packages/engine/src/platform/pty.ts | the signal was reported as null | `spawnPty > a child that a signal ended is reported with the signal` |
+| T-0805-M8 | packages/engine/src/platform/pty.ts | the stop signaled the leader alone instead of its process group | `spawnPty > kill ends the process group, a grandchild that ignores TERM included` |
+| T-0805-M9 | packages/engine/src/platform/pty.ts | the group counted as gone once its leader had exited | `spawnPty > what the child left in its group is stopped when it exits` |
+| T-0805-M10 | packages/engine/src/platform/pty.ts | the group was not stopped when the leader exited | `spawnPty > what the child left in its group is stopped when it exits` |
+| T-0805-M11 | packages/engine/src/platform/pty.ts | the spawn passed a fourth stdio pipe | `spawnPty > there are three stdio entries and the child gets no fourth descriptor` |
+| T-0805-M12 | packages/engine/src/platform/pty.ts | `write` wrote to a closed terminal | `spawnPty > after the exit, input, a resize and a kill do nothing` |
+| T-0805-M13 | packages/engine/src/platform/pty.ts | `exited` did not wait for the end of the output | `spawnPty > a terminal that never reports its end is waited for only so long` |
+| T-0805-M14 | packages/engine/src/platform/pty.ts | the wait for the end of the output had no limit | `spawnPty > a terminal that never reports its end is waited for only so long` |
+| T-0805-M15 | packages/engine/src/platform/pty.ts | a child started without a terminal was not killed | `spawnPty > a Bun that gives no terminal throws and the child is killed` |
+| T-0805-M16 | packages/engine/src/platform/pty.ts | the child did not get the step's marker | `spawnPty > a child started by a step carries its marker and is stopped with it` |
+| T-0805-M17 | packages/engine/src/platform/pty.ts | the child was not named to the step's tracker | `spawnPty > a child started by a step carries its marker and is stopped with it` |
