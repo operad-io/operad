@@ -93,15 +93,15 @@ describe("a running plugin's routes", () => {
 
   test("never answer a built-in endpoint", async () => {
     let asked = 0;
-    const served = await serveWith({
-      types: {
-        request() {
-          asked += 1;
-          return { status: 200, body: {} };
-        },
+    const taker: PluginHttp = {
+      request() {
+        asked += 1;
+        return { status: 200, body: {} };
       },
-    });
+    };
+    const served = await serveWith({ types: taker, flows: taker });
     expect((await served.call("/v1/types", { method: "POST", body: "{}" })).status).toBe(404);
+    expect((await served.call("/v1/flows/other")).status).toBe(404);
     expect(asked).toBe(0);
   });
 });

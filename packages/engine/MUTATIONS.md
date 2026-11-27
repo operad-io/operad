@@ -1545,3 +1545,14 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0818-M3 | packages/engine/src/kernel/decide.ts | an unreadable command in a step's result was kept on the wait | `runFlow > a command a step's result carries that cannot be read is left off the wait` |
 | T-0818-M4 | packages/engine/src/runner/ask.ts | an unreadable command in a logged question was kept | `ctx.ask (memory) > an open question whose stored command cannot be read stays pending without it` |
 | T-0818-M5 | packages/engine/src/plugin/ask-command.ts | a command with a format character was accepted | `command validation > an empty, many-line, escaped, disguised or overlong command is refused before anyone is asked` |
+| T-0815-M1 | packages/engine/src/views/flows.ts | the list left out where each step goes next | `flows --json gives a home flow and a plugin flow with their steps` |
+| T-0815-M2 | packages/engine/src/plugin/registry.ts | a home flow's path was only its file name | `flows --json gives a home flow and a plugin flow with their steps`, `serve lists the flows over HTTP and runs one a client starts to its end` |
+| T-0815-M3 | packages/engine/src/views/flows.ts | a wait that checks a condition named no plugin step | `flows --json gives a home flow and a plugin flow with their steps` |
+| T-0815-M4 | packages/engine/src/views/flows.ts | the list did not say why a flow cannot start | `a flow that cannot start says why` |
+| T-0815-M5 | packages/engine/src/http/server.ts | `GET /v1/flows` was not routed | `serve lists the flows over HTTP and runs one a client starts to its end` |
+| T-0815-M15 | packages/engine/src/trigger/kernel.ts | a start with no event answered started for a flow already running | `a flow already running is not started twice` |
+| T-0815-M17 | packages/engine/src/http/server.ts | an HTTP start did not carry the client's name as the actor | `serve lists the flows over HTTP and runs one a client starts to its end` |
+| T-0815-M19 | packages/engine/src/loop/serve.ts | serve failed a run of a home flow it had not read, as before | `serve runs a flow added after it read the home to its end`, `a run of a flow whose file no longer loads fails, or is handed to its own process to fail` |
+| T-0815-M20 | packages/engine/src/plugin/registry.ts | a home flow with no file counted as having one | `a run of a flow whose file no longer loads fails, or is handed to its own process to fail` |
+
+| T-0815-M22 | packages/engine/src/http/server.ts | `flows` was not a built-in endpoint, so a plugin of that name answered under `/v1/flows` | `never answer a built-in endpoint` |

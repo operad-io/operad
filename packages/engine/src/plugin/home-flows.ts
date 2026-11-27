@@ -75,6 +75,13 @@ export function homeFlowsDirectory(home: string): string {
   return join(home, "flows");
 }
 
+/** The file a flow name of the home stands for; undefined for any other name. */
+export function homeFlowPath(home: string, name: string): string | undefined {
+  if (!name.startsWith(HOME_FLOW_PREFIX)) return undefined;
+  const short = name.slice(HOME_FLOW_PREFIX.length);
+  return NAME.test(short) ? join(homeFlowsDirectory(home), `${short}${SUFFIX}`) : undefined;
+}
+
 /** Reads every flow file of the home. A missing directory holds no flows. */
 export async function loadHomeFlows(
   home: string,

@@ -341,7 +341,12 @@ export async function serveOnce(
 
       // A run no loaded plugin declares has no graph to drive it. It fails now,
       // naming its flow, instead of sitting at starting while a child retries.
-      if (options.registry.flow(run.flow) === undefined) {
+      // A flow of the home whose file is there is not such a run: the file may
+      // be newer than what this serve read, and the run's own process reads it.
+      if (
+        options.registry.flow(run.flow) === undefined &&
+        !options.registry.hasHomeFlowFile(run.flow)
+      ) {
         const reason = `flow "${run.flow}" is not loaded`;
         options.onLog?.(`run ${run.runId}: ${reason}`);
         await kernel.failRun(run.runId, reason);
