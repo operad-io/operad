@@ -36,8 +36,8 @@ export interface PendingItem {
    */
   readonly questions?: readonly AskQuestion[] | undefined;
   /**
-   * A command line the person runs themselves (ADR 0008 D9). The prompt says it
-   * too, for a client that does not read this.
+   * A command line the person runs themselves (ADR 0008 D9). A client shows it
+   * on a line of its own with the prompt, which need not say it.
    */
   readonly command?: string | undefined;
   /**

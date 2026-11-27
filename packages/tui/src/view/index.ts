@@ -889,7 +889,9 @@ function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefi
     const chunks: TextChunk[] = [
       chunk(`${input.answer.prompt}\n`, palette.accent, TextAttributes.BOLD),
     ];
-    const rows = choiceRows(state, 2);
+    const command = commandLines(input.answer.command, overlayTextWidth(state));
+    for (const line of command) chunks.push(chunk(`${line}\n`, palette.text));
+    const rows = choiceRows(state, 2 + command.length);
     const start = Math.max(
       0,
       Math.min(input.cursor - Math.floor(rows / 2), input.answer.choices.length - rows),
@@ -1048,7 +1050,7 @@ export interface OverlayBox {
 export function overlayBox(state: TuiState): OverlayBox | undefined {
   const kind = state.keys ? "keys" : state.input?.kind;
   if (kind === undefined) return undefined;
-  const width = Math.max(10, Math.min(OVERLAY_WIDTH, state.width - 4));
+  const width = overlayWidth(state);
   const lines = kind === "keys" ? HELP_LINES : kind === "confirm" || kind === "setting-confirm" ? 2 : inputLines(state);
   // Border (2) and a one-cell margin of background (2) around the text.
   const wanted = lines + 4;
@@ -1059,6 +1061,16 @@ export function overlayBox(state: TuiState): OverlayBox | undefined {
   }
   const height = Math.max(5, Math.min(wanted, state.height));
   return { left, top: Math.max(0, Math.floor((state.height - height) / 2)), width, height };
+}
+
+/** A question's command, wrapped so that all of it shows in the box (ADR 0008 D9). */
+function commandLines(command: string | undefined, width: number): readonly string[] {
+  return command === undefined ? [] : wrapText(sanitize(command), width);
+}
+
+/** The width of an overlay's box, its frame included. */
+function overlayWidth(state: TuiState): number {
+  return Math.max(10, Math.min(OVERLAY_WIDTH, state.width - 4));
 }
 
 /** The line count the box needs for the input it draws. */
@@ -1082,7 +1094,9 @@ function inputLines(state: TuiState): number {
     return entries.length === 0 ? 3 : 2 + paletteDisplayLines(entries).length;
   }
   if (input?.kind === "answer") {
-    return Math.min(input.answer.choices.length, choiceRows(state, 2)) + 2;
+    // Not `overlayTextWidth`: that asks for the box, which asks for this count.
+    const command = commandLines(input.answer.command, overlayWidth(state) - 4).length;
+    return Math.min(input.answer.choices.length, choiceRows(state, 2 + command)) + 2 + command;
   }
   if (input?.kind === "form") {
     const question = input.answer.questions?.[input.question];

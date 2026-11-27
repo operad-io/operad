@@ -75,6 +75,8 @@ A user whose id is in `telegram.users`, writing in a private chat with the bot:
   started it.
 - Answers a question by tapping a button. A tap counts as your answer, given as
   your Telegram user id, and as the confirmation when the action asks to confirm.
+  A question that carries a command for you to run, such as pi's login, shows it
+  in a paragraph of its own under the question.
 - Answers an item that needs words, such as a reject or a question with no
   choices, by replying to its message. With several such actions, begin the reply
   with the action's name and a colon, such as `reject:`. Text that is not a reply

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import type { ChoiceInfo, PendingItem } from "@operad-io/engine";
 import { initialState, reduce, type TuiState, type TuiStateEvent } from "../src/state.ts";
-import { drawState, paletteFor } from "../src/view/index.ts";
+import { drawState, overlayBox, paletteFor } from "../src/view/index.ts";
 import { toRgba } from "../src/theme.ts";
 
 function question(choices: readonly string[], choiceInfo?: Readonly<Record<string, ChoiceInfo>>): TuiState {
@@ -120,5 +120,42 @@ describe("a question whose choices say what they are", () => {
     expect(part(state, "yes").text).toBe("yes");
     state = press(state, "enter");
     expect(state.answerRequest).toEqual({ runId: "run-1", waitId: "wait:1", choice: "yes" });
+  });
+});
+
+describe("a question that carries a command", () => {
+  const command = `/home/someone/${"a-long-directory/".repeat(6)}bin/tool auth login some-provider`;
+
+  function asked(width: number): TuiState {
+    const item: PendingItem = {
+      runId: "run-1",
+      flow: "flow",
+      step: "ask",
+      prompt: "Run the command below.",
+      command,
+      choices: ["first", "second"],
+      waitId: "wait:1",
+      actions: [],
+    };
+    const state = reduce(initialState({ width, height: 30, theme: "dark" }), { type: "pending", items: [item] });
+    return press(state, "a");
+  }
+
+  test("shows all of it under the prompt, wrapped to the box, with every choice still in the box", () => {
+    for (const width of [120, 50]) {
+      const state = asked(width);
+      const box = overlayBox(state);
+      if (box === undefined) throw new Error("no box");
+      const text = (drawState(state).overlay?.chunks ?? []).map((chunk) => chunk.text).join("");
+      const lines = text.split("\n");
+      expect(lines[0]).toBe("Run the command below.");
+      const first = lines.findIndex((line) => line.startsWith("❯ "));
+      const shown = lines.slice(1, first);
+      expect(shown.length).toBeGreaterThan(1);
+      expect(shown.join("").replaceAll(" ", "")).toBe(command.replaceAll(" ", ""));
+      for (const line of shown) expect(line.length).toBeLessThanOrEqual(box.width - 4);
+      expect(lines.slice(first, first + 2)).toEqual(["❯ first", "  second"]);
+      expect(box.height).toBe(lines.length + 4);
+    }
   });
 });
