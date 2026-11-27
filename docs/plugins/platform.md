@@ -54,7 +54,7 @@ A program that needs a terminal runs on one from Bun, with no native module. POS
 
 | Export | Type | What it does |
 |---|---|---|
-| `spawnPty(options)` | function | Starts `argv` on a new pseudo terminal and returns a `Pty`. It throws when the program or the directory does not exist, or when this Bun has no pseudo terminal. The group is stopped on `kill` and when the child exits (SIGTERM, then SIGKILL after `KILL_GRACE_MS`). A process that moved to another group, such as a job of an interactive shell, is not part of that stop |
+| `spawnPty(options)` | function | Starts `argv` on a new pseudo terminal and returns a `Pty`. It throws when the program or the directory does not exist, or when this Bun has no pseudo terminal. The group is stopped on `kill` and when the child exits (SIGTERM, then SIGKILL after `KILL_GRACE_MS`). A process that moved to another group, such as a job of an interactive shell, is not part of that stop; `hangUp` stops those too |
 
 `spawnPty` options:
 
@@ -67,7 +67,19 @@ A program that needs a terminal runs on one from Bun, with no native module. POS
 | `onData` | function | required | Receives the output bytes as they come |
 | `clock` | `Clock` | `systemClock` | Timers; a test injects its own |
 
-A `Pty` has `pid` (also the group id), `write(data)`, `resize(cols, rows)`, `kill()` and `exited`. `write` and `resize` do nothing once the terminal is closed. `exited` resolves with `{ code, signal }` after the child exited, its group was stopped and the output was delivered (waiting at most `DRAIN_GRACE_MS` for the end of the output); a child that a signal ended has the code 128 plus the signal number.
+A `Pty` has `pid` (also the group id), `write(data)`, `resize(cols, rows)`, `kill()`, `hangUp()` and `exited`. `hangUp` closes the terminal on everything the child started, whatever group it moved to: SIGHUP to each, the group stop of `kill`, and after one more grace SIGKILL to what is left. `write` and `resize` do nothing once the terminal is closed. `exited` resolves with `{ code, signal }` after the child exited, its group was stopped and the output was delivered (waiting at most `DRAIN_GRACE_MS` for the end of the output); a child that a signal ended has the code 128 plus the signal number.
+
+## Folder holds
+
+A plugin that keeps a process working in a folder says so in the home, and whatever is about to remove a folder stops those processes first. Neither side knows the other.
+
+| Export | What it does |
+|---|---|
+| `holdFolder({ home, folder, pid })` | Records that the process tree under `pid`, a child of this process, works in `folder`. Returns a `FolderHold`: `released()` says whether a release stopped the tree, and `drop()` takes the hold off the list once the tree ended |
+| `releaseFolder(home, folder, options?)` | Stops with SIGKILL, without waiting, every held tree in `folder` or below it, and returns how many holds it stopped. It never throws. A hold whose process is no longer its holder's child is dropped and nothing is signaled. `options.table` replaces the process table in a test |
+| `FOLDER_HOLDS_DIRECTORY` | `folder-holds`, the directory in the home |
+| `processTree(rows, pid)` | The rows of `pid`, of everything below it, and of every member of a group one of those leads |
+| `signalRows(rows, signal)` | Sends one signal to each process of the rows; one that ended is passed over |
 
 ## What a step leaves behind
 

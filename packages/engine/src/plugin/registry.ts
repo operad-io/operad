@@ -62,6 +62,7 @@ import {
   type ResolvedCommand,
   type RunControl,
   type SecretStore,
+  type SettingsRepository,
   type SourceContext,
   type SourceHandle,
   type StartRunRequest,
@@ -2029,6 +2030,23 @@ export class PluginRegistry {
   }
 
   /**
+   * The repositories the loaded plugins registered (their project settings),
+   * read now. A plugin that cannot list its own is logged and passed over.
+   */
+  async registeredRepositories(): Promise<readonly SettingsRepository[]> {
+    const found: SettingsRepository[] = [];
+    for (const plugin of this.plugins) {
+      if (plugin.projectSettings === undefined) continue;
+      try {
+        found.push(...(await plugin.projectSettings.repositories({ store: this.store })));
+      } catch (error) {
+        this.log(`plugin "${plugin.name}": listing repositories failed: ${messageOf(error)}`);
+      }
+    }
+    return found;
+  }
+
+  /**
    * Starts each source plugin. A source that throws is logged and skipped, so
    * one broken source cannot stop the others or the loop.
    */
@@ -2077,6 +2095,7 @@ export class PluginRegistry {
         secrets: this.secretsFor(plugin.name),
         emit,
         client: options.client,
+        repositories: () => this.registeredRepositories(),
         ...(this.onCancelRun === undefined ? {} : { runs: this.runControl() }),
       };
       try {

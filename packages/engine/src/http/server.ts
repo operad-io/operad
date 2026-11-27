@@ -10,7 +10,13 @@ import type { HttpConfig } from "../config/config.ts";
 import type { LogBackend } from "../log/types.ts";
 import { messageOf } from "../plugin/errors.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
-import type { Actor, AskQuestionAnswer } from "../plugin/types.ts";
+import type {
+  Actor,
+  AskQuestionAnswer,
+  PluginHttp,
+  PluginStream,
+  PluginStreamEvent,
+} from "../plugin/types.ts";
 import type { Kernel } from "../trigger/kernel.ts";
 import { eventLine, fitsEventLine } from "../views/event-line.ts";
 import { listPending } from "../views/pending.ts";
@@ -24,6 +30,7 @@ import { listRunning } from "../views/running.ts";
 import { Uploads, UploadTooLargeError, MAX_UPLOAD_BYTES } from "../views/uploads.ts";
 import { listTypes } from "../views/types.ts";
 import {
+  isLocalRequest,
   missingAddressMessage,
   noListenAddressMessage,
   splitListenAddresses,
@@ -60,6 +67,26 @@ export const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
 
 export { MAX_SSE_EVENT_BYTES } from "../views/event-line.ts";
 
+/** How much unread plugin event data one stream holds before it is dropped. */
+export const MAX_PLUGIN_STREAM_BYTES = 32 * 1024 * 1024;
+
+/** The first path segments serve answers itself; no plugin is asked about them. */
+const BUILT_IN_ENDPOINTS: ReadonlySet<string> = new Set([
+  "act",
+  "answer",
+  "attachments",
+  "commands",
+  "events",
+  "keys",
+  "objects",
+  "pending",
+  "plugins",
+  "running",
+  "settings",
+  "types",
+  "uploads",
+]);
+
 /** How often a running server removes the uploads no action used. */
 export const DEFAULT_UPLOAD_SWEEP_MS = 10 * 60 * 1000;
 
@@ -73,6 +100,10 @@ export interface HttpServerOptions {
   /** Lists and switches plugins for `/v1/plugins`; without it the endpoint is `404`. */
   readonly plugins?: PluginAdmin | undefined;
   readonly onLog?: ((message: string) => void) | undefined;
+  /** What a running plugin serves under `/v1/<name>` and on the event stream. */
+  readonly pluginHttp?: ((plugin: string) => PluginHttp | undefined) | undefined;
+  /** The address a request came from; tests replace it to stand for another machine. */
+  readonly peerAddress?: ((address: string | undefined) => string | undefined) | undefined;
   /** Called once per address with the URL it listens on. */
   readonly onListen?: ((url: string) => void) | undefined;
   readonly maxEventIds?: number | undefined;
@@ -501,10 +532,15 @@ export function eventResponse(
   queueLimit: number,
   token: string,
   track: (token: string, close: () => void) => () => void,
+  plugins: readonly { readonly plugin: string; readonly stream: PluginStream }[] = [],
 ): Response {
   const resumeFrom = lastEventId(request.headers.get("last-event-id"));
   const encoder = new TextEncoder();
-  const queue: string[] = [];
+  const queue: { readonly text: string; readonly pluginBytes: number }[] = [];
+  /** The kernel's own entries in the queue, and the bytes of the plugins'. */
+  let queued = 0;
+  let queuedPluginBytes = 0;
+  const closers: (() => void)[] = [];
   let closed = false;
   let finished = false;
   let wake: (() => void) | undefined;
@@ -518,6 +554,7 @@ export function eventResponse(
     closed = true;
     unsubscribe?.();
     unsubscribe = undefined;
+    for (const closer of closers.splice(0)) closer();
     untrack?.();
     untrack = undefined;
     if (keepAlive !== undefined) clearInterval(keepAlive);
@@ -535,17 +572,28 @@ export function eventResponse(
     controller?.close();
   };
 
-  const push = (text: string): void => {
+  const push = (text: string, pluginBytes = 0): void => {
     if (closed) return;
-    if (queue.length >= queueLimit) {
+    const full =
+      pluginBytes === 0
+        ? queued >= queueLimit
+        : queuedPluginBytes + pluginBytes > MAX_PLUGIN_STREAM_BYTES;
+    if (full) {
       // The client is not reading. Drop it rather than grow without bound.
       finish();
       return;
     }
-    queue.push(text);
+    if (pluginBytes === 0) queued += 1;
+    queuedPluginBytes += pluginBytes;
+    queue.push({ text, pluginBytes });
     const resume = wake;
     wake = undefined;
     resume?.();
+  };
+
+  const pushPlugin = (plugin: string, event: PluginStreamEvent): void => {
+    const text = `event: ${plugin}.${event.name}\ndata: ${JSON.stringify(event.data)}\n\n`;
+    push(text, Buffer.byteLength(text));
   };
 
   const stream = new ReadableStream<Uint8Array>({
@@ -565,6 +613,13 @@ export function eventResponse(
       // An immediate comment flushes the response headers; the client then has
       // a stream even when nothing changes for a while.
       push(": keep-alive\n\n");
+      for (const { plugin, stream: part } of plugins) {
+        if (closed) break;
+        const closer = part.open((event) => pushPlugin(plugin, event));
+        // The stream may have ended while the plugin was opening its part.
+        if (closed) closer();
+        else closers.push(closer);
+      }
       keepAlive = setInterval(() => push(": keep-alive\n\n"), keepAliveMs);
       (keepAlive as { unref?: () => void }).unref?.();
       request.signal.addEventListener("abort", close, { once: true });
@@ -578,7 +633,9 @@ export function eventResponse(
       if (finished) return;
       const chunk = queue.shift();
       if (chunk !== undefined) {
-        started.enqueue(encoder.encode(chunk));
+        if (chunk.pluginBytes === 0) queued -= 1;
+        queuedPluginBytes -= chunk.pluginBytes;
+        started.enqueue(encoder.encode(chunk.text));
         return;
       }
       finish();
@@ -630,7 +687,7 @@ function createHandler(
   hub: EventHub,
   streams: StreamRegistry,
   onLog: (message: string) => void,
-): (request: Request) => Promise<Response> {
+): (request: Request, peer?: string) => Promise<Response> {
   const keepAliveMs = options.keepAliveMs ?? DEFAULT_KEEP_ALIVE_MS;
   // One slot past the resume window so a full replay plus the greeting fits.
   const queueLimit = Math.max(1, options.maxEventIds ?? DEFAULT_MAX_EVENT_IDS) + 1;
@@ -638,12 +695,24 @@ function createHandler(
   const handle = async (
     request: Request,
     token: HttpToken,
+    peer: string | undefined,
   ): Promise<Response> => {
     const url = new URL(request.url);
     const path = url.pathname;
     const method = request.method.toUpperCase();
 
     if (method === "GET" && path === "/v1/events") {
+      const parts: { readonly plugin: string; readonly stream: PluginStream }[] = [];
+      for (const name of new Set(url.searchParams.keys())) {
+        const served = options.pluginHttp?.(name);
+        if (served?.stream === undefined) continue;
+        const joined = served.stream({
+          values: url.searchParams.getAll(name),
+          local: isLocalRequest(peer, request),
+        });
+        if (!("open" in joined)) return json(joined.body, joined.status);
+        parts.push({ plugin: name, stream: joined });
+      }
       return eventResponse(
         request,
         hub,
@@ -651,6 +720,7 @@ function createHandler(
         queueLimit,
         token.token,
         (value, close) => streams.track(value, close),
+        parts,
       );
     }
 
@@ -1074,13 +1144,20 @@ function createHandler(
       return json(await options.views.get(decodeSegment(rest)));
     }
 
-    if (path.startsWith("/v1/")) {
-      return errorResponse(404, "not-found", "no such endpoint");
+    const [, version, plugin, ...rest] = path.split("/");
+    if (version === "v1" && plugin !== undefined && !BUILT_IN_ENDPOINTS.has(plugin)) {
+      const answer = await options.pluginHttp?.(plugin)?.request({
+        method,
+        path: rest.map(decodeSegment),
+        local: isLocalRequest(peer, request),
+        body: () => readBody(request),
+      });
+      if (answer !== undefined) return json(answer.body, answer.status);
     }
     return errorResponse(404, "not-found", "no such endpoint");
   };
 
-  return async (request: Request): Promise<Response> => {
+  return async (request: Request, peer?: string): Promise<Response> => {
     try {
       const token = await authenticate(
         request.headers.get("authorization"),
@@ -1089,7 +1166,7 @@ function createHandler(
       if (token === undefined) {
         return errorResponse(401, "unauthorized", "a bearer token is required");
       }
-      return await handle(request, token);
+      return await handle(request, token, peer);
     } catch (error) {
       if (error instanceof BodyTooLarge) {
         return errorResponse(
@@ -1147,10 +1224,11 @@ export async function startHttpServer(
   // Requests in flight are waited for (bounded) by `stop`, so the store they
   // read is not closed under them.
   const requests = new InFlight();
-  const handler = async (request: Request): Promise<Response> =>
+  const handler = async (request: Request, peer: string | undefined): Promise<Response> =>
     requests.draining
       ? errorResponse(503, "unavailable", "the server is stopping")
-      : await requests.track(() => handle(request));
+      : await requests.track(() => handle(request, peer));
+  const peerAddress = options.peerAddress ?? ((address: string | undefined) => address);
   const servers: { readonly address: string; readonly server: ReturnType<typeof Bun.serve> }[] = [];
   const listener = options.listener ?? Bun.serve;
   const stopTimeoutMs = options.stopTimeoutMs ?? DEFAULT_STOP_TIMEOUT_MS;
@@ -1203,7 +1281,8 @@ export async function startHttpServer(
           idleTimeout: 30,
           // Room for an upload plus its framing; a JSON body is held to its own limit in `readBody`.
           maxRequestBodySize: Math.max(MAX_UPLOAD_BYTES, options.uploadLimitBytes ?? 0) * 2,
-          fetch: handler,
+          fetch: (request: Request, bound?: { requestIP?(from: Request): { address: string } | null }) =>
+            handler(request, peerAddress(bound?.requestIP?.(request)?.address)),
           error: (error) => {
             onLog(`http: ${messageOf(error)}`);
             return errorResponse(500, "internal", "the request failed");

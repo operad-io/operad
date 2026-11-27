@@ -185,10 +185,12 @@ still loads, and `serve` and `operad plugin check` print the line that says why.
 new home that enables `claude` also gets `@operad-io/harness-claude` and its
 Agent SDK in `~/.operad/plugins`. `shell`, `dev` and `pool` are shipped but off
 in a new home; a repository's work needs all three, and
-`operad plugin enable dev` turns on `pool` and `shell` with it. `codex` and `telegram` are shipped but not enabled;
+`operad plugin enable dev` turns on `pool` and `shell` with it. `codex`, `telegram` and `terminal` are shipped but not enabled;
 enable one with `operad plugin enable <name>`. A client of `serve` also lists
 the shipped plugins the file does not name, as off, and turns one on; see
-[Plugins](http.md#plugins).
+[Plugins](http.md#plugins). Outside a workspace checkout, enabling
+[`terminal`](terminal.md) installs `@operad-io/terminal` and its two packages
+into the home.
 
 ### `store`
 
