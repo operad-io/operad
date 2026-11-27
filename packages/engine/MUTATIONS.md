@@ -1560,3 +1560,17 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0815-M19 | packages/engine/src/loop/serve.ts | serve failed a run of a home flow it had not read, as before | `serve runs a flow added after it read the home to its end`, `a run of a flow whose file no longer loads fails, or is handed to its own process to fail` |
 | T-0815-M20 | packages/engine/src/plugin/registry.ts | a home flow with no file counted as having one | `a run of a flow whose file no longer loads fails, or is handed to its own process to fail` |
 | T-0815-M22 | packages/engine/src/http/server.ts | `flows` was not a built-in endpoint, so a plugin of that name answered under `/v1/flows` | `never answer a built-in endpoint` |
+
+## T-0819 — follow-ups of the home flows' listing and start
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0819-M5 | packages/engine/src/views/presentation.ts | the History section left out who started the run | `the run's history says who started it` |
+| T-0819-M6 | packages/engine/src/loop/serve.ts | `serve` did not read an unread home flow for its active run | `it applies an answer to the flow's run and can cancel it`, `it gives no process to a run of the flow while a step it needs is missing` |
+| T-0819-M7 | packages/engine/src/loop/serve.ts | a run process was not said to be of a held flow | `a run of a flow serve holds > is not failed while the file on disk does not load` |
+| T-0819-M8 | packages/engine/src/plugin/registry.ts | reading one flow did not link the engine into the home | `one flow added after the read is read on its own, into a home that had none` |
+| T-0819-M9 | packages/engine/src/plugin/registry.ts | a flow read later kept its refusal | `a file read half written adds nothing and is read once it is whole` |
+| T-0819-M10 | packages/engine/src/http/server.ts | a start's body that is not an object was not refused as such | `serve lists the flows over HTTP and runs one a client starts to its end` |
+| T-0819-M11 | packages/engine/src/http/server.ts | a start with no flow was not refused for it | `serve lists the flows over HTTP and runs one a client starts to its end` |
+| T-0819-M12 | packages/engine/src/http/server.ts | `/v1/flows` took any method | `serve lists the flows over HTTP and runs one a client starts to its end` |
+| T-0819-M13 | packages/engine/src/http/server.ts | `/v1/flows/start` took any method | `serve lists the flows over HTTP and runs one a client starts to its end` |

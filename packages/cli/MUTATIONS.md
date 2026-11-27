@@ -547,3 +547,12 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 | T-0815-M16 | packages/cli/src/start-flow.ts | who started the run was not recorded | `the run takes the params, reaches its end and records who started it`, `serve lists the flows over HTTP and runs one a client starts to its end` |
 | T-0815-M18 | packages/cli/src/main.ts | extra arguments to a start were ignored | `a refused start says why and starts nothing` |
 | T-0815-M21 | packages/cli/src/main.ts | the run process did not fail a run of a home flow that does not load | `a run of a flow whose file no longer loads fails, or is handed to its own process to fail` |
+
+## T-0819 — follow-ups of the home flows' listing and start
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0819-M1 | packages/cli/src/main.ts | only a first argument `home:` took the home-flow start, as before | `--params may come before the flow` |
+| T-0819-M2 | packages/cli/src/main.ts | `operad history` left out who started the run | `the run's history says who started it` |
+| T-0819-M3 | packages/cli/src/main.ts | the run process failed a run of a flow `serve` holds | `a run of a flow serve holds > is not failed while the file on disk does not load` |
+| T-0819-M4 | packages/cli/src/main.ts | `serve` did not tell the run process it holds the flow | `a run serve starts from the flow it holds waits for a file that loads` |
