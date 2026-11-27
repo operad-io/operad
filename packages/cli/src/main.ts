@@ -998,6 +998,8 @@ async function commandPending(
     io.write(`${name}  ${item.flow}  ${item.step ?? "-"}\n`);
     if (item.row !== undefined) io.write(`  ${item.row.title}\n`);
     io.write(`  waiting: ${item.prompt}\n`);
+    // Alone on its line, so it can be copied whole.
+    if (item.command !== undefined) io.write(`    ${item.command}\n`);
     if (item.choices.length > 0) {
       io.write(`  choices: ${item.choices.join(", ")}\n`);
     }

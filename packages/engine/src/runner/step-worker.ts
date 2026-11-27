@@ -208,6 +208,7 @@ export async function runStepWorker(
             ...(question.questions === undefined
               ? {}
               : { questions: question.questions }),
+            ...(question.command === undefined ? {} : { command: question.command }),
             ...(question.graceSecs === undefined
               ? {}
               : { graceSecs: question.graceSecs }),

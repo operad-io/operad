@@ -21,7 +21,7 @@ import {
   type LogBackend,
 } from "@operad-io/engine";
 import { createPiHarnessPlugin } from "../../src/index.ts";
-import { PI_PACKAGE, PI_VERSION, homePiPackageDir } from "../../src/pi-install.ts";
+import { PI_PACKAGE, PI_VERSION, chatgptLoginCommand, homePiPackageDir } from "../../src/pi-install.ts";
 import { cleanupTempRoots, tempRoot } from "../../../process/test/support.ts";
 
 afterAll(cleanupTempRoots);
@@ -174,9 +174,12 @@ describe("pi/login", () => {
       expect(pending[0]?.choiceInfo?.["openai"]?.label).toBe("OpenAI API key");
       expect(pending[0]?.choiceInfo?.["anthropic"]?.label).toBe("Anthropic API key");
       expect(JSON.stringify(pending[0]?.choiceInfo)).not.toContain("primary");
-      const prompt = pending[0]?.prompt ?? "";
-      expect(prompt).toContain("pi auth login openai-codex");
-      expect(prompt).toContain("operad picks it up once it is done");
+      const command = pending[0]?.command ?? "";
+      // `pi` as found on this machine's PATH, or the plain name when it has none.
+      expect(command).toBe(chatgptLoginCommand("pi", { home: env.root, cwd: env.root }));
+      expect(pending[0]?.prompt).toBe(
+        `Choose a provider to log in with an API key. For a ChatGPT plan, run \`${command}\` instead; operad picks it up once it is done.`,
+      );
 
       await timer.until(1);
       timer.fire();
@@ -210,8 +213,9 @@ describe("pi/login", () => {
       const timer = new FakeTimer();
       const run = env.runner(timer).run();
       await env.opened(1);
-      const prompt = (await listPending(env.log, env.registry))[0]?.prompt ?? "";
-      expect(prompt).toContain(`${join(bin, "pi")} auth login openai-codex`);
+      const item = (await listPending(env.log, env.registry))[0];
+      expect(item?.command).toBe(`${join(bin, "pi")} auth login openai-codex`);
+      expect(item?.prompt).toContain(`\`${join(bin, "pi")} auth login openai-codex\``);
       await timer.until(1);
       timer.fire();
       expect(await run).toBe("ended");

@@ -52,6 +52,8 @@ export class AskTimeoutError extends Error {
   readonly choiceInfo: Readonly<Record<string, ChoiceInfo>> | undefined;
   /** The form the step asked, when it asked one. */
   readonly questions: readonly AskQuestion[] | undefined;
+  /** The command the person runs, when the question carried one. */
+  readonly command: string | undefined;
   readonly resume: unknown;
 
   constructor(question: {
@@ -60,6 +62,7 @@ export class AskTimeoutError extends Error {
     readonly choices: readonly string[];
     readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
     readonly questions?: readonly AskQuestion[] | undefined;
+    readonly command?: string | undefined;
     readonly resume: unknown;
   }) {
     super(`nobody answered "${question.prompt}" in time`);
@@ -69,6 +72,7 @@ export class AskTimeoutError extends Error {
     this.choices = question.choices;
     this.choiceInfo = question.choiceInfo;
     this.questions = question.questions;
+    this.command = question.command;
     this.resume = question.resume;
   }
 }

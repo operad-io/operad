@@ -404,3 +404,18 @@ describe("the search Markdown", () => {
     expect(text).toContain("(untrusted)");
   });
 });
+
+describe("the pending Markdown", () => {
+  test("puts a question's command alone in a code block", () => {
+    const item: PendingItem = {
+      runId: "run-1",
+      flow: "demo",
+      step: "ask",
+      prompt: "Log in?",
+      choices: [],
+      command: "tool auth login some-provider",
+      actions: [],
+    };
+    expect(pendingMarkdown([item])).toContain("- waiting: Log in?\n```\ntool auth login some-provider\n```\n");
+  });
+});

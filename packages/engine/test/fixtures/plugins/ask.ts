@@ -157,6 +157,7 @@ export default definePlugin({
                 >,
               }
             : {}),
+          ...(typeof ctx.params.command === "string" ? { command: ctx.params.command } : {}),
           ...(typeof ctx.params.graceSecs === "number"
             ? { graceSecs: ctx.params.graceSecs }
             : {}),
