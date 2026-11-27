@@ -6,6 +6,7 @@
 
 import { guardOutward, personStarted } from "@operad-io/access-match";
 import { isRecord, messageOf, type PluginStepResult, type StepContext } from "@operad-io/engine";
+import { releaseFolder } from "@operad-io/engine/platform";
 import { appendChange, appendRework, storeKey, type CleanupFailure, type CleanupRecord, type IntegrationRecord, type TaskAttempt, type TaskData } from "./model.ts";
 import {
   branchHead,
@@ -1260,6 +1261,11 @@ export async function runIntegrate(
   }
 }
 
+/** Whether a cleanup command names a worktree, so it may remove one. */
+function namesWorktree(line: string): boolean {
+  return /OPERAD_WORKTREE|\bworktree\s+remove\b/.test(line);
+}
+
 /** Step `dev/cleanup`: run the after-merge hooks and remove the task's traces. */
 export async function runCleanup(
   ctx: StepContext,
@@ -1296,6 +1302,12 @@ export async function runCleanup(
     }
   } else {
     for (const [index, line] of settings.hooks.afterMerge.entries()) {
+      // Whatever keeps a process in a worktree about to be removed stops it
+      // first; a release neither waits for it nor fails.
+      if (namesWorktree(line)) {
+        await releaseFolder(ctx.home, worktree);
+        await releaseFolder(ctx.home, `${worktree}-gate`);
+      }
       let outcome: PluginStepResult | undefined;
       let hostError: string | undefined;
       try {
