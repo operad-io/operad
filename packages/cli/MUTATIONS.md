@@ -449,12 +449,6 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 |---|---|---|---|
 | T-0802-M1 | packages/cli/src/defaults.ts | `defaultPluginModule` no longer mapped `cron` to `@operad-io/source-cron`, so a fresh home named a package that does not exist | ``operad init` finds the agent on PATH > a fresh home loads cron from its package, so routines is a known command` |
 
-## T-0810 — the terminal plugin behind serve
-
-| id | file | mutation | failing test |
-|---|---|---|---|
-| T-0810-M64 | packages/cli/src/main.ts | serve did not hand its plugins' routes to the HTTP server | `a home that enables terminal serves it, and stopping serve ends its terminals` |
-| T-0810-M65 | packages/cli/src/defaults.ts | `plugin enable terminal` was not offered | `a home that enables terminal serves it, and stopping serve ends its terminals` |
 ## T-0809 — doctor names a listen address this machine does not have
 
 | id | file | mutation | failing test |
@@ -464,3 +458,10 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 | T-0809-M10 | packages/cli/src/main.ts | doctor asked serve on the first configured address, present or not | `a real home with a missing address listed first asks serve on the next one and warns` |
 | T-0809-M11 | packages/cli/src/main.ts | the real doctor environment gave no listen addresses, so no warning was printed | `a real home with a missing address listed first asks serve on the next one and warns` |
 | T-0809-M12 | packages/cli/src/main.ts | the listen addresses were checked with the HTTP interface turned off | `a real home with a missing address listed first asks serve on the next one and warns` |
+
+## T-0810 — the terminal plugin behind serve
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0810-M64 | packages/cli/src/main.ts | serve did not hand its plugins' routes to the HTTP server | `a home that enables terminal serves it, and stopping serve ends its terminals` |
+| T-0810-M65 | packages/cli/src/defaults.ts | `plugin enable terminal` was not offered | `a home that enables terminal serves it, and stopping serve ends its terminals` |
