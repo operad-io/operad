@@ -259,7 +259,7 @@ describe("operad doctor", () => {
   });
 
   /** Runs the real doctor on a home whose serve lock is held, with a server on `127.0.0.1` only. */
-  async function doctorOn(listen: readonly string[]) {
+  async function doctorOn(listen: readonly string[], enabled = true) {
     const home = await tempRoot("doctor-bound-");
     const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() });
     const lock = acquireLock(serveLockPath(home));
@@ -268,7 +268,7 @@ describe("operad doctor", () => {
     try {
       writeFileSync(
         join(home, "config.json"),
-        JSON.stringify({ plugins: [], http: { enabled: true, port: server.port, listen } }),
+        JSON.stringify({ plugins: [], http: { enabled, port: server.port, listen } }),
       );
       const out = capture();
       await main(["doctor", "--json"], { io: out.io, home });
@@ -294,6 +294,13 @@ describe("operad doctor", () => {
           "::1 is on this machine but serve does not answer there; restart serve if the address came back after serve started",
       },
     ]);
+  });
+
+  test("a real home with the interface off names no address where serve does not answer", async () => {
+    // A serve still running from before answers on one address and not on the other.
+    const checks = await doctorOn(["::1", "127.0.0.1"], false);
+    expect(checks).toContainEqual({ id: "serve", ok: true, message: "serve is answering" });
+    expect(checks.filter((check) => check.id.startsWith("listen"))).toEqual([]);
   });
 
   test("a real home with an entry serve refuses reports the refusal, not a missing address", async () => {

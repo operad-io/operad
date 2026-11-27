@@ -595,3 +595,4 @@ The rows above reused ids that other packages hold for T-0790 (T-0790-M1); they 
 | T-0811-M2 | packages/tui/src/autostart.ts | only the first address was probed | `a running serve that does not answer on a returned address is found on the next one` |
 | T-0811-M3 | packages/tui/src/autostart.ts | the wait for a started serve probed only the first address | `a serve that another start won is waited for on every address` |
 | T-0811-M4 | packages/tui/src/app.ts | the screen read the address from the configuration instead of using the one that answered | `the screen uses the address that answered, not the configuration again` |
+| T-0811-M12 | packages/tui/src/autostart.ts | a non-operad answer was recorded only for the first address | `another service on a later address fails naming that address, and starts nothing` |

@@ -470,3 +470,4 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 | T-0811-M9 | packages/cli/src/main.ts | doctor split the listen entries without validating them | `a real home with an entry serve refuses reports the refusal, not a missing address` |
 | T-0811-M10 | packages/cli/src/doctor.ts | a refused entry was reported as a check that could not be made | `a real home with an entry serve refuses reports the refusal, not a missing address` |
 | T-0811-M11 | packages/cli/src/main.ts | doctor took serve as answering only when the first address answered | `a real home names an address this machine has where serve does not listen` |
+| T-0811-M13 | packages/cli/src/main.ts | doctor reported silent addresses with the HTTP interface turned off | `a real home with the interface off names no address where serve does not answer` |

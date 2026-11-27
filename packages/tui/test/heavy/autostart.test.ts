@@ -302,6 +302,34 @@ describe("ensureServer", () => {
     }
   });
 
+  test("another service on a later address fails naming that address, and starts nothing", async () => {
+    const { home, cleanup } = await makeAutostartHome(TWO);
+    try {
+      let spawned = 0;
+      const error = await ensureServer({
+        home,
+        interfaces: both,
+        fetch: async (input) => {
+          if (String(input).startsWith("http://192.168.1.20:")) return new Response("<html>");
+          throw new Error("refused");
+        },
+        spawn: () => {
+          spawned += 1;
+          return { exited: Promise.resolve(1) };
+        },
+        wait: noWait,
+        lockHeld: () => false,
+      }).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(TuiStartError);
+      expect((error as Error).message).toBe(
+        "something answers at http://192.168.1.20:9000 (port 9000) but it is not operad; change http.port in config.json or pass --url",
+      );
+      expect(spawned).toBe(0);
+    } finally {
+      await cleanup();
+    }
+  });
+
   test("with no listen address on this machine nothing is asked or started, and the error names them", async () => {
     const { home, cleanup } = await makeAutostartHome(TWO);
     try {
