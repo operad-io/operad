@@ -86,10 +86,10 @@ the risk the owner decided against. A person who wants their
 ChatGPT plan, or another subscription (ADR 0024 D3 gives the reason for
 Anthropic), runs pi's own login, `pi auth login openai-codex`. The first
 question of the login says in plain words that logging in there takes an API key
-and that a ChatGPT plan logs in by running that command instead. The command a
-person can run is in that sentence and, alone, in the question's `command` (ADR
-0008 D9): `pi ...` when `pi` is on `PATH` (or the `command` setting), else the
-full path of the pi operad installed in the home (D9). operad only checks
+and that a ChatGPT plan logs in by running the command below instead. The
+command a person can run is not in that sentence; it is alone in the question's
+`command` (ADR 0008 D9): `pi ...` when `pi` is on `PATH` (or the `command`
+setting), else the full path of the pi operad installed in the home (D9). operad only checks
 whether pi is signed in, as it does for `claude` and `codex`: `signedIn` reads
 `authPath` on every call, so the next check sees a login made elsewhere with no
 restart of `serve`.

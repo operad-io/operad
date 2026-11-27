@@ -122,5 +122,7 @@ the MCP `pending` tool, and a question that runs out of grace keeps it on the
 wait that follows. `operad pending` prints it on a line of its own, so it can be
 copied whole. `operad bot login` prints it the same way: after starting the
 login it waits for the login's first question while a `serve` runs it, at most
-30 seconds. The question's text still says the command, for a client that does
-not read the field. A flow's `wait_person` step takes no command.
+30 seconds. The question's text does not repeat the command, so the command
+line, the MCP `pending` tool, the terminal UI and Telegram each show `command`
+on a line of its own where they show the question. A flow's `wait_person` step
+takes no command.
