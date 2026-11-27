@@ -688,8 +688,9 @@ interface PluginInstallOptions {
 
 /**
  * Installs what an enabled plugin needs beyond its own package (ADR 0012 D4,
- * ADR 0023 D9): claude's SDK package, and pi's library when the machine has no
- * pi of its own. A plugin whose config names another module is left alone.
+ * ADR 0023 D9): the package of a plugin in `INSTALL_ON_ENABLE`, and pi's
+ * library when the machine has no pi of its own. A plugin whose config names
+ * another module is left alone.
  */
 async function installPluginPackage(options: PluginInstallOptions): Promise<void> {
   const name = options.entry.name;
@@ -701,9 +702,11 @@ async function installPluginPackage(options: PluginInstallOptions): Promise<void
     options.onProgress === undefined
       ? undefined
       : (line: string) => options.onProgress?.(name, line);
-  if (name === "claude") {
-    // claude is not a CLI dependency: a home that enables it gets its package
-    // and SDK, skipping the platform binaries it does not use.
+  if (INSTALL_ON_ENABLE.includes(name)) {
+    // Not a CLI dependency: a home that enables it gets its package and what
+    // that depends on. Optional packages are skipped for each one, because the
+    // home's plugins share one project and claude's SDK names platform
+    // binaries operad does not use.
     await ensureInstalledPackage({
       home: options.home,
       specifier: defaultPluginModule(name),
@@ -2208,6 +2211,7 @@ async function commandServe(
           registry: context.registry,
           kernel,
           plugins: pluginAdminFor(context),
+          pluginHttp: (name) => kernel.pluginHttp(name),
           onListen: (url) => io.write(`http ${url}\n`),
           onLog: (message) => io.error(`${message}\n`),
         });

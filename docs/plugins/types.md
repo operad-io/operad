@@ -64,6 +64,12 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `SourceContext` | The context a source plugin's `start` receives. | [events](events.md) |
 | `SourceEvent` | An event a source plugin sends; the kernel adds nothing but validation. | [events](events.md) |
 | `SourceHandle` | A running source plugin. | [events](events.md) |
+| `PluginHttp` | What a running plugin serves on the HTTP port of `operad serve`. | [events](events.md) |
+| `PluginHttpRequest` | One request under `/v1/<plugin>`, already authenticated. | [events](events.md) |
+| `PluginHttpResponse` | What a plugin answers: a status and a JSON body. | [events](events.md) |
+| `PluginStream` | The part of one event stream that belongs to a plugin. | [events](events.md) |
+| `PluginStreamEvent` | One event of a plugin on `/v1/events`. | [events](events.md) |
+| `PluginStreamRequest` | An event stream that named the plugin in its query. | [events](events.md) |
 | `SourcedTriggerRule` | One rule and where it came from: `user`, or the plugin that shipped it. | [events](events.md) |
 | `StartRequest` | A type of the plugin API; its fields are described on the page. | [events](events.md) |
 | `StartResult` | What starting one run did. | [events](events.md) |
@@ -125,6 +131,7 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `LineRunOptions` | A type of the plugin API; its fields are described on the page. | [platform](platform.md) |
 | `Pty` | A command running on a pseudo terminal. | [platform](platform.md#pseudo-terminals) |
 | `PtyOptions` | The options of `spawnPty`. | [platform](platform.md#pseudo-terminals) |
+| `FolderHold` | A recorded process tree working in a folder. | [platform](platform.md#folder-holds) |
 | `LockFileOptions` | What a waiter may inject: the clock, how it waits, and where a log goes. | [platform](platform.md) |
 | `KeptWorkerFilter` | What a kept worker must match to be ended: a scope, a key, or a record to leave alone. | [platform](platform.md) |
 | `KeptWorkerRecord` | One kept worker as its home records it: pid, token, scope, key, socket, record path, session and idle times. | [platform](platform.md) |

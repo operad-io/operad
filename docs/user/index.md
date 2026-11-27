@@ -23,6 +23,7 @@ Orchestrating agents here means composing the flow a task follows, not handing o
 - [tailscale](tailscale.md): reaching `serve` over a Tailscale network, and the HTTPS name the phone app needs.
 - [mcp](mcp.md): the MCP server for a lead agent.
 - [chats-and-bots](chats-and-bots.md): chats with an agent, and bots.
+- [terminal](terminal.md): terminals that `serve` keeps, in a repository or a worktree.
 - [memory](memory.md): a bot's memory, the shared wiki and the git history of what a bot wrote.
 - [telegram](telegram.md): write to a bot and answer what waits for you from Telegram.
 - [notifications](notifications.md): the notify command.

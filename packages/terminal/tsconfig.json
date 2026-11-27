@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "rootDir": ".", "outDir": "../../.tsbuild/terminal" },
+  "include": ["package.json", "src", "test"],
+  "references": [{ "path": "../engine" }, { "path": "../chat" }, { "path": "../dev" }, { "path": "../shell" }]
+}

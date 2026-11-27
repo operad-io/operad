@@ -9,10 +9,10 @@ import {
 
 /**
  * Plugins shipped with operad that `plugin enable <name>` can add, including
- * those a new home leaves off (`shell`, `dev`, `pool`) and those a home made
+ * those a new home leaves off (`shell`, `dev`, `pool`, `terminal`) and those a home made
  * before the current defaults may still need (`bot`, `memory`, the harnesses).
  */
-export const OPTIONAL_PLUGINS: readonly string[] = ["shell", "cron", "pi", "claude", "codex", "pool", "bot", "telegram", "memory", "dev"];
+export const OPTIONAL_PLUGINS: readonly string[] = ["shell", "cron", "pi", "claude", "codex", "pool", "bot", "telegram", "memory", "dev", "terminal"];
 
 /** The shipped plugins a plugin needs; enabling it enables these first (ADR 0012 D2). */
 export const PLUGIN_NEEDS: Readonly<Record<string, readonly string[]>> = {
@@ -20,7 +20,7 @@ export const PLUGIN_NEEDS: Readonly<Record<string, readonly string[]>> = {
 };
 
 /** The plugins whose package is installed into the home rather than shipped with the CLI. */
-export const INSTALL_ON_ENABLE: readonly string[] = ["claude"];
+export const INSTALL_ON_ENABLE: readonly string[] = ["claude", "terminal"];
 
 /** The pi library operad installs into the home when no agent is on `PATH` (ADR 0023 D9). */
 export const PI_CODING_AGENT_PACKAGE = "@earendil-works/pi-coding-agent";
