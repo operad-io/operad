@@ -1510,3 +1510,13 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0810-M59 | packages/engine/src/platform/folder-holds.ts | a release stopped a process that is not its holder's child | `folder holds > a hold whose process is not its holder's child is dropped, and nothing is signaled` |
 | T-0810-M60 | packages/engine/src/platform/folder-holds.ts | a release matched folders by name prefix | `folder holds > releasing a folder stops the trees held in it and below it, and tells their holders` |
 | T-0810-M61 | packages/engine/src/platform/folder-holds.ts | a release that failed threw | `folder holds > a release never fails: no list, a broken entry or an unreadable table` |
+## T-0809 — serve skips a listen address this machine does not have
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0809-M1 | packages/engine/src/http/server.ts | every configured address was bound, the missing one included | `an address that is not on this machine is skipped with a warning` |
+| T-0809-M2 | packages/engine/src/http/server.ts | a skipped address was not logged | `an address that is not on this machine is skipped with a warning` |
+| T-0809-M3 | packages/engine/src/http/server.ts | a start with no address left went on instead of failing | `a start with no address left on this machine fails and says why` |
+| T-0809-M4 | packages/engine/src/http/server.ts | a failed bind passed on the runtime's error without the address | `a port taken on an address this machine has fails and names the address` |
+| T-0809-M5 | packages/engine/src/http/address.ts | loopback counted as present only when an interface listed it | `an address that is not on this machine is skipped with a warning` |
+| T-0809-M6 | packages/engine/src/http/address.ts | addresses were compared as written, so another spelling of an IPv6 address counted as missing | `an address that is not on this machine is skipped with a warning` |

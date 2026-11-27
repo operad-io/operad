@@ -29,7 +29,14 @@ import {
 import { listRunning } from "../views/running.ts";
 import { Uploads, UploadTooLargeError, MAX_UPLOAD_BYTES } from "../views/uploads.ts";
 import { listTypes } from "../views/types.ts";
-import { isLocalRequest, validateListenAddresses } from "./address.ts";
+import {
+  isLocalRequest,
+  missingAddressMessage,
+  noListenAddressMessage,
+  splitListenAddresses,
+  validateListenAddresses,
+  type NetworkInterfaceList,
+} from "./address.ts";
 import {
   ensureHttpToken,
   readHttpToken,
@@ -114,6 +121,8 @@ export interface HttpServerOptions {
   readonly wait?: ((ms: number) => Promise<void>) | undefined;
   /** Starts one listener; tests replace it to fake a listener that will not stop. */
   readonly listener?: typeof Bun.serve | undefined;
+  /** The machine's network interfaces; default `os.networkInterfaces`. */
+  readonly interfaces?: NetworkInterfaceList | undefined;
 }
 
 /** How long `stop` waits for every listen address to be released. */
@@ -130,7 +139,7 @@ export class HttpStopError extends Error {
 }
 
 export interface HttpServerHandle {
-  /** The URLs the server listens on, one per configured address. */
+  /** The URLs the server listens on, one per configured address this machine has. */
   readonly urls: readonly string[];
   readonly port: number;
   stop(): Promise<void>;
@@ -1178,14 +1187,20 @@ function createHandler(
   };
 }
 
-/** Starts one Bun server per `http.listen` address. */
+/** Starts one Bun server per `http.listen` address this machine has. */
 export async function startHttpServer(
   options: HttpServerOptions,
 ): Promise<HttpServerHandle> {
   validateListenAddresses(options.config.listen);
+  // A missing address (a network that is down) fails to bind with the same
+  // error as a taken port, so it is told apart before binding.
+  const { present, missing } = splitListenAddresses(options.config.listen, options.interfaces);
+  // Not a `ConfigError`: a serve that retries its bind may see the address return.
+  if (present.length === 0) throw new Error(`http: ${noListenAddressMessage(missing)}`);
   const token = await ensureHttpToken(options.home);
 
   const onLog = options.onLog ?? (() => undefined);
+  for (const address of missing) onLog(`http: ${missingAddressMessage(address)}`);
   const wait = options.wait ?? waitForRestart;
   const hub = new EventHub(
     () => options.views.events(),
@@ -1255,22 +1270,30 @@ export async function startHttpServer(
   (tokenCheck as { unref?: () => void }).unref?.();
 
   try {
-    for (const address of options.config.listen) {
-      const server = listener({
-        hostname: address,
-        port: options.config.port,
-        // An event stream is quiet by design; the 15-second comment keeps it
-        // below this idle limit.
-        idleTimeout: 30,
-        // Room for an upload plus its framing; a JSON body is held to its own limit in `readBody`.
-        maxRequestBodySize: Math.max(MAX_UPLOAD_BYTES, options.uploadLimitBytes ?? 0) * 2,
-        fetch: (request: Request, bound?: { requestIP?(from: Request): { address: string } | null }) =>
-          handler(request, peerAddress(bound?.requestIP?.(request)?.address)),
-        error: (error) => {
-          onLog(`http: ${messageOf(error)}`);
-          return errorResponse(500, "internal", "the request failed");
-        },
-      });
+    for (const address of present) {
+      let server: ReturnType<typeof Bun.serve>;
+      try {
+        server = listener({
+          hostname: address,
+          port: options.config.port,
+          // An event stream is quiet by design; the 15-second comment keeps it
+          // below this idle limit.
+          idleTimeout: 30,
+          // Room for an upload plus its framing; a JSON body is held to its own limit in `readBody`.
+          maxRequestBodySize: Math.max(MAX_UPLOAD_BYTES, options.uploadLimitBytes ?? 0) * 2,
+          fetch: (request: Request, bound?: { requestIP?(from: Request): { address: string } | null }) =>
+            handler(request, peerAddress(bound?.requestIP?.(request)?.address)),
+          error: (error) => {
+            onLog(`http: ${messageOf(error)}`);
+            return errorResponse(500, "internal", "the request failed");
+          },
+        });
+      } catch (error) {
+        throw new Error(
+          `http: cannot listen on ${address} port ${options.config.port}: ${messageOf(error)}`,
+          { cause: error },
+        );
+      }
       servers.push({ address, server });
     }
   } catch (error) {

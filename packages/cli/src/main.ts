@@ -56,6 +56,7 @@ import {
   olderCodeNotice,
   ensureHttpToken,
   listenAddressKind,
+  splitListenAddresses,
   pairLink,
   openHome,
   openPluginStore,
@@ -886,7 +887,8 @@ function systemDoctorEnv(home: string, io: CliIo): DoctorEnv & { close(): Promis
     serve: async () => {
       if (!lockHeld(serveLockPath(home))) return { answering: false };
       const config = await readConfig(home);
-      const address = config.http.listen[0];
+      // serve skips an address the machine lacks, so ask the first one it has.
+      const address = splitListenAddresses(config.http.listen).present[0];
       if (address === undefined || config.http.port === 0) return { answering: false };
       const host = address.includes(":") ? `[${address}]` : address;
       try {
@@ -898,6 +900,10 @@ function systemDoctorEnv(home: string, io: CliIo): DoctorEnv & { close(): Promis
       } catch {
         return { answering: false };
       }
+    },
+    listenAddresses: async () => {
+      const { http } = await readConfig(home);
+      return splitListenAddresses(http.enabled ? http.listen : []);
     },
     gitInstalled: () => findGit() !== undefined,
     testHost: async () => {

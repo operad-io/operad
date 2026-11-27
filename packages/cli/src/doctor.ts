@@ -5,6 +5,8 @@
  * supplies the facts and nothing touches the machine or the network.
  */
 
+import { missingAddressMessage, noListenAddressMessage } from "@operad-io/engine";
+
 /** One plugin the home enables. */
 export interface DoctorPlugin {
   readonly name: string;
@@ -39,6 +41,11 @@ export interface DoctorEnv {
   plugins(): Promise<readonly DoctorPlugin[]>;
   agents(): Promise<readonly DoctorAgent[]>;
   serve(): Promise<{ readonly answering: boolean }>;
+  /** The configured listen addresses this machine has and lacks; absent means the check is not made. */
+  listenAddresses?(): Promise<{
+    readonly present: readonly string[];
+    readonly missing: readonly string[];
+  }>;
   /** The test host when one is set; `undefined` when none is. */
   testHost(): Promise<{ readonly host: string; readonly reachable: boolean } | undefined>;
   setup(): Promise<readonly DoctorSetupItem[]>;
@@ -166,6 +173,22 @@ export async function runDoctor(env: DoctorEnv): Promise<DoctorReport> {
     );
   } catch (error) {
     checks.push(bad("serve", `serve could not be checked: ${reasonOf(error)}`, "operad serve"));
+  }
+
+  if (loadable && env.listenAddresses !== undefined) {
+    try {
+      const { present, missing } = await env.listenAddresses();
+      if (present.length > 0) {
+        // Not a problem: serve works on the other addresses.
+        for (const address of missing) {
+          checks.push(good(`listen:${address}`, missingAddressMessage(address)));
+        }
+      } else if (missing.length > 0) {
+        checks.push(bad("listen", noListenAddressMessage(missing), "operad serve"));
+      }
+    } catch (error) {
+      checks.push(bad("listen", `http.listen could not be checked: ${reasonOf(error)}`, "operad doctor"));
+    }
   }
 
   // Not a problem: chat and file changes work without git, which only a task needs.

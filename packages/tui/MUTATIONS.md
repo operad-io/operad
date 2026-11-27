@@ -580,3 +580,9 @@ the row fields.
 The rows above reused ids that other packages hold for T-0790 (T-0790-M1); they are renumbered below as T-0790-M6 (the lines above stay, rows are append-only).
 
 | T-0790-M6 | packages/tui/src/state.ts | a bot page whose section failed to read left the first message unasked instead of starting a new chat | `a bot page that names a main chat opens it instead of a new one > a section that fails to read starts the new chat's first message` |
+
+## T-0809 — the port-in-use message names the address
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0809-M9 | packages/tui/src/autostart.ts | the message left out the address serve's log named | `a port taken on one address names that address` |
