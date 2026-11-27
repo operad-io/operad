@@ -16,7 +16,8 @@ import type {
   StepInterruptedPayload,
 } from "./types.ts";
 import { inputCause } from "./types.ts";
-import { storedChoiceInfo, type ChoiceInfoMap } from "../plugin/choice-info.ts";
+import { storedAskCommand } from "../plugin/ask-command.ts";
+import { storedChoiceInfo,type ChoiceInfoMap } from "../plugin/choice-info.ts";
 import { answersJson, normalizeAnswers, storedAnswers, storedQuestions } from "../plugin/question-form.ts";
 import { isRecord } from "../util.ts";
 
@@ -67,6 +68,8 @@ interface AskedVia {
   readonly choiceInfo: ChoiceInfoMap | undefined;
   /** The form the step asked, when it asked one. */
   readonly questions: readonly AskQuestion[] | undefined;
+  /** The command the person runs, when the question carried one. */
+  readonly command: string | undefined;
   readonly resume: JsonValue;
 }
 
@@ -197,6 +200,7 @@ function askedIn(result: string, data: unknown): AskedVia | undefined {
     choices,
     choiceInfo: storedChoiceInfo(record.choiceInfo, choices),
     questions: storedQuestions(record.questions),
+    command: storedAskCommand(record.command),
     resume: (record.resume ?? null) as JsonValue,
   };
 }
@@ -404,6 +408,7 @@ export function decide(
             choices,
             ...(choiceInfo === undefined ? {} : { choiceInfo }),
             ...(questions === undefined ? {} : { questions }),
+            ...(asked?.command === undefined ? {} : { command: asked.command }),
             waitKind: "step",
             effectId: null,
             ...(asked === undefined || via === undefined

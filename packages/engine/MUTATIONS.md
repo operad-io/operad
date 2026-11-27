@@ -1528,3 +1528,11 @@ resume window`. Rows are append-only, so the old lines stay as history.
 |---|---|---|---|
 | T-0813-M6 | packages/engine/src/plugin/load.ts | an offered plugin the file does not name was not counted as off | `an offered plugin that config.json does not name yet has its guide readable; a named one that is on does not` |
 | T-0813-M7 | packages/engine/src/plugin/load.ts, registry.ts | a name neither configured nor offered got an offered module's guide | `an offered plugin that config.json does not name yet has its guide readable; a named one that is on does not` |
+## T-0814 — a question carries a command for the person to run
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0814-M3 | packages/engine/src/views/pending.ts | the pending item of an open question dropped the command | `ctx.ask (memory) > a question's command is on the pending item while it is open and after its grace` |
+| T-0814-M4 | packages/engine/src/kernel/decide.ts | the wait after the grace dropped the command | `ctx.ask (memory) > a question's command is on the pending item while it is open and after its grace` |
+| T-0814-M5 | packages/engine/src/plugin/registry.ts | a command was not checked before the question was asked | `command validation > an empty, many-line, escaped or overlong command is refused before anyone is asked` |
+| T-0814-M6 | packages/engine/src/runner/step-worker.ts | a step in a worker thread did not pass the command on | `ctx.ask (file) > a question's command is on the pending item while it is open and after its grace` |

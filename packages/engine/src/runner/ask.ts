@@ -24,7 +24,8 @@ import { StateError } from "./errors.ts";
 import type { Grant, KernelState } from "../kernel/types.ts";
 import { useGrant } from "./grants.ts";
 import { isRecord } from "../util.ts";
-import { choiceInfoJson, storedChoiceInfo, type ChoiceInfoMap } from "../plugin/choice-info.ts";
+import { storedAskCommand } from "../plugin/ask-command.ts";
+import { choiceInfoJson,storedChoiceInfo, type ChoiceInfoMap } from "../plugin/choice-info.ts";
 import {
   answersJson,
   answersProblem,
@@ -70,6 +71,8 @@ export interface AskRecord {
   readonly choiceInfo: ChoiceInfoMap | undefined;
   /** The form the step asked, when it asked one. */
   readonly questions: readonly AskQuestion[] | undefined;
+  /** The command the person runs, when the question carried one. */
+  readonly command: string | undefined;
   readonly status: AskStatus;
   readonly answer: AskedAnswer | undefined;
 }
@@ -150,6 +153,7 @@ export async function scanAsks(
         choices,
         choiceInfo: storedChoiceInfo(payload.choiceInfo, choices),
         questions: storedQuestions(payload.questions),
+        command: storedAskCommand(payload.command),
         status: "open",
         answer: undefined,
       });
@@ -574,6 +578,7 @@ export class AskHost {
                 ...(questions === undefined
                   ? {}
                   : { questions: questionsJson(questions) }),
+                ...(request.command === undefined ? {} : { command: request.command }),
               },
             },
           ],
@@ -620,6 +625,7 @@ export class AskHost {
             ...(record.questions === undefined
               ? {}
               : { questions: record.questions }),
+            ...(record.command === undefined ? {} : { command: record.command }),
           };
         }
         if (request.recheck !== undefined) {

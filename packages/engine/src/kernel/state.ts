@@ -182,6 +182,7 @@ export function evolve(state: KernelState, fact: NewFact): KernelState {
           ? {}
           : { choiceInfo: payload.choiceInfo }),
         ...(payload.questions === undefined ? {} : { questions: payload.questions }),
+        ...(payload.command === undefined ? {} : { command: payload.command }),
         kind: payload.waitKind,
         effectId: payload.effectId,
         ...(payload.ask === undefined ? {} : { ask: payload.ask }),

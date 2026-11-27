@@ -223,7 +223,7 @@ async function chooseProvider(
   providers: readonly LoginProvider[],
   deadline: number,
   now: () => number,
-  hint: string,
+  command: string,
 ): Promise<LoginRoute | undefined> {
   const routes = routesOf(providers);
   if (routes.length === 0) throw new LoginFailure("no provider of pi can log in");
@@ -236,7 +236,8 @@ async function chooseProvider(
     choiceInfo[route.provider] = { label: routeLabel(provider) };
   }
   const answer = await ctx.ask({
-    prompt: `Choose a provider to log in with. ${hint}`,
+    prompt: `Choose a provider to log in with an API key. For a ChatGPT plan, run \`${command}\` instead; operad picks it up once it is done.`,
+    command,
     choices,
     choiceInfo,
     graceSecs: remainingSecs(deadline, now),
@@ -368,8 +369,8 @@ export async function runLoginStep(
     if (first.type !== "providers") {
       return failed("the login program did not report its providers");
     }
-    const hint = `For your ChatGPT plan, run \`${chatgptLoginCommand(input.command, { home: ctx.home, cwd: ctx.cwd })}\`; operad picks it up once it is done.`;
-    const route = await chooseProvider(ctx, first.providers, child.deadline, now, hint);
+    const command = chatgptLoginCommand(input.command, { home: ctx.home, cwd: ctx.cwd });
+    const route = await chooseProvider(ctx, first.providers, child.deadline, now, command);
     if (route === undefined) return failed("the login was cancelled");
     child.send({ type: "login", provider: route.provider, auth: route.auth });
     for (;;) {
