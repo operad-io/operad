@@ -63,6 +63,7 @@ set is replaced or removed.
 | `OPERAD_REMOTE` | string | always set | The remote's name | In the environment of a `dev` cleanup or integration command. |
 | `OPERAD_RUN` | string | always set | `<run id>:<step>` | In the environment of a step's process: it names the run and the step, so `serve` can find what a step left running. A child that removes it is not reaped. |
 | `OPERAD_RUN_HOME` | path | always set | The home path | In the environment of a step's process, so two homes never meet. |
+| `OPERAD_PTY` | string | always set | A random id | In the environment of a [terminal](terminal.md)'s processes, so what an ended command left running can be found and stopped. A child that removes it is not found that way. |
 | `OPERAD_OPTIONAL_PLUGINS` | JSON object | set by `operad` when it opens the home | Plugin names, each with its module | In the environment of what `operad` starts: the shipped optional plugins, so the tools an agent calls can read the setup guide of one that `config.json` does not name. |
 | `OPERAD_SERVE_SUPERVISED` | flag | not set | `1` | Set by the process that restarts `serve` on changed code; removed before the child sees its own environment. Do not set it yourself. |
 | `OPERAD_SERVE_REPLACES` | flag | not set | `1` | Set on a `serve` that a stuck one started in its place; removed before the child sees its own environment. Do not set it yourself. |
