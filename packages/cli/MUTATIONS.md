@@ -488,3 +488,9 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 | T-0812-M11 | packages/cli/src/plugin-description.ts | the home's plugin project was not read | `a package in the home's plugin project gives its description on one line` |
 | T-0812-M12 | packages/cli/src/plugin-description.ts | a loose path plugin took the `package.json` of the directory above | `a path plugin takes the package.json beside it or above its src, and no other` |
 | T-0812-M13 | packages/dev/package.json | dev's description went back to naming itself | `every shipped plugin's package says in one line what it gives` |
+
+## T-0814 — a question carries a command for the person to run
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0814-M7 | packages/cli/src/main.ts | `operad pending` did not print the command on its own line | `operad pending shows a question's command > alone on its own line, and as the item's command in --json` |

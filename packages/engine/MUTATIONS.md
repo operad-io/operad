@@ -1499,3 +1499,12 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0809-M4 | packages/engine/src/http/server.ts | a failed bind passed on the runtime's error without the address | `a port taken on an address this machine has fails and names the address` |
 | T-0809-M5 | packages/engine/src/http/address.ts | loopback counted as present only when an interface listed it | `an address that is not on this machine is skipped with a warning` |
 | T-0809-M6 | packages/engine/src/http/address.ts | addresses were compared as written, so another spelling of an IPv6 address counted as missing | `an address that is not on this machine is skipped with a warning` |
+
+## T-0814 — a question carries a command for the person to run
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0814-M3 | packages/engine/src/views/pending.ts | the pending item of an open question dropped the command | `ctx.ask (memory) > a question's command is on the pending item while it is open and after its grace` |
+| T-0814-M4 | packages/engine/src/kernel/decide.ts | the wait after the grace dropped the command | `ctx.ask (memory) > a question's command is on the pending item while it is open and after its grace` |
+| T-0814-M5 | packages/engine/src/plugin/registry.ts | a command was not checked before the question was asked | `command validation > an empty, many-line, escaped or overlong command is refused before anyone is asked` |
+| T-0814-M6 | packages/engine/src/runner/step-worker.ts | a step in a worker thread did not pass the command on | `ctx.ask (file) > a question's command is on the pending item while it is open and after its grace` |
