@@ -57,6 +57,8 @@ import {
   ensureHttpToken,
   listenAddressKind,
   splitListenAddresses,
+  validateListenAddresses,
+  type NetworkInterfaceList,
   pairLink,
   openHome,
   openPluginStore,
@@ -250,6 +252,8 @@ export interface MainOptions {
   readonly columns?: number | undefined;
   /** Replaces the OpenTUI app in a test; the real one is imported only by `tui`. */
   readonly tui?: TuiRunner | undefined;
+  /** The network interfaces `pair` reads in a test; default `os.networkInterfaces`. */
+  readonly interfaces?: NetworkInterfaceList | undefined;
   /** Replaces what `operad doctor` asks the machine; a test supplies the facts. */
   readonly doctor?: DoctorEnv | undefined;
   /** Replaces the `bun add` command in a test for `plugin add`; defaults to Bun. */
@@ -887,23 +891,36 @@ function systemDoctorEnv(home: string, io: CliIo): DoctorEnv & { close(): Promis
     serve: async () => {
       if (!lockHeld(serveLockPath(home))) return { answering: false };
       const config = await readConfig(home);
-      // serve skips an address the machine lacks, so ask the first one it has.
-      const address = splitListenAddresses(config.http.listen).present[0];
-      if (address === undefined || config.http.port === 0) return { answering: false };
-      const host = address.includes(":") ? `[${address}]` : address;
-      try {
-        // Any answer proves serve is up; the token is not needed, so none is read or made.
-        await fetch(`http://${host}:${config.http.port}/v1/types`, {
-          signal: AbortSignal.timeout(2_000),
-        });
-        return { answering: true };
-      } catch {
-        return { answering: false };
-      }
+      if (config.http.port === 0) return { answering: false };
+      // serve skips an address the machine lacks, so ask the ones it has.
+      const asked = await Promise.all(
+        splitListenAddresses(config.http.listen).present.map(async (address) => {
+          const host = address.includes(":") ? `[${address}]` : address;
+          try {
+            // Any answer proves serve is up; the token is not needed, so none is read or made.
+            await fetch(`http://${host}:${config.http.port}/v1/types`, {
+              signal: AbortSignal.timeout(2_000),
+            });
+            return { address, answered: true };
+          } catch {
+            return { address, answered: false };
+          }
+        }),
+      );
+      const answering = asked.some((item) => item.answered);
+      if (!answering || !config.http.enabled) return { answering };
+      // A zoned address cannot be written in a URL, so silence from it says nothing.
+      const silent = asked
+        .filter((item) => !item.answered && !item.address.includes("%"))
+        .map((item) => item.address);
+      return { answering, silent };
     },
     listenAddresses: async () => {
       const { http } = await readConfig(home);
-      return splitListenAddresses(http.enabled ? http.listen : []);
+      if (!http.enabled) return { present: [], missing: [] };
+      // An entry serve refuses is not a missing one: say why it is refused.
+      validateListenAddresses(http.listen);
+      return splitListenAddresses(http.listen);
     },
     gitInstalled: () => findGit() !== undefined,
     testHost: async () => {
@@ -3131,7 +3148,11 @@ async function commandHttp(
 }
 
 /** The base URL the app should use: `--url`, or the first address a phone can reach. */
-function pairBaseUrl(config: OperadConfig, given: string | undefined): string {
+function pairBaseUrl(
+  config: OperadConfig,
+  given: string | undefined,
+  interfaces: NetworkInterfaceList | undefined,
+): string {
   if (!config.http.enabled) {
     throw new UsageError('pair needs "http.enabled" in config.json');
   }
@@ -3153,12 +3174,21 @@ function pairBaseUrl(config: OperadConfig, given: string | undefined): string {
     }
     return `${url.origin}${url.pathname.replace(/\/+$/, "")}`;
   }
-  const address = config.http.listen.find(
+  validateListenAddresses(config.http.listen);
+  const reachable = config.http.listen.filter(
     (entry) => listenAddressKind(entry) !== "loopback",
   );
-  if (address === undefined) {
+  if (reachable.length === 0) {
     throw new UsageError(
       "http.listen has only loopback addresses, which a phone cannot reach; add one or pass --url",
+    );
+  }
+  const { present, missing } = splitListenAddresses(reachable, interfaces);
+  const address = present[0];
+  if (address === undefined) {
+    const verb = missing.length === 1 ? "is" : "are";
+    throw new UsageError(
+      `${missing.join(", ")} ${verb} not on this machine now, so a phone cannot reach it; connect that network or pass --url`,
     );
   }
   if (config.http.port === 0) {
@@ -3173,6 +3203,7 @@ async function commandPair(
   io: CliIo,
   argv: readonly string[],
   terminal: boolean,
+  interfaces: NetworkInterfaceList | undefined,
 ): Promise<number> {
   let given: string | undefined;
   let showToken = false;
@@ -3196,7 +3227,7 @@ async function commandPair(
     );
   }
   const config = await readConfig(home);
-  const url = pairBaseUrl(config, given);
+  const url = pairBaseUrl(config, given, interfaces);
   const { token } = await ensureHttpToken(home);
   const link = pairLink(url, token);
 
@@ -3439,6 +3470,7 @@ export async function main(
         io,
         args.slice(1),
         options.isTTY ?? isatty(1),
+        options.interfaces,
       );
     }
 
