@@ -6,6 +6,7 @@ import type { Input, KernelState, StartInput } from "../kernel/types.ts";
 import { RunEndedError, SeqConflictError } from "../log/errors.ts";
 import type { JsonValue, LogBackend } from "../log/types.ts";
 import type {
+  AskRecheck,
   AskRequest,
   PluginStepResult,
   RunObject,
@@ -74,9 +75,22 @@ type StepWorkerLimit =
   | { readonly kind: "limit-cancel"; readonly id: number }
   | { readonly kind: "limit-release"; readonly id: number };
 
-/** A step in the worker asks a person, or stops asking. */
+/** A step in the worker asks a person, answers a recheck, or stops asking. */
 type StepWorkerAsk =
-  | { readonly kind: "ask"; readonly id: number; readonly request: AskRequest }
+  | {
+      readonly kind: "ask";
+      readonly id: number;
+      readonly request: AskRequest;
+      /** The question has a `recheck`, which the worker runs when asked. */
+      readonly recheck?: boolean;
+    }
+  | {
+      readonly kind: "ask-rechecked";
+      readonly id: number;
+      readonly ok: boolean;
+      readonly recheck?: AskRecheck;
+      readonly error?: string;
+    }
   | { readonly kind: "ask-cancel"; readonly id: number }
   | { readonly kind: "grant"; readonly id: number; readonly waitId: string };
 
@@ -84,7 +98,7 @@ function isStepWorkerAsk(value: unknown): value is StepWorkerAsk {
   if (typeof value !== "object" || value === null) return false;
   if (typeof (value as { id?: unknown }).id !== "number") return false;
   const kind = (value as { kind?: unknown }).kind;
-  if (kind === "ask-cancel") return true;
+  if (kind === "ask-cancel" || kind === "ask-rechecked") return true;
   if (kind === "grant") {
     return typeof (value as { waitId?: unknown }).waitId === "string";
   }
@@ -95,6 +109,35 @@ function isStepWorkerAsk(value: unknown): value is StepWorkerAsk {
     request !== null &&
     typeof (request as { prompt?: unknown }).prompt === "string"
   );
+}
+
+/** A question the worker's step has open, as the run's process holds it. */
+interface OpenQuestion {
+  readonly wait: AbortController;
+  /** Takes the worker's reply to the recheck that waits for one. */
+  rechecked?: (reply: Extract<StepWorkerAsk, { kind: "ask-rechecked" }>) => void;
+}
+
+/**
+ * Runs a question's `recheck` in the worker, where the step is. A question that
+ * is cancelled, or whose step has ended, gets no reply: its signal ends the wait.
+ */
+function recheckInWorker(worker: Worker, id: number, question: OpenQuestion): Promise<AskRecheck> {
+  return new Promise<AskRecheck>((resolve, reject) => {
+    const { signal } = question.wait;
+    if (signal.aborted) {
+      resolve({ ask: true });
+      return;
+    }
+    const onAbort = (): void => resolve({ ask: true });
+    signal.addEventListener("abort", onAbort, { once: true });
+    question.rechecked = (reply) => {
+      signal.removeEventListener("abort", onAbort);
+      if (reply.ok && reply.recheck !== undefined) resolve(reply.recheck);
+      else reject(new Error(reply.error ?? "the question could not be checked again"));
+    };
+    worker.postMessage({ kind: "ask-recheck", id });
+  });
 }
 
 /** What `StepTimeout` uses to tell time; tests give it their own. */
@@ -825,7 +868,7 @@ export class Runner {
     asker: StepAsker | undefined,
   ): Promise<PluginStepResult> {
     return new Promise((resolve) => {
-      const questions = new Map<number, AbortController>();
+      const questions = new Map<number, OpenQuestion>();
       // Waits for a place that the worker's nested steps asked for, by the id
       // the worker gave the request; a finished worker stops them all.
       const waits = new Map<number, AbortController>();
@@ -858,7 +901,7 @@ export class Runner {
         if (settled) return;
         settled = true;
         for (const wait of waits.values()) wait.abort();
-        for (const question of questions.values()) question.abort();
+        for (const question of questions.values()) question.wait.abort();
         timer?.clear();
         if (this.activeTimeout === timer) this.activeTimeout = undefined;
         this.signal?.removeEventListener("abort", onAbort);
@@ -984,10 +1027,14 @@ export class Runner {
     message: StepWorkerAsk,
     asker: StepAsker | undefined,
     worker: Worker,
-    questions: Map<number, AbortController>,
+    questions: Map<number, OpenQuestion>,
   ): Promise<void> {
     if (message.kind === "ask-cancel") {
-      questions.get(message.id)?.abort();
+      questions.get(message.id)?.wait.abort();
+      return;
+    }
+    if (message.kind === "ask-rechecked") {
+      questions.get(message.id)?.rechecked?.(message);
       return;
     }
     if (message.kind === "grant") {
@@ -1020,10 +1067,14 @@ export class Runner {
       reply({ ok: false, error: "no one takes questions here" });
       return;
     }
-    const wait = new AbortController();
-    questions.set(message.id, wait);
+    const question: OpenQuestion = { wait: new AbortController() };
+    questions.set(message.id, question);
+    const request: AskRequest =
+      message.recheck === true
+        ? { ...message.request, recheck: () => recheckInWorker(worker, message.id, question) }
+        : message.request;
     try {
-      const outcome = await asker.ask(message.request, wait.signal);
+      const outcome = await asker.ask(request, question.wait.signal);
       reply({ ok: true, outcome });
     } catch (error) {
       reply({ ok: false, error: messageOf(error) });

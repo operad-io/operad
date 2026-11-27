@@ -1,5 +1,5 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, readFileSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPluginRegistry, MemoryPluginStore, PluginRegistry } from "@operad-io/engine";
@@ -190,6 +190,47 @@ describe("the models pi declares", () => {
     expect(askedTimes(env)).toBe(0);
     expect(registry.loadedModels().pi?.list).toEqual(["kept/one"]);
     expect(askedTimes(env)).toBe(0);
+  });
+
+  test("a configured credentials file is read with pi's other files, and none of them is changed", async () => {
+    const env = await fakePi("");
+    const seen = join(env.root, "seen");
+    const read = 'for f in auth.json models.json models-store.json settings.json; do echo "$f=$(cat "$PI_CODING_AGENT_DIR/$f" 2>/dev/null)"; done';
+    writeFileSync(env.fake, `#!/bin/sh\n${read} > "${seen}"\n`);
+    const own = join(env.root, "agent");
+    const other = join(env.root, "other");
+    mkdirSync(own);
+    mkdirSync(other);
+    writeFileSync(join(own, "auth.json"), "own-auth");
+    writeFileSync(join(own, "settings.json"), "own-settings");
+    writeFileSync(join(other, "creds.json"), "other-auth");
+    writeFileSync(join(other, "my-models.json"), "other-models");
+    const files = { agentDir: own, authPath: join(other, "creds.json"), modelsPath: join(other, "my-models.json") };
+    let now = 0;
+    const ask = () => refreshPiModelList({ home: env.root, command: env.fake, now: () => now, files });
+
+    await ask();
+    expect(readFileSync(seen, "utf8")).toBe(
+      "auth.json=other-auth\nmodels.json=other-models\nmodels-store.json=\nsettings.json=own-settings\n",
+    );
+    // A later ask sees what changed since, in the same folder.
+    writeFileSync(join(other, "models-store.json"), "other-store");
+    rmSync(join(other, "my-models.json"));
+    now = PI_LIST_CACHE_MS;
+    await ask();
+    expect(readFileSync(seen, "utf8")).toBe(
+      "auth.json=other-auth\nmodels.json=\nmodels-store.json=other-store\nsettings.json=own-settings\n",
+    );
+    expect(readFileSync(join(own, "auth.json"), "utf8")).toBe("own-auth");
+    expect(readFileSync(join(other, "creds.json"), "utf8")).toBe("other-auth");
+  });
+
+  test("with pi's default credentials file, pi is left to find its own folder", async () => {
+    const env = await fakePi("");
+    const seen = join(env.root, "seen");
+    writeFileSync(env.fake, `#!/bin/sh\necho "\${PI_CODING_AGENT_DIR-unset}" > "${seen}"\n`);
+    await registryFor(env, {}).loadedModelsReady();
+    expect(readFileSync(seen, "utf8").trim()).toBe(process.env.PI_CODING_AGENT_DIR ?? "unset");
   });
 
   test("first use with no kept file waits for one refresh", async () => {

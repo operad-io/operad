@@ -10,6 +10,7 @@ import { loadPlugin } from "../plugin/load.ts";
 import { PluginRegistry } from "../plugin/registry.ts";
 import type {
   AskOutcome,
+  AskRequest,
   PluginStepResult,
   RunObject,
   StepAsker,
@@ -158,7 +159,12 @@ export async function runStepWorker(
 
   const pendingAsks = new Map<
     number,
-    { resolve: (outcome: AskOutcome) => void; reject: (error: Error) => void }
+    {
+      /** Stays on this side: a function cannot be posted to the run's process. */
+      recheck: AskRequest["recheck"];
+      resolve: (outcome: AskOutcome) => void;
+      reject: (error: Error) => void;
+    }
   >();
   let nextAskId = 1;
 
@@ -184,6 +190,7 @@ export async function runStepWorker(
       return new Promise<AskOutcome>((resolve, reject) => {
         const cancel = (): void => parent.postMessage({ kind: "ask-cancel", id });
         pendingAsks.set(id, {
+          recheck: question.recheck,
           resolve: (outcome) => {
             signal?.removeEventListener("abort", cancel);
             resolve(outcome);
@@ -197,6 +204,7 @@ export async function runStepWorker(
         parent.postMessage({
           kind: "ask",
           id,
+          ...(question.recheck === undefined ? {} : { recheck: true }),
           request: {
             prompt: question.prompt,
             ...(question.choices === undefined
@@ -218,8 +226,23 @@ export async function runStepWorker(
     },
   };
 
+  /** Runs a question's own `recheck` and tells the run's process what it said. */
+  async function answerRecheck(id: number): Promise<void> {
+    const pending = pendingAsks.get(id);
+    try {
+      const recheck = (await pending?.recheck?.()) ?? { ask: true };
+      parent.postMessage({ kind: "ask-rechecked", id, ok: true, recheck });
+    } catch (error) {
+      parent.postMessage({ kind: "ask-rechecked", id, ok: false, error: messageOf(error) });
+    }
+  }
+
   parent.on("message", (message: unknown) => {
     if (typeof message !== "object" || message === null) return;
+    if ((message as { kind?: unknown }).kind === "ask-recheck") {
+      void answerRecheck((message as { id: number }).id);
+      return;
+    }
     if ((message as { kind?: unknown }).kind === "grant-result") {
       const ack = message as GrantAck;
       const pending = pendingGrants.get(ack.id);

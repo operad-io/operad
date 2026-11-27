@@ -1621,3 +1621,7 @@ resume window`. Rows are append-only, so the old lines stay as history.
 |---|---|---|---|
 | T-0823-M1 | packages/engine/src/runner/ask.ts | a step whose claimed text was gone got the redacted answer, as before the fix | `a secret answer's hand-over > a step whose claimed answer is gone fails instead of reading it as skipped` |
 | T-0823-M2 | packages/engine/src/loop/serve.ts | `serve` removed left-over texts only when it started, as before the fix | `a secret answer's hand-over > a running serve removes a left-over answer within a sweep of it turning stale` |
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0824-M1 | packages/engine/src/runner/step-worker.ts | a worker's question did not tell the runner it has a `recheck`, as before the fix | `step worker in this process > runs a question's recheck when the parent asks and sends back what it says`; `pi/login > a login program that ends while the key question is open closes it and gives its reason` (packages/harness/pi, timed out) |
