@@ -365,3 +365,7 @@ _The second "## T-0766" section above repeats the rows of the first; the rows of
 |---|---|---|---|
 | T-0820-M1 | packages/harness/pi/src/login.ts | the prompt said the command inline again | `pi/login > the first question offers API-key routes only and tells where a ChatGPT plan logs in` |
 | T-0820-M2 | packages/harness/pi/src/login.ts | the provider question carried no command | `pi/login > the first question offers API-key routes only and tells where a ChatGPT plan logs in` |
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0822-M13 | packages/harness/pi/src/login.ts | the model choice read the list kept from before the login | `pi/login > the model choice asks pi again, not the list kept from before the login` |
