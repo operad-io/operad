@@ -16,7 +16,7 @@
     "@operad-io/shell": "workspace:*",
     "@operad-io/test-support": "workspace:*"
   },
-  "description": "operad: the dev plugin, plans and tasks on a repository",
+  "description": "plans and tasks that agents work, check and merge",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/operad-io/operad.git",

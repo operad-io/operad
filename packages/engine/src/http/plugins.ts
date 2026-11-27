@@ -9,10 +9,18 @@ import type { Actor, HarnessModels, MissingItem } from "../plugin/types.ts";
  */
 export type PluginOrigin = "builtin" | "home";
 
-/** One configured plugin: the facts `operad plugin list` prints, plus where it comes from. */
+/**
+ * One plugin: the facts `operad plugin list` prints, plus where it comes from.
+ * The list also carries each shipped optional plugin the home's `config.json`
+ * does not name, as one that is off.
+ */
 export interface PluginInfo {
   readonly name: string;
-  /** The version the loaded plugin declares; `null` for a plugin that is off or did not load. */
+  /**
+   * The version the loaded plugin declares; `null` for a configured plugin that
+   * is off or did not load. A shipped plugin the file does not name carries the
+   * shipped version.
+   */
   readonly version: string | null;
   readonly enabled: boolean;
   readonly origin: PluginOrigin;
@@ -28,14 +36,12 @@ export interface PluginInfo {
   readonly models?: HarnessModels | undefined;
   /** A loaded harness plugin's access levels it can carry, by id; empty when it carries none. */
   readonly accessLevels?: readonly string[] | undefined;
-  /**
-   * The latest line the package install printed, while this plugin is being
-   * installed. A plugin being installed is listed before `config.json` names
-   * it, with `version: null` and `enabled: false`.
-   */
+  /** The latest line the package install printed, while this plugin is being installed. */
   readonly progress?: string | undefined;
   /** True when the plugin ships a setup guide (ADR 0010 D7): a client offers "Setup <name>". */
   readonly guide?: true | undefined;
+  /** One line saying what the plugin gives, from its package; absent when its package says none. */
+  readonly description?: string | undefined;
 }
 
 /** What is missing from one plugin's setup; never the guide's text (ADR 0010 D7). */

@@ -11,7 +11,7 @@
     "@operad-io/engine": "workspace:*",
     "@operad-io/harness-process": "workspace:*"
   },
-  "description": "operad: the claude harness, a client of the Claude Agent SDK",
+  "description": "chats and tasks run by Claude Code",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/operad-io/operad.git",
