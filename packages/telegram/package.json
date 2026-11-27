@@ -9,7 +9,7 @@
     "@operad-io/chat": "workspace:*",
     "@operad-io/engine": "workspace:*"
   },
-  "description": "operad: the Telegram plugin, a channel and an outside source",
+  "description": "talk to your bots and get pending items in Telegram",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/operad-io/operad.git",
