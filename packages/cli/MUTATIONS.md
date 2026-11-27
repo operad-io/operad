@@ -494,3 +494,13 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0814-M7 | packages/cli/src/main.ts | `operad pending` did not print the command on its own line | `operad pending shows a question's command > alone on its own line, and as the item's command in --json` |
+
+## T-0814 rework 1 — `operad bot login` prints the command
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0814-M9 | packages/cli/src/main.ts | `bot login` ended after its first line, without the question | `operad bot login > waits for the question serve asks and prints its command on its own line` |
+| T-0814-M10 | packages/cli/src/login-command.ts | `bot login` waited with no `serve` running | `operad bot login > does not wait when no serve is running` |
+| T-0814-M11 | packages/cli/src/login-command.ts | `bot login` went on waiting after the login ended | `operad bot login > stops waiting when the login ends without a question` |
+| T-0814-M12 | packages/cli/src/login-command.ts | the end of the wait time did not end the command | `operad bot login > stops waiting after 30 seconds without a question` |
+| T-0814-M13 | packages/cli/src/login-command.ts | the log was opened without change events, so the question `serve` asked was never seen | `operad bot login > waits for the question serve asks and prints its command on its own line` |
