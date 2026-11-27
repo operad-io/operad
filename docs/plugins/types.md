@@ -123,6 +123,8 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `ImmediateWriter` | The two calls `writeImmediate` makes; a `Database` has both. | [platform](platform.md) |
 | `LineOutcome` | A type of the plugin API; its fields are described on the page. | [platform](platform.md) |
 | `LineRunOptions` | A type of the plugin API; its fields are described on the page. | [platform](platform.md) |
+| `Pty` | A command running on a pseudo terminal. | [platform](platform.md#pseudo-terminals) |
+| `PtyOptions` | The options of `spawnPty`. | [platform](platform.md#pseudo-terminals) |
 | `LockFileOptions` | What a waiter may inject: the clock, how it waits, and where a log goes. | [platform](platform.md) |
 | `KeptWorkerFilter` | What a kept worker must match to be ended: a scope, a key, or a record to leave alone. | [platform](platform.md) |
 | `KeptWorkerRecord` | One kept worker as its home records it: pid, token, scope, key, socket, record path, session and idle times. | [platform](platform.md) |
