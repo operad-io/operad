@@ -566,3 +566,9 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 |---|---|---|---|
 | T-0820-M7 | packages/cli/src/main.ts | `operad pending` left the command out | `operad pending shows a question's command > alone on its own line, and as the item's command in --json` |
 | T-0820-M8 | packages/cli/src/login-command.ts | `operad bot login` printed the prompt without the command | `operad bot login > waits for the question serve asks and prints its command on its own line` |
+
+## T-0821 — a question's command in `history --json`
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0821-M5 | packages/cli/src/main.ts | `history --json` left the command out | `the run's history shows a question's command, and --json carries it` |

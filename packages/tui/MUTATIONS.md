@@ -604,3 +604,14 @@ The rows above reused ids that other packages hold for T-0790 (T-0790-M1); they 
 | T-0820-M4 | packages/tui/src/state.ts | the answer did not carry the command | `a question that carries a command > shows all of it under the prompt, wrapped to the box, with every choice still in the box` |
 | T-0820-M5 | packages/tui/src/view/index.ts | the command was drawn on one line, clipped by the box | `a question that carries a command > shows all of it under the prompt, wrapped to the box, with every choice still in the box` |
 | T-0820-M6 | packages/tui/src/view/index.ts | the box's height did not count the command's lines | `a question that carries a command > shows all of it under the prompt, wrapped to the box, with every choice still in the box` |
+
+## T-0821 — follow-ups of the login question's command
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0821-M6 | packages/tui/src/state.ts | the Pending row did not say where the command is read | `the Pending row says first where the command is read` |
+| T-0821-M7 | packages/tui/src/state.ts | the row named `a` for a command `a` does not show | `a Pending row whose command `a` does not show names operad pending` |
+| T-0821-M8 | packages/tui/src/view/index.ts | a command did not widen the box | `a terminal wide enough widens the box and keeps the command on one line` |
+| T-0821-M9 | packages/tui/src/view/index.ts | a wrapped command came with no word of `operad pending` | `a command wider than the terminal is wrapped whole, and the box says where it is on one line` |
+| T-0821-M10 | packages/tui/src/view/index.ts | the prompt was not wrapped | `a long question is wrapped to the box, not clipped` |
+| T-0821-M11 | packages/tui/src/view/index.ts | a short terminal did not cut the prompt | `a short terminal cuts the question, and keeps the command, a choice and the keys in the box` |

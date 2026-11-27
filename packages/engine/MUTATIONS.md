@@ -1589,3 +1589,12 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0819-M14 | packages/engine/src/loop/serve.ts | a recorded answer did not read its run's unread home flow | `it applies an answer to the flow's run and can cancel it` |
 | T-0819-M15 | packages/engine/src/loop/serve.ts | the pass over active runs did not read an unread home flow | `it gives no process to a run of the flow while a step it needs is missing` |
 | T-0819-M16 | packages/engine/src/loop/serve.ts | each pass listed the active runs once more to read their home flows | `a tick over a large history (sqlite) > reads what changed, not every input, answer and outcome ever recorded` |
+
+## T-0821 — a question's command in history
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0821-M1 | packages/engine/src/views/history.ts | an entry did not carry the question's command | `a question's command is a line of its own, whole, where the question is` |
+| T-0821-M2 | packages/engine/src/views/history.ts | the printed entry left the command out | `a question's command is a line of its own, whole, where the question is` |
+| T-0821-M3 | packages/engine/src/views/history.ts | the History section left the command out | `a question's command is a line of its own, whole, where the question is` |
+| T-0821-M4 | packages/engine/src/views/history.ts | the section's fence was three backticks whatever the command held | `a question's command is a line of its own, whole, where the question is` |
