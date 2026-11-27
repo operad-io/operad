@@ -47,7 +47,7 @@ operad start home:nightly
 operad start home:nightly --params '{"folder":"/tmp"}'
 ```
 
-The command prints `started <run>`. `serve` runs it, so a run started while `serve` is stopped waits until it starts again. It is a run like any other: it shows in `operad running` while it goes, and `operad history <run>` says what each step did. A client does the same with `POST /v1/flows/start` (see [http](http.md#flows)).
+The command prints `started <run>`. `serve` runs it, so a run started while `serve` is stopped waits until it starts again. It is a run like any other: it shows in `operad running` while it goes, and `operad history <run>` says who started it and what each step did. A client does the same with `POST /v1/flows/start` (see [http](http.md#flows)).
 
 `--params` is a JSON object the steps of the flow can read as the run's params; leave it out when the flow needs none. The run belongs to `flow:home:nightly`, the same as a routine of the flow that names no other object, so a flow whose run is still going is not started again.
 
@@ -56,3 +56,5 @@ A start is refused, with the reason, and starts nothing when: the flow is not lo
 ## Loading
 
 The files load when operad starts, and `serve` reloads when a file in `<home>/flows` changes, as it does for a plugin's code (see [cli](cli.md)). A file that does not load is refused: the reason names the file and goes to the error output. The other files, and `serve`, are not affected. A name another flow already uses is refused the same way.
+
+A run of a flow whose file does not load fails, saying the flow is not loaded. While `serve` still has the flow from an earlier read, the run waits instead and goes on once the file loads.

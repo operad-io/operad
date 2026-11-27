@@ -4,11 +4,15 @@ import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   Runner,
+  cancelRun,
+  readState,
   readStoredStart,
+  recordAnswer,
   serveOnce,
   type LoadedFlow,
 } from "@operad-io/engine";
 import { makeHome } from "@operad-io/engine/testing";
+import { operad as spawnedOperad } from "@operad-io/test-support";
 import { main, openContext, type CliIo } from "../src/main.ts";
 import { cleanupTempRoots } from "../../engine/test/plugin/support.ts";
 
@@ -123,7 +127,130 @@ describe("the list of loaded flows", () => {
   });
 });
 
+/** One pass of a serve that read the home as `context` did; the runs it gave a process. */
+async function pass(
+  context: Awaited<ReturnType<typeof openContext>>,
+  home: string,
+  logged: string[] = [],
+): Promise<{ readonly runId: string; readonly held: boolean | undefined }[]> {
+  const spawned: { runId: string; held: boolean | undefined }[] = [];
+  await serveOnce({
+    log: context.log,
+    registry: context.registry,
+    lockRoot: context.storeRoot,
+    home,
+    onLog: (message) => logged.push(message),
+    spawnRun: (runId, options) => {
+      spawned.push({ runId, held: options.held });
+    },
+  });
+  return spawned;
+}
+
+async function startedRun(home: string, ...argv: string[]): Promise<string> {
+  const started = await operad(home, "start", ...argv);
+  expect(started.code).toBe(0);
+  return /^started (\S+)\n$/.exec(started.out)?.[1] ?? "";
+}
+
+describe("a serve that read the home before a flow was there", () => {
+  test("it applies an answer to the flow's run and can cancel it", async () => {
+    const home = await flowsHome();
+    await withHome(home, async (serving) => {
+      await writeFile(join(home, "flows", "late.flow.ts"), FILES["ask.flow.ts"] ?? "");
+      const answered = await startedRun(home, "home:late");
+      expect((await operad(home, "run-internal", answered)).code).toBe(0);
+      expect((await readState(serving.log, answered)).status).toBe("waiting_person");
+
+      await recordAnswer({
+        log: serving.log,
+        runId: answered,
+        choice: "yes",
+        actor: { via: "cli", id: "tester" },
+      });
+      await pass(serving, home);
+      expect((await readState(serving.log, answered)).status).not.toBe("waiting_person");
+
+      await cancelRun({
+        log: serving.log,
+        flow: (name) => serving.registry.flow(name)?.flow,
+        runId: answered,
+        source: "operad",
+      });
+      await pass(serving, home);
+      expect((await serving.log.run(answered))?.active).toBe(false);
+    });
+  });
+
+  test("it gives no process to a run of the flow while a step it needs is missing", async () => {
+    const home = await flowsHome();
+    await withHome(home, async (serving) => {
+      await writeFile(join(home, "flows", "late.flow.ts"), FILES["stuck.flow.ts"] ?? "");
+      const runId = await withHome(home, async (context) =>
+        (await context.log.startRun("home:late", "flow:home:late")).runId,
+      );
+      const logged: string[] = [];
+      expect(await pass(serving, home, logged)).toEqual([]);
+      expect(logged.join("\n")).toContain(`run ${runId}: cannot start: needs "absent/step"`);
+    });
+  });
+});
+
+describe("a run of a flow serve holds", () => {
+  test("is not failed while the file on disk does not load", async () => {
+    const home = await flowsHome();
+    const runId = await startedRun(home, "home:echo");
+    await withHome(home, async (serving) => {
+      await writeFile(join(home, "flows", "echo.flow.ts"), "export default ;");
+      expect(await pass(serving, home)).toEqual([{ runId, held: true }]);
+    });
+
+    // A process of its own, as serve starts it: this one already imported the file.
+    const child = await spawnedOperad(home, ["run-internal", runId, "--held"]);
+    expect(child.code).not.toBe(0);
+    expect(child.err).toContain('flow "home:echo" is not loaded');
+    expect((await operad(home, "running")).out).toContain(runId);
+
+    await writeFile(join(home, "flows", "echo.flow.ts"), FILES["echo.flow.ts"] ?? "");
+    expect((await spawnedOperad(home, ["run-internal", runId, "--held"])).code).toBe(0);
+    expect((await operad(home, "history", runId)).out).toContain("run done");
+  });
+});
+
 describe("starting a flow of the home by hand", () => {
+  test("--params may come before the flow", async () => {
+    const home = await flowsHome();
+    for (const argv of [
+      ["--params", '{"word":"hello"}', "home:echo"],
+      ['--params={"word":"hello"}', "home:ask"],
+    ]) {
+      const runId = await startedRun(home, ...argv);
+      await withHome(home, async (context) => {
+        expect(readStoredStart(context.storeRoot, runId)).toMatchObject({
+          params: { word: "hello" },
+        });
+      });
+    }
+  });
+
+  test("the run's history says who started it", async () => {
+    const home = await flowsHome();
+    const runId = await startedRun(home, "home:echo");
+
+    expect((await operad(home, "history", runId)).out).toMatch(/you started it: via cli, as \S+\n/);
+    const entries = JSON.parse((await operad(home, "history", runId, "--json")).out) as unknown[];
+    expect(entries).toContainEqual(
+      expect.objectContaining({
+        what: "you started it",
+        actor: { via: "cli", id: expect.any(String) },
+      }),
+    );
+    await withHome(home, async (context) => {
+      const section = await context.views.section("flow:home:echo", "history");
+      expect(section.markdown).toMatch(/you started it: via cli, as \S+/);
+    });
+  });
+
   test("a run of a flow whose file no longer loads fails, or is handed to its own process to fail", async () => {
     const home = await flowsHome();
     // The runs are made as a start made them while the file still loaded.
