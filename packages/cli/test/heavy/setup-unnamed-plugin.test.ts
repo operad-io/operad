@@ -62,7 +62,7 @@ describe("Setup Dev where config.json does not name dev", () => {
   test("the command line answers the guide, and a plugin nobody offers has none", async () => {
     const { home } = await setup();
     const steps = await operad(home, ["bot", "setup", "default", "dev"]);
-    expect(steps.err).toBe("");
+    expect(steps.code).toBe(0);
     expect(steps.out).toContain('- enable: the plugin "dev" is off');
     expect(steps.out).toContain("Set up operad's dev for the repository");
     const none = await operad(home, ["bot", "setup", "default", "ghost"]);
@@ -105,10 +105,10 @@ describe("Setup Dev where config.json does not name dev", () => {
   test("approving the proposal turns on dev, pool and shell", async () => {
     const { home, repo } = await setup();
     const proposed = await operad(home, ["bot", "setup-dev", "default", repo], { input: '{"name":"repo"}' });
-    expect(proposed.err).toBe("");
+    expect(proposed.code).toBe(0);
     const id = (await operad(home, ["pending"])).out.split(/\s+/)[0] ?? "";
     const approved = await operad(home, ["bot:approve", id]);
-    expect(approved.err).toBe("");
+    expect(approved.code).toBe(0);
     const config = JSON.parse(readFileSync(join(home, "config.json"), "utf8")) as {
       readonly plugins: Readonly<Record<string, { readonly enabled?: boolean }>>;
     };
