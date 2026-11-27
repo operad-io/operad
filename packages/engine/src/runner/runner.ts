@@ -959,7 +959,12 @@ export class Runner {
       worker.on("message", (message: unknown) => {
         if (settled) {
           // The step answered after an abort: it has stopped what it started.
-          void worker.terminate();
+          if (isStepWorkerReply(message)) void worker.terminate();
+          // Its cleanup may give a place back, and waits to hear that it did.
+          // Nothing else it sends now is served: its questions are over.
+          else if (isStepWorkerLimit(message) && message.kind === "limit-release") {
+            void this.serveLimit(message, limiter, worker, waits, held);
+          }
           return;
         }
         if (isStepWorkerLimit(message)) {

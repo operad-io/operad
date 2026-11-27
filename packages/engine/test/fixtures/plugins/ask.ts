@@ -201,6 +201,26 @@ export default definePlugin({
       },
     },
     {
+      // Shows a place, asks, and cleans up when its question is cancelled.
+      name: "tidy",
+      results: ["answered", "failed", "interrupted"],
+      async run(ctx) {
+        if (!isRecord(ctx.params)) throw new Error("the flow needs params");
+        const { name, dir } = ctx.params;
+        if (typeof name !== "string" || typeof dir !== "string") {
+          throw new Error("the flow needs { name, dir }");
+        }
+        const giveBack = await ctx.queued?.("ask/tidy", 0);
+        // Rejects once the step is cancelled; the cleanup follows either way.
+        await ctx.ask({ prompt: "Tidy?", onTimeout: "reject_once" }).catch(() => undefined);
+        await giveBack?.();
+        // Cleanup that outlasts its messages, as stopping a process does.
+        await Bun.spawn(["sleep", "0.5"]).exited;
+        writeFileSync(join(dir, `tidied-${name}`), "1");
+        return { result: "interrupted" };
+      },
+    },
+    {
       name: "hold",
       results: ["ok", "failed", "interrupted"],
       async run(ctx) {
@@ -223,5 +243,19 @@ export default definePlugin({
     flow("ask-unsafe", {}, false, "unsafe"),
     flow("ask-unsafe-hold", {}, true, "unsafe"),
     lateFlow("ask-form-late"),
+    defineFlow({
+      name: "ask-tidy",
+      entry: "q",
+      steps: [
+        {
+          id: "q",
+          kind: "plugin",
+          params: { use: "ask/tidy", params: {} },
+          replay: "safe",
+          next: { answered: "done", failed: "done", interrupted: "done" },
+        },
+        { id: "done", kind: "end", params: { status: "done" }, replay: "safe" },
+      ],
+    }),
   ],
 });

@@ -125,7 +125,7 @@ interface Env {
   runner(
     runId: string,
     timer: FakeTimer,
-    options?: { graceSecs?: number; timeoutClock?: TimeoutClock; stepTimeoutMs?: number },
+    options?: { graceSecs?: number; timeoutClock?: TimeoutClock; stepTimeoutMs?: number; signal?: AbortSignal },
   ): Runner;
   /** The id of the first question of the run, once it is open. */
   opened(runId: string): Promise<string>;
@@ -187,6 +187,7 @@ async function setup(mode: "memory" | "file"): Promise<Env> {
         ...(options.graceSecs === undefined ? {} : { askGraceSecs: options.graceSecs }),
         ...(options.timeoutClock === undefined ? {} : { timeoutClock: options.timeoutClock }),
         ...(options.stepTimeoutMs === undefined ? {} : { stepTimeoutMs: options.stepTimeoutMs }),
+        ...(options.signal === undefined ? {} : { signal: options.signal }),
       });
     },
     async opened(runId) {
@@ -950,6 +951,23 @@ describe("ctx.ask survives a crash", () => {
   }, 60_000);
 });
 
+
+describe("a cancelled step in a worker", () => {
+  test("finishes its cleanup while it withdraws a question and gives a place back", async () => {
+    const env = await setup("file");
+    try {
+      const id = await env.create("ask-tidy", "t");
+      const abort = new AbortController();
+      const run = env.runner(id, new FakeTimer(), { graceSecs: 60, signal: abort.signal }).run();
+      await env.opened(id);
+      abort.abort();
+      await run;
+      expect(existsSync(join(env.dir, "tidied-t"))).toBe(true);
+    } finally {
+      await env.close();
+    }
+  }, 60_000);
+});
 
 describe("command validation", () => {
   test("an empty, many-line, escaped, disguised or overlong command is refused before anyone is asked", async () => {
