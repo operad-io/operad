@@ -338,6 +338,7 @@ export async function answerRunWait(
   // What the CLI and a plugin action do: record the answer. The pass applies it.
   await recordAnswer({
     log: world.log,
+    home: world.home,
     runId: run.runId,
     choice,
     ...(note === undefined ? {} : { note }),

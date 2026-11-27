@@ -13,6 +13,7 @@ import type { TriggerRule } from "../trigger/types.ts";
 import { acquireLock, lockHeld, runLockPath, serveLockPath } from "../runner/lock.ts";
 import type { LockHandle } from "../runner/lock.ts";
 import { StepLimits } from "../runner/limits.ts";
+import { sweepSecretAnswers } from "../runner/secret-answers.ts";
 import { applyInput, parseObjectKey, readState } from "../runner/service.ts";
 import { isBusy } from "../platform/index.ts";
 import { reapStale } from "../platform/step-reap.ts";
@@ -492,6 +493,11 @@ export async function serve(options: ServeOptions): Promise<void> {
       await stopAllKeptWorkers({ home: options.home });
     } catch (error) {
       options.onLog?.(`serve start: could not end kept workers: ${messageOf(error)}`);
+    }
+    try {
+      await sweepSecretAnswers(options.home, clock());
+    } catch (error) {
+      options.onLog?.(`serve start: could not remove left-over answers: ${messageOf(error)}`);
     }
     while (!stopped) {
       inPass = true;

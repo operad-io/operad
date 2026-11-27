@@ -255,6 +255,7 @@ describe("pi/login", () => {
       if (second?.waitId === undefined) throw new Error("no key wait");
       await recordAnswer({
         log: env.log,
+        home: env.root,
         runId: env.runId,
         waitId: second.waitId,
         choice: undefined,
