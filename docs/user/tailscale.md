@@ -57,7 +57,7 @@ Run these steps on the machine that runs `operad serve`.
 ## Always pass `--url` to pair
 
 `operad pair` with no `--url` prints the first non-loopback entry of
-`http.listen`, which is the LAN address when there is one, so a Tailscale
+`http.listen` that this machine has, which is the LAN address when it is listed first, so a Tailscale
 address listed after it never shows. Pass `--url` with the
 `https://<machine>.<tailnet>.ts.net` name every time you pair over Tailscale.
 

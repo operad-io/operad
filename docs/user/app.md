@@ -56,7 +56,8 @@ Scan this in the operad app:
 ```
 
 The URL is `http://<address>:<port>` for the first non-loopback entry of
-`http.listen`. Pass `--url <base url>` to name another address, such as the
+`http.listen` that this machine has now; when it has none of them, `pair` names
+them and asks you to connect that network or pass `--url`. Pass `--url <base url>` to name another address, such as the
 HTTPS name that `tailscale serve` gives on a Tailscale network (`operad pair
 --url https://mac.tail1234.ts.net`; see [Tailscale](tailscale.md)); it must be
 an `http` or `https` URL without credentials or a query. The QR code encodes

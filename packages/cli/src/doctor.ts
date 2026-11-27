@@ -5,7 +5,11 @@
  * supplies the facts and nothing touches the machine or the network.
  */
 
-import { missingAddressMessage, noListenAddressMessage } from "@operad-io/engine";
+import {
+  ConfigError,
+  missingAddressMessage,
+  noListenAddressMessage,
+} from "@operad-io/engine";
 
 /** One plugin the home enables. */
 export interface DoctorPlugin {
@@ -40,7 +44,8 @@ export interface DoctorEnv {
   config(): Promise<{ readonly present: boolean }>;
   plugins(): Promise<readonly DoctorPlugin[]>;
   agents(): Promise<readonly DoctorAgent[]>;
-  serve(): Promise<{ readonly answering: boolean }>;
+  /** `silent`: addresses this machine has where a serve that answers elsewhere does not. */
+  serve(): Promise<{ readonly answering: boolean; readonly silent?: readonly string[] }>;
   /** The configured listen addresses this machine has and lacks; absent means the check is not made. */
   listenAddresses?(): Promise<{
     readonly present: readonly string[];
@@ -87,6 +92,10 @@ function bad(id: string, message: string, next: string): DoctorCheck {
 
 function reasonOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function silentAddressMessage(address: string): string {
+  return `${address} is on this machine but serve does not answer there; restart serve if the address came back after serve started`;
 }
 
 /** Runs every check once. It never throws: a failed ask is a problem line. */
@@ -164,8 +173,10 @@ export async function runDoctor(env: DoctorEnv): Promise<DoctorReport> {
     }
   }
 
+  let silent: readonly string[] = [];
   try {
     const serve = await env.serve();
+    silent = serve.silent ?? [];
     checks.push(
       serve.answering
         ? good("serve", "serve is answering")
@@ -186,8 +197,21 @@ export async function runDoctor(env: DoctorEnv): Promise<DoctorReport> {
       } else if (missing.length > 0) {
         checks.push(bad("listen", noListenAddressMessage(missing), "operad serve"));
       }
+      // Not a problem either: what serve bound can differ from what the machine has now.
+      for (const address of silent) {
+        checks.push(good(`listen:${address}`, silentAddressMessage(address)));
+      }
     } catch (error) {
-      checks.push(bad("listen", `http.listen could not be checked: ${reasonOf(error)}`, "operad doctor"));
+      checks.push(
+        bad(
+          "listen",
+          // A refused entry's reason already names `http.listen`.
+          error instanceof ConfigError
+            ? error.message
+            : `http.listen could not be checked: ${reasonOf(error)}`,
+          "operad doctor",
+        ),
+      );
     }
   }
 

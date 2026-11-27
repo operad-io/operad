@@ -43,11 +43,17 @@ async function makePairHome(http: Record<string, unknown>): Promise<string> {
 // 9000 is an explicit, non-default port: the test shows the config's port reaches the URL.
 const LAN = { enabled: true, port: 9000, listen: ["127.0.0.1", "192.168.1.20"] };
 
+/** The machine's interfaces as the tests suppose them, whatever it really has. */
+const interfaces = () => ({
+  en0: [{ address: "192.168.1.20" }],
+  utun0: [{ address: "fd7a:115c:a1e0::1" }],
+});
+
 describe("operad pair", () => {
   test("prints the url, the token and a QR code that decodes to the pairing link", async () => {
     const home = await makePairHome(LAN);
     const output = capture();
-    expect(await main(["pair"], { home, io: output.io, isTTY: true })).toBe(0);
+    expect(await main(["pair"], { home, io: output.io, interfaces, isTTY: true })).toBe(0);
     const text = output.text();
     expect(text).toContain("url http://192.168.1.20:9000\n");
     expect(text).toContain(`token ${TOKEN}\n`);
@@ -65,6 +71,7 @@ describe("operad pair", () => {
       await main(["pair", "--url", "https://mac.tail1234.ts.net/"], {
         home,
         io: output.io,
+        interfaces,
         isTTY: true,
       }),
     ).toBe(0);
@@ -77,14 +84,43 @@ describe("operad pair", () => {
   test("an IPv6 listen address is bracketed in the url", async () => {
     const home = await makePairHome({ enabled: true, port: 9000, listen: ["fd7a:115c:a1e0::1"] });
     const output = capture();
-    expect(await main(["pair"], { home, io: output.io, isTTY: true })).toBe(0);
+    expect(await main(["pair"], { home, io: output.io, interfaces, isTTY: true })).toBe(0);
     expect(output.text()).toContain("url http://[fd7a:115c:a1e0::1]:9000\n");
+  });
+
+  test("an address this machine lacks is passed over for the next one a phone can reach", async () => {
+    const home = await makePairHome({
+      enabled: true,
+      port: 9000,
+      listen: ["127.0.0.1", "100.71.164.8", "192.168.1.20"],
+    });
+    const output = capture();
+    expect(await main(["pair"], { home, io: output.io, interfaces, isTTY: true })).toBe(0);
+    expect(output.text()).toContain("url http://192.168.1.20:9000\n");
+  });
+
+  test("refuses when this machine lacks every address a phone could reach", async () => {
+    const home = await makePairHome({ enabled: true, port: 9000, listen: ["127.0.0.1", "100.71.164.8"] });
+    const output = capture();
+    expect(await main(["pair"], { home, io: output.io, interfaces, isTTY: true })).toBe(2);
+    expect(output.errors()).toContain(
+      "100.71.164.8 is not on this machine now, so a phone cannot reach it; connect that network or pass --url",
+    );
+    expect(output.text()).toBe("");
+  });
+
+  test("an entry serve refuses is reported as refused, not as missing", async () => {
+    const home = await makePairHome({ enabled: true, port: 9000, listen: ["8.8.8.8"] });
+    const output = capture();
+    expect(await main(["pair"], { home, io: output.io, interfaces, isTTY: true })).not.toBe(0);
+    expect(output.errors()).toContain('"8.8.8.8" is not a loopback');
+    expect(output.text()).toBe("");
   });
 
   test("refuses without a terminal and prints nothing of the token", async () => {
     const home = await makePairHome(LAN);
     const output = capture();
-    expect(await main(["pair"], { home, io: output.io, isTTY: false })).toBe(2);
+    expect(await main(["pair"], { home, io: output.io, interfaces, isTTY: false })).toBe(2);
     expect(output.text()).toBe("");
     expect(output.errors()).toContain("--show-token");
     expect(output.errors()).not.toContain(TOKEN);
@@ -94,7 +130,7 @@ describe("operad pair", () => {
     const home = await makePairHome(LAN);
     const output = capture();
     expect(
-      await main(["pair", "--show-token"], { home, io: output.io, isTTY: false }),
+      await main(["pair", "--show-token"], { home, io: output.io, interfaces, isTTY: false }),
     ).toBe(0);
     expect(output.text()).toBe(
       [
@@ -110,7 +146,7 @@ describe("operad pair", () => {
     const home = await makePairHome(LAN);
     for (const argv of [["http", "token", "rotate"], ["plugin", "list"], ["pending"]]) {
       const output = capture();
-      await main(argv, { home, io: output.io, isTTY: true });
+      await main(argv, { home, io: output.io, interfaces, isTTY: true });
       expect(output.text() + output.errors()).not.toContain(TOKEN);
     }
     expect((await readHttpToken(home))?.token).not.toBe(TOKEN);
@@ -119,18 +155,18 @@ describe("operad pair", () => {
   test("refuses when http is off, when only loopback is listened on, and a bad --url", async () => {
     const off = capture();
     const offHome = await makePairHome({ enabled: false, listen: ["192.168.1.20"] });
-    expect(await main(["pair"], { home: offHome, io: off.io, isTTY: true })).toBe(2);
+    expect(await main(["pair"], { home: offHome, io: off.io, interfaces, isTTY: true })).toBe(2);
     expect(off.errors()).toContain("http.enabled");
 
     const loop = capture();
     const loopHome = await makePairHome({ enabled: true, listen: ["127.0.0.1"] });
-    expect(await main(["pair"], { home: loopHome, io: loop.io, isTTY: true })).toBe(2);
+    expect(await main(["pair"], { home: loopHome, io: loop.io, interfaces, isTTY: true })).toBe(2);
     expect(loop.errors()).toContain("--url");
 
     for (const bad of ["not a url", "ftp://host", "http://user:pw@host", "http://host?x=1"]) {
       const output = capture();
       expect(
-        await main(["pair", "--url", bad], { home: loopHome, io: output.io, isTTY: true }),
+        await main(["pair", "--url", bad], { home: loopHome, io: output.io, interfaces, isTTY: true }),
       ).toBe(2);
       expect(output.errors()).not.toContain(TOKEN);
       expect(output.text()).toBe("");
@@ -141,7 +177,7 @@ describe("operad pair", () => {
     const home = await makePairHome({});
     // `{}` still means the defaults: enabled, 127.0.0.1, port 8765.
     const plain = capture();
-    expect(await main(["pair"], { home, io: plain.io, isTTY: true })).toBe(2);
+    expect(await main(["pair"], { home, io: plain.io, interfaces, isTTY: true })).toBe(2);
     expect(plain.errors()).toContain("http.listen has only loopback");
     expect(plain.errors()).not.toContain("http.enabled");
 
@@ -150,6 +186,7 @@ describe("operad pair", () => {
       await main(["pair", "--url", "https://mac.example.ts.net"], {
         home,
         io: named.io,
+        interfaces,
         isTTY: true,
       }),
     ).toBe(0);

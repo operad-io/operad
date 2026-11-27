@@ -4,7 +4,9 @@ import { rm } from "node:fs/promises";
 import { join } from "node:path";
 import { createTestRenderer } from "@opentui/core/testing";
 import {
+  TuiDiscoveryError,
   TuiStartError,
+  discoverServer,
   ensureServer,
   probeServer,
   runTui,
@@ -224,6 +226,104 @@ describe("ensureServer", () => {
         lockHeld: () => false,
       }).catch((e: unknown) => e);
       expect((error as Error).message).toMatch(/port \d+ on 192\.168\.6\.64 is in use and does not answer/);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  // A Tailscale address first, then a LAN one.
+  const TWO = { enabled: true, port: 9000, listen: ["100.71.164.8", "192.168.1.20"] };
+  const onlyLan = () => ({ en0: [{ address: "192.168.1.20" }] });
+  const both = () => ({ en0: [{ address: "192.168.1.20" }], utun0: [{ address: "100.71.164.8" }] });
+
+  test("a first address this machine lacks is not asked: the next one is used", async () => {
+    const { home, cleanup } = await makeAutostartHome(TWO);
+    try {
+      const asked: string[] = [];
+      const url = await ensureServer({
+        home,
+        interfaces: onlyLan,
+        fetch: async (input) => {
+          asked.push(String(input));
+          return operad();
+        },
+        lockHeld: () => true,
+      });
+      expect(url).toBe("http://192.168.1.20:9000");
+      expect(asked).toEqual(["http://192.168.1.20:9000/v1/types"]);
+      expect((await discoverServer({ home, token: "t", interfaces: onlyLan })).url).toBe(url);
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("a running serve that does not answer on a returned address is found on the next one", async () => {
+    const { home, cleanup } = await makeAutostartHome(TWO);
+    try {
+      for (const firstAnswer of ["silent", "other"]) {
+        const url = await ensureServer({
+          home,
+          interfaces: both,
+          fetch: async (input) => {
+            if (String(input).startsWith("http://192.168.1.20:")) return operad();
+            if (firstAnswer === "other") return new Response("<html>");
+            throw new Error("refused");
+          },
+          lockHeld: () => true,
+        });
+        expect(url).toBe("http://192.168.1.20:9000");
+      }
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("a serve that another start won is waited for on every address", async () => {
+    const { home, cleanup } = await makeAutostartHome(TWO);
+    try {
+      let up = false;
+      const url = await ensureServer({
+        home,
+        interfaces: both,
+        fetch: async (input) => {
+          if (up && String(input).startsWith("http://192.168.1.20:")) return operad();
+          throw new Error("refused");
+        },
+        spawn: () => {
+          up = true;
+          return { exited: Promise.resolve(1) };
+        },
+        wait: noWait,
+        lockHeld: () => up,
+      });
+      expect(url).toBe("http://192.168.1.20:9000");
+    } finally {
+      await cleanup();
+    }
+  });
+
+  test("with no listen address on this machine nothing is asked or started, and the error names them", async () => {
+    const { home, cleanup } = await makeAutostartHome(TWO);
+    try {
+      let calls = 0;
+      const error = await ensureServer({
+        home,
+        interfaces: () => ({}),
+        fetch: async () => {
+          calls += 1;
+          return operad();
+        },
+        spawn: () => {
+          calls += 1;
+          return { exited: new Promise(() => undefined) };
+        },
+        lockHeld: () => false,
+      }).catch((e: unknown) => e);
+      expect(error).toBeInstanceOf(TuiDiscoveryError);
+      expect((error as Error).message).toBe(
+        "100.71.164.8, 192.168.1.20 are not on this machine now; there is no address left to listen on; set http.listen in config.json or pass --url",
+      );
+      expect(calls).toBe(0);
     } finally {
       await cleanup();
     }
@@ -455,6 +555,31 @@ describe("runTui and the flags", () => {
       await test.dispose();
     }
   }
+
+  test("the screen uses the address that answered, not the configuration again", async () => {
+    // With port 0 the configuration names no address, so reading it again would fail.
+    const { home, cleanup } = await makeAutostartHome({ enabled: true, port: 0, listen: ["127.0.0.1"] });
+    const test = await createTestRenderer({ width: 60, height: 10 });
+    try {
+      const errors: string[] = [];
+      await runTui({
+        token: "t",
+        home,
+        onError: (message) => errors.push(message),
+        hooks: {
+          ensure: async () => "http://127.0.0.1:1",
+          renderer: async () => test.renderer,
+          view: () => {
+            throw new Error("stop here");
+          },
+        },
+      });
+      expect(errors).toEqual(["stop here"]);
+    } finally {
+      await test.dispose();
+      await cleanup();
+    }
+  });
 
   test("--url and --no-start never start or check a serve; neither does nothing at all", async () => {
     expect(await runWith({ url: "http://127.0.0.1:9" })).toBe(0);

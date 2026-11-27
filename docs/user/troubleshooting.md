@@ -38,7 +38,10 @@ for what waits, and `operad history <id>` for what a run did.
 | Message | What it means | What to do |
 |---|---|---|
 | `operad: lock <home>/serve.lock: run <pid> is still alive` (exit 4) | A `serve` already runs for this home. | Use the running one, or `operad serve stop`. |
-| `Failed to start server. Is port <port> in use?` | The configured address and port are taken. | Free the port, or change `http.port`/`http.listen`; `operad tui --url <url>` can reach another one. |
+| `http: cannot listen on <address> port <port>: Failed to start server. Is port <port> in use?` | `serve` could not open that address and port, usually because another program holds it. | Free the port, or change `http.port`/`http.listen`; `operad tui --url <url>` can reach another one. |
+| `http: <address> is not on this machine now; serve does not listen there; restart serve once it is` | A warning from `serve`, also an `ok` line of `operad doctor` without `http:`: an address in `http.listen` is gone, such as a network that is down. `serve` listens on the others. | Connect that network, then restart `serve` (`operad serve stop`, then `operad serve`), or take the address out of `http.listen`. |
+| `http: <addresses> are not on this machine now; there is no address left to listen on` (`is` for one address) | The machine has none of the addresses in `http.listen`, so `serve` cannot open the interface. `operad doctor` reports it as a problem. | Connect one of those networks, or change `http.listen`, then `operad serve`. |
+| `<address> is on this machine but serve does not answer there; restart serve if the address came back after serve started` | An `ok` line of `operad doctor`: `serve` answers on another address but not on this one. | Restart `serve`; if the line stays, check that nothing else holds the port on that address or blocks it. |
 | `http.listen: "<address>" is a wildcard address; name each address to listen on` | `http.listen` names `0.0.0.0` or `::`. | Name each address explicitly (loopback, private, link-local or Tailscale). |
 | `http.listen: "<address>" is not a loopback, private, link-local or Tailscale address` | The address is public or not an IP literal. | Use an allowed address, or reach the home through Tailscale. |
 | `http.listen: needs at least one address` | The array is empty. | Leave the key out for `["127.0.0.1"]`, or name an address. |
@@ -65,6 +68,7 @@ for what waits, and `operad history <id>` for what a run did.
 | `unknown theme "<name>"; the themes are <names> in <file>` | `tui.json` names no known theme. | Pick a name from the list, or create `themes/<name>.json`. |
 | `unknown theme "<name>"; the themes are <names> given with --theme` | `--theme` names no known theme. | Pick a name from the list, or drop the flag. |
 | `reserved keys ignored: <key> (<action>, <source>), …` | `keys.json` or a plugin binds a key the TUI keeps. | Use another key; the action remains in the `:` palette. |
+| `<addresses> are not on this machine now; there is no address left to listen on; set http.listen in config.json or pass --url` (`is` for one address) | The machine has none of the addresses in `http.listen`. | Connect one of those networks, change `http.listen`, or pass `--url`. |
 | `starting operad serve (log: <path>)` then an error naming `serve.log` | The TUI tried to start `serve` and it failed. | Read the last lines of `serve.log` (it can hold plugin output); fix the problem, then start again. |
 | `no server at <url> …` when no `serve` holds the home and `--no-start` was given | `--no-start` prevents a start. | Start `operad serve` yourself, or drop `--no-start`. |
 
@@ -78,6 +82,7 @@ for what waits, and `operad history <id>` for what a run did.
 | `pair needs "http.enabled" in config.json` | HTTP is off. | Set `http.enabled` to `true` and restart `serve`. |
 | `http.listen has only loopback addresses, which a phone cannot reach; add one or pass --url` | The app cannot reach a loopback address. | Add a private address to `http.listen`, or serve HTTPS over Tailscale and pass its `https://<machine>.<tailnet>.ts.net` name with `--url`; see [Tailscale](tailscale.md). |
 | `the server cannot be reached at http://100.x.y.z:<port>` when the address is a Tailscale one | The app does not reach a plain HTTP Tailscale address, even when `serve` listens on it. | Serve HTTPS with `tailscale serve` and pair with the `https://<machine>.<tailnet>.ts.net` name; see [Tailscale](tailscale.md). |
+| `<addresses> are not on this machine now, so a phone cannot reach it; connect that network or pass --url` (`is` for one address) | `pair` found only addresses this machine lacks besides loopback ones. | Connect that network, or pass `--url`. |
 | `http.port is 0; set a port in config.json or pass --url` | The chosen port is dynamic. | Set a fixed `http.port`, or pass `--url`. |
 | `--url must be an http or https URL` | The scheme is missing or wrong. | Use `http://…` or `https://…`. |
 | `--url must be an http or https URL without credentials or a query` | The URL carries a user, password, query or fragment. | Pass only the base URL. |
