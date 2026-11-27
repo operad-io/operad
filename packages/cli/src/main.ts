@@ -39,6 +39,8 @@ import {
   historyEntries,
   installedPackageFile,
   listPending,
+  realAskTimer,
+  type AskTimer,
   listRunning,
   type RunningItem,
   loadConfiguredPlugins,
@@ -102,7 +104,7 @@ import {
   type ViewObject,
   type ViewRow,
 } from "@operad-io/engine";
-import { loginBotFor } from "@operad-io/bot";
+import { loginAction, loginBotFor } from "@operad-io/bot";
 import { findGit, stopAllKeptWorkers } from "@operad-io/engine/platform";
 import { ChannelTypeError, runMcpServer } from "@operad-io/mcp";
 import {
@@ -133,6 +135,7 @@ import {
   serveStartFlags,
   startWithRetry,
 } from "./http-bind.ts";
+import { showLoginCommand } from "./login-command.ts";
 import { QrTooLongError, encodeQr, renderQr } from "./qr.ts";
 import {
   DEFAULT_STOP_TIMEOUT_SECS,
@@ -259,6 +262,8 @@ export interface MainOptions {
   readonly doctor?: DoctorEnv | undefined;
   /** Replaces the `bun add` command in a test for `plugin add`; defaults to Bun. */
   readonly pluginInstall?: InstallRunner | undefined;
+  /** Replaces the timer of `bot login`'s wait for its question in a test. */
+  readonly loginTimer?: AskTimer | undefined;
 }
 
 /** What the CLI hands the terminal app. */
@@ -1652,6 +1657,7 @@ async function commandAction(
   io: CliIo,
   argv: readonly string[],
   tty: boolean,
+  loginTimer: AskTimer,
 ): Promise<boolean> {
   // A plugin command and an action may share a plain name (`plan` is both a
   // dev command and the action that creates a plan). The command keeps the
@@ -1730,6 +1736,16 @@ async function commandAction(
     actor: actorOfCli(),
   });
   printValue(io, run.value);
+  if (run.plugin === "bot" && run.action === loginAction.name) {
+    await showLoginCommand({
+      home: context.home,
+      config: context.config,
+      registry: context.registry,
+      object: `${object.type}:${object.row.id}`,
+      write: (text) => io.write(text),
+      timer: loginTimer,
+    });
+  }
   return true;
 }
 
@@ -3821,7 +3837,8 @@ export async function main(
           `plugin "${attempted}" is disabled; turn it on with \`operad plugin enable ${attempted}\``,
         );
       }
-      if (await commandAction(context, io, actionRepo.args, tty)) return 0;
+      const loginTimer = options.loginTimer ?? realAskTimer;
+      if (await commandAction(context, io, actionRepo.args, tty, loginTimer)) return 0;
       if (await commandPlugin(context, io, args)) return 0;
       const candidates: CommandCandidate[] = [
         ...context.registry

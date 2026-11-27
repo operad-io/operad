@@ -623,9 +623,10 @@ is refused with its path; point `command` at the package's bin instead
 `pi auth login openai-codex`; operad does not run that login. When `pi` is not on
 your `PATH`, run the same command with the full path of the pi operad installed
 (the login question gives it, and `operad pending` prints it on a line of its
-own). operad picks the login up once it is done, with no
-restart of `serve`. For an API key, answer operad's login question, or run `pi` and
-type `/login`. operad uses your own pi login, the credentials file
+own). With `serve` running, `operad bot login <bot>` waits for that question, at
+most 30 seconds, and prints the command the same way. operad picks the login up
+once it is done, with no restart of `serve`. For an API key, answer operad's login
+question, or run `pi` and type `/login`. operad uses your own pi login, the credentials file
 `~/.pi/agent/auth.json` (`authPath` names another file). operad never reads the
 file; it hands the path to pi. pi and operad may refresh the same login at once; pi
 locks the file for that.
