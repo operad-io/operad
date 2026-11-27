@@ -13,7 +13,10 @@ import type {
   RunInfo,
 } from "../log/types.ts";
 import type { PluginRegistry } from "../plugin/registry.ts";
-import type { SourceHandle } from "../plugin/types.ts";
+import type {
+  PluginHttp,
+  SourceHandle,
+} from "../plugin/types.ts";
 import { messageOf, StartRefusedError } from "../plugin/errors.ts";
 import { endRunDirectly, readState } from "../runner/service.ts";
 import { TriggerStore } from "./store.ts";
@@ -821,6 +824,11 @@ export class Kernel {
       },
     });
     this.runningSources.push(...running);
+  }
+
+  /** What a running plugin serves over HTTP; undefined when it serves nothing. */
+  pluginHttp(plugin: string): PluginHttp | undefined {
+    return this.runningSources.find((source) => source.plugin === plugin)?.handle.http;
   }
 
   /** Stops every source. A source that throws while stopping is logged. */

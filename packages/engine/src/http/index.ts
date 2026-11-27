@@ -1,5 +1,6 @@
 export {
   isAllowedListenAddress,
+  isLocalRequest,
   listenAddressKind,
   missingAddressMessage,
   noListenAddressMessage,
@@ -25,6 +26,7 @@ export {
   DEFAULT_STOP_TIMEOUT_MS,
   displayNameOf,
   HttpStopError,
+  MAX_PLUGIN_STREAM_BYTES,
   MAX_SSE_EVENT_BYTES,
   startHttpServer,
   type HttpServerHandle,

@@ -489,6 +489,26 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 | T-0812-M12 | packages/cli/src/plugin-description.ts | a loose path plugin took the `package.json` of the directory above | `a path plugin takes the package.json beside it or above its src, and no other` |
 | T-0812-M13 | packages/dev/package.json | dev's description went back to naming itself | `every shipped plugin's package says in one line what it gives` |
 
+## T-0810 — the terminal plugin behind serve
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0810-M64 | packages/cli/src/main.ts | serve did not hand its plugins' routes to the HTTP server | `a home that enables terminal serves it, and stopping serve ends its terminals` |
+| T-0810-M65 | packages/cli/src/defaults.ts | `plugin enable terminal` was not offered | `a home that enables terminal serves it, and stopping serve ends its terminals` |
+
+## T-0810 — enabling terminal installs its package
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0810-M66 | packages/cli/src/main.ts | only `claude` of the install-on-enable plugins was installed again, so enabling `terminal` installed nothing | `publishing and installing the packages > enabling terminal from the packed tarballs installs its package, which then loads` |
+| T-0810-M67 | packages/cli/src/main.ts | only `claude`'s install omitted optional packages, so installing `terminal` brought back the other plugins' optional ones | `publishing and installing the packages > enabling terminal from the packed tarballs installs its package, which then loads` |
+
+## T-0810 — terminal is described before it is installed
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0810-M68 | packages/cli/src/plugin-description.ts | `terminal` had no description for a home that has not installed it | `plugin descriptions > a plugin installed on enable is described before its package is there, in the package's words` |
+
 | T-0815-M6 | packages/cli/src/main.ts | serve gave its HTTP server no way to start a flow | `serve lists the flows over HTTP and runs one a client starts to its end` |
 | T-0815-M7 | packages/cli/src/main.ts | `start home:<name>` was read as a pending id | `the run takes the params, reaches its end and records who started it`, `a flow already running is not started twice`, `a refused start says why and starts nothing` |
 | T-0815-M8 | packages/cli/src/start-flow.ts | the params did not reach the run | `the run takes the params, reaches its end and records who started it`, `serve lists the flows over HTTP and runs one a client starts to its end` |

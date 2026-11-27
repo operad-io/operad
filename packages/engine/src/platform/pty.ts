@@ -10,18 +10,21 @@
  * its own and everything here is the one terminal. The group id stays reserved
  * as long as the group has a member, so the group is signaled only while it has
  * one, and it is stopped as soon as the leader exits. A process that moved to
- * another group (a job of an interactive shell) is not part of that stop.
+ * another group (a job of an interactive shell) is not part of that stop;
+ * `hangUp` stops those too.
  */
 
 import {
   createGroupStop,
   DRAIN_GRACE_MS,
+  KILL_GRACE_MS,
   killProcessGroup,
   systemClock,
   type Clock,
   type Exit,
 } from "./process-group.ts";
-import { markerEnv, trackRoot } from "./step-reap.ts";
+import { processTree, signalRows } from "./process-tree.ts";
+import { markerEnv, readProcessTable, trackRoot } from "./step-reap.ts";
 
 export interface PtyOptions {
   /** The program and its arguments; no shell reads them. */
@@ -51,6 +54,12 @@ export interface Pty {
   resize(cols: number, rows: number): void;
   /** Stops the whole process group: SIGTERM, then SIGKILL after the grace. */
   kill(): Promise<void>;
+  /**
+   * Closes the terminal on everything the child started, whatever group it
+   * moved to: SIGHUP to each, the group stop of `kill`, and after one more
+   * grace SIGKILL to what is left.
+   */
+  hangUp(): Promise<void>;
 }
 
 /** The part of `Bun.Terminal` used here; the pinned Bun types predate it. */
@@ -142,6 +151,23 @@ export function spawnPty(options: PtyOptions): Pty {
     return { code, signal: child.signalCode };
   })();
 
+  let hangingUp: Promise<void> | undefined;
+  const hangUp = async (): Promise<void> => {
+    // Read before any signal: a child whose parent ended cannot be found.
+    const rows = await readProcessTable();
+    // A leader that was reaped may have given its pid to another process.
+    const tree = leaderExited ? [] : processTree(rows, child.pid);
+    signalRows(tree, "SIGHUP");
+    await stop();
+    const survivors = async () => {
+      const live = new Set((await readProcessTable()).map((row) => `${row.pid}@${row.startSec}`));
+      return tree.filter((row) => live.has(`${row.pid}@${row.startSec}`));
+    };
+    if ((await survivors()).length === 0) return;
+    await clock.sleep(KILL_GRACE_MS);
+    signalRows(await survivors(), "SIGKILL");
+  };
+
   return {
     pid: child.pid,
     exited,
@@ -152,5 +178,6 @@ export function spawnPty(options: PtyOptions): Pty {
       if (!device.closed) device.resize(cols, rows);
     },
     kill: stop,
+    hangUp: () => (hangingUp ??= hangUp()),
   };
 }
