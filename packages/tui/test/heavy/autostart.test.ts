@@ -209,6 +209,26 @@ describe("ensureServer", () => {
     }
   });
 
+  test("a port taken on one address names that address", async () => {
+    const { home, cleanup } = await makeAutostartHome();
+    try {
+      const error = await ensureServer({
+        home,
+        fetch: async () => { throw new Error("refused"); },
+        spawn: (log) => {
+          // An explicit, non-default port: the test only reads the error's words.
+          writeFileSync(log, "operad: serve: starting the http server: http: cannot listen on 192.168.6.64 port 9000: Failed to start server. Is port 9000 in use?\n");
+          return { exited: Promise.resolve(1) };
+        },
+        wait: noWait,
+        lockHeld: () => false,
+      }).catch((e: unknown) => e);
+      expect((error as Error).message).toMatch(/port \d+ on 192\.168\.6\.64 is in use and does not answer/);
+    } finally {
+      await cleanup();
+    }
+  });
+
   test("a child that lost the home lock to a serve that never answers says that serve runs and does not answer", async () => {
     const { home, cleanup } = await makeAutostartHome();
     try {

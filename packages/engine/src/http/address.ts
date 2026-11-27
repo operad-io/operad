@@ -5,6 +5,7 @@
  */
 
 import { isIP } from "node:net";
+import { networkInterfaces } from "node:os";
 import { ConfigError } from "../config/config.ts";
 
 /** The kinds of address an `http.listen` entry may be. */
@@ -139,4 +140,47 @@ export function validateListenAddresses(listen: readonly string[]): void {
       throw new ConfigError(refusal(address));
     }
   }
+}
+
+/** What `os.networkInterfaces` answers, as far as the addresses go; a test supplies its own. */
+export type NetworkInterfaceList = () => Readonly<
+  Record<string, readonly { readonly address: string }[] | undefined>
+>;
+
+/** One spelling per address, so two ways of writing an IPv6 address compare equal. */
+function comparable(address: string): string {
+  const [bare = ""] = address.split("%");
+  return String(ipv6Value(bare) ?? bare);
+}
+
+/** The configured addresses, split by whether this machine has them at this moment. */
+export function splitListenAddresses(
+  listen: readonly string[],
+  interfaces: NetworkInterfaceList = networkInterfaces,
+): { readonly present: readonly string[]; readonly missing: readonly string[] } {
+  const own = new Set(
+    Object.values(interfaces()).flatMap((entries) =>
+      (entries ?? []).map((entry) => comparable(entry.address)),
+    ),
+  );
+  // The machine always has its wildcard and loopback addresses, listed or not.
+  const isPresent = (address: string): boolean =>
+    ["0.0.0.0", "::", "localhost"].includes(address) ||
+    listenAddressKind(address) === "loopback" ||
+    own.has(comparable(address));
+  return {
+    present: listen.filter(isPresent),
+    missing: listen.filter((address) => !isPresent(address)),
+  };
+}
+
+/** The warning for a configured address this machine does not have. */
+export function missingAddressMessage(address: string): string {
+  return `${address} is not on this machine now; serve does not listen there; restart serve once it is`;
+}
+
+/** Why serve cannot start when the machine has none of the configured addresses. */
+export function noListenAddressMessage(missing: readonly string[]): string {
+  const verb = missing.length === 1 ? "is" : "are";
+  return `${missing.join(", ")} ${verb} not on this machine now; there is no address left to listen on`;
 }
