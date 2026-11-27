@@ -100,3 +100,6 @@ so the caller lists no step and a harness it does not load costs nothing. The
 step owns only the provider login and the settings that name the chosen model
 are the caller's.
 
+### D14: A harness says whether its agent is on the machine
+
+A harness plugin may declare `agentMissing(settings, context)`: one sentence saying how to set its agent up when the agent is not on this machine, and nothing when it is. It is asked each time, so an agent installed while `serve` runs is found. While it answers a sentence the plugin stays loaded and its steps exist, but the harness is not set up: it is not among the agents offered to a plugin, its sign-in and model list are not asked, and its check passes with the one missing item `agent` (ADR 0010 D7) instead of failing. A harness answers a sentence only for its default command: `claude`, `codex` or `radian` not on `PATH`, and for `pi` neither on `PATH` nor installed in the home. A command the owner set is judged by the check, so a wrong one is reported as a failure. The reason: every shipped harness that can load without its agent is on in a new home (ADR 0012 D2), and an agent a person does not have must not be chosen for a chat, ask for a login or report a failure at each start.

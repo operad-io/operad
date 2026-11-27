@@ -22,7 +22,7 @@ The plugin long-polls `getUpdates`, and for each message calls `ctx.emit` with `
 
 ### D4: Settings and secret
 
-The plugin is `telegram`. The token is the secret `token` (`operad secret set telegram token`) and never enters a fact or a log. The settings are `users` (the Telegram user ids allowed to use it), `bot` (the bot used to open a chat automatically, default `default`) and `pending` (which plugins' pending items are also sent to Telegram besides the bound chats', default empty; `["dev"]` lets merge and confirm be answered in Telegram).
+The plugin is `telegram`. The token is the secret `token` (`operad secret set telegram token`) and never enters a fact or a log. Without a token the plugin is not set up: `serve` starts nothing for it, writes one line to the plugin's own log and reports no failure or pending item, and the plugin's check reports the missing item `token` (ADR 0010 D7). A token takes effect when `serve` next starts. The settings are `users` (the Telegram user ids allowed to use it), `bot` (the bot used to open a chat automatically, default `default`) and `pending` (which plugins' pending items are also sent to Telegram besides the bound chats', default empty; `["dev"]` lets merge and confirm be answered in Telegram).
 
 ### D5: Binding is automatic
 
