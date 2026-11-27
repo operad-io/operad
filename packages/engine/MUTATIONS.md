@@ -1499,3 +1499,10 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0809-M4 | packages/engine/src/http/server.ts | a failed bind passed on the runtime's error without the address | `a port taken on an address this machine has fails and names the address` |
 | T-0809-M5 | packages/engine/src/http/address.ts | loopback counted as present only when an interface listed it | `an address that is not on this machine is skipped with a warning` |
 | T-0809-M6 | packages/engine/src/http/address.ts | addresses were compared as written, so another spelling of an IPv6 address counted as missing | `an address that is not on this machine is skipped with a warning` |
+
+## T-0813 — the guide of a plugin config.json does not name
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0813-M6 | packages/engine/src/plugin/load.ts | an offered plugin the file does not name was not counted as off | `an offered plugin that config.json does not name yet has its guide readable; a named one that is on does not` |
+| T-0813-M7 | packages/engine/src/plugin/load.ts, registry.ts | a name neither configured nor offered got an offered module's guide | `an offered plugin that config.json does not name yet has its guide readable; a named one that is on does not` |

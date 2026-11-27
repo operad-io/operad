@@ -488,3 +488,10 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 | T-0812-M11 | packages/cli/src/plugin-description.ts | the home's plugin project was not read | `a package in the home's plugin project gives its description on one line` |
 | T-0812-M12 | packages/cli/src/plugin-description.ts | a loose path plugin took the `package.json` of the directory above | `a path plugin takes the package.json beside it or above its src, and no other` |
 | T-0812-M13 | packages/dev/package.json | dev's description went back to naming itself | `every shipped plugin's package says in one line what it gives` |
+
+## T-0813 — the guide of a plugin config.json does not name
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0813-M1 | packages/cli/src/main.ts | opening the home did not share the optional plugins | `the tools opened in an agent's process answer it once the home was opened` |
+| T-0813-M5 | packages/cli/src/main.ts | `operad mcp` did not pass the optional plugins to the tools server | ``operad mcp` answers it` |

@@ -2,7 +2,14 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { guideBody, loadPluginRegistry, PluginRegistry } from "../../src/index.ts";
+import {
+  guideBody,
+  loadPluginRegistry,
+  parseOptionalPlugins,
+  PluginRegistry,
+  shareOptionalPlugins,
+  sharedOptionalPlugins,
+} from "../../src/index.ts";
 import { cleanupTempRoots, def, tempRoot } from "./support.ts";
 
 afterAll(cleanupTempRoots);
@@ -136,6 +143,18 @@ describe("the setup reader", () => {
     const reader = registry.setupReader();
     expect(await reader.list()).toEqual([{ plugin: "guided", enabled: false }]);
     expect((await reader.get("guided"))?.missing.map((item) => item.name)).toEqual(["enable"]);
+    // Neither configured nor offered: still no guide.
+    expect(await reader.get("ghost")).toBeUndefined();
+  });
+
+  test("the offered list a process shares is the one it reads back; other text is none", () => {
+    const env: Record<string, string | undefined> = {};
+    expect(sharedOptionalPlugins(env)).toBeUndefined();
+    shareOptionalPlugins({ guided: GUIDED }, env);
+    expect(sharedOptionalPlugins(env)).toEqual({ guided: GUIDED });
+    expect(parseOptionalPlugins("not json")).toBeUndefined();
+    expect(parseOptionalPlugins('["a"]')).toBeUndefined();
+    expect(parseOptionalPlugins('{"a":1,"b":"c"}')).toEqual({ b: "c" });
   });
 
   test("a command and an action are given the reader", async () => {
