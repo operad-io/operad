@@ -530,3 +530,14 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 | T-0814-M11 | packages/cli/src/login-command.ts | `bot login` went on waiting after the login ended | `operad bot login > stops waiting when the login ends without a question` |
 | T-0814-M12 | packages/cli/src/login-command.ts | the end of the wait time did not end the command | `operad bot login > stops waiting after 30 seconds without a question` |
 | T-0814-M13 | packages/cli/src/login-command.ts | the log was opened without change events, so the question `serve` asked was never seen | `operad bot login > waits for the question serve asks and prints its command on its own line` |
+
+## T-0816 — every shipped plugin on in a new home
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0816-M1 | packages/cli/src/defaults.ts | a new home left `telegram` off | `the distribution's defaults > a fresh home turns every shipped plugin on, and lists the lead actions explicitly` |
+| T-0816-M2 | packages/cli/src/defaults.ts | `dev` came before `pool`, which it needs | `the distribution's defaults > every plugin a plugin of a fresh home needs is on and listed before it` |
+| T-0816-M3 | packages/cli/src/defaults.ts | the agents found no longer came first among the harnesses | `the distribution's defaults > a fresh home puts the agents it finds first among the harnesses` |
+| T-0816-M4 | packages/cli/src/main.ts | init installed pi's library beside another agent | ``operad init` finds the agent on PATH > a new home with another agent installs no pi` |
+| T-0816-M5 | packages/cli/src/main.ts | doctor was not told of the agents that are not set up | `serve on a new home with nothing set up > with only a signed-in claude, nothing waits: the pi that is not there asks for no login` |
+| T-0816-M6 | packages/cli/src/doctor.ts | a home with no agent set up passed doctor | `operad doctor > an agent that is not set up is no problem, unless no agent is set up` |

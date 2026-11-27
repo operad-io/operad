@@ -1753,3 +1753,9 @@ the row fields.
 |---|---|---|---|
 | T-0810-M62 | packages/dev/src/integrate.ts | cleanup released no worktree | `a removed folder > dev's cleanup stops a task worktree's terminals before it removes the worktree` |
 | T-0810-M63 | packages/dev/src/integrate.ts | cleanup released the worktree only after its hooks ran | `a removed folder > dev's cleanup stops a task worktree's terminals before it removes the worktree` |
+
+## T-0816 — every shipped plugin on in a new home
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0816-M20 | packages/dev/src/settings.ts | the default worker ignored which agent is on the machine | `the agent of a repository that names no worker > passes over an enabled harness whose agent is not on the machine` |

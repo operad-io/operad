@@ -349,3 +349,9 @@ setup it depends on, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0656-M1 | packages/harness/claude/src/worker.ts | a rejected rate limit carried no `reported_at`, so dev counted its reset from when it read the result | `a rejected rate limit carries the time until its reset` |
+
+## T-0816 — every shipped plugin on in a new home
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0816-M15 | packages/harness/claude/src/index.ts | claude never said its agent was missing | `whether claude's agent is on this machine > with no claude on PATH it says how to set it up` |

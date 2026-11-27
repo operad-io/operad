@@ -123,3 +123,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0631-M1 | packages/harness/radian/src/index.ts | kept radian's own `resultFor`, which checks the exit code before the missing result and has no signal branch (the old copy) | `radian/agent > radian's mapping and the shared one > a run killed by a signal is interrupted, as the shared mapping says` (`failed` instead of `interrupted`) and `radian/agent > radian's mapping and the shared one > a non-zero exit without a Result is no_result, as the shared mapping says` (`exit` instead of `no_result`) |
+
+## T-0816 — every shipped plugin on in a new home
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0816-M19 | packages/harness/radian/src/index.ts | radian never said its agent was missing | `whether radian's agent is on this machine > with no radian on PATH it says how to set it up` |

@@ -1536,3 +1536,14 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0814-M4 | packages/engine/src/kernel/decide.ts | the wait after the grace dropped the command | `ctx.ask (memory) > a question's command is on the pending item while it is open and after its grace` |
 | T-0814-M5 | packages/engine/src/plugin/registry.ts | a command was not checked before the question was asked | `command validation > an empty, many-line, escaped or overlong command is refused before anyone is asked` |
 | T-0814-M6 | packages/engine/src/runner/step-worker.ts | a step in a worker thread did not pass the command on | `ctx.ask (file) > a question's command is on the pending item while it is open and after its grace` |
+
+## T-0816 — every shipped plugin on in a new home
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0816-M7 | packages/engine/src/config/config.ts | init overwrote an existing `config.json` | ``operad init` finds the agent on PATH > a home with a config.json keeps its plugins and switches on upgrade` |
+| T-0816-M8 | packages/engine/src/plugin/registry.ts | a harness whose agent is missing was still offered | `a harness plugin whose agent is missing > is not offered as an agent, though its step stays loaded` |
+| T-0816-M9 | packages/engine/src/plugin/registry.ts | a missing agent was asked for its sign-in | `a harness plugin whose agent is missing > is not asked for its sign-in or its models` |
+| T-0816-M10 | packages/engine/src/plugin/registry.ts | a missing agent was asked for its models | `a harness plugin whose agent is missing > is not asked for its sign-in or its models` |
+| T-0816-M11 | packages/engine/src/plugin/registry.ts | a missing agent's own check ran | `a harness plugin whose agent is missing > passes its check as not set up, and the plugin's own check does not run` |
+| T-0816-M12 | packages/engine/src/plugin/validate.ts | any kind of plugin could declare `agentMissing` | `a harness plugin whose agent is missing > only a harness plugin declares it` |

@@ -352,3 +352,10 @@ _The second "## T-0766" section above repeats the rows of the first; the rows of
 |---|---|---|---|
 | T-0814-M1 | packages/harness/pi/src/login.ts | the provider question carried no command | `pi/login > the first question names the bundled pi when pi is not on PATH` |
 | T-0814-M2 | packages/harness/pi/src/login.ts | the sentence did not say that logging in here takes an API key | `pi/login > the first question offers API-key routes only and tells where a ChatGPT plan logs in` |
+
+## T-0816 — every shipped plugin on in a new home
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0816-M17 | packages/harness/pi/src/index.ts | pi never said its agent was missing, so a claude home asked for a pi login | `serve on a new home with nothing set up > with only a signed-in claude, nothing waits: the pi that is not there asks for no login` |
+| T-0816-M18 | packages/harness/pi/src/pi-install.ts | the pi installed in the home did not count | `whether pi's agent is on this machine > the pi operad installed in the home counts` |
