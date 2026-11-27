@@ -24,4 +24,4 @@ The iOS app is the operad app and connects only to `operad serve`: it keeps no s
 
 ### D4: A running plugin may serve its own routes and events
 
-A plugin that `operad serve` started may answer requests under `/v1/<plugin name>` and send events on the `/v1/events` stream to the streams that name it in their query, each event's name starting with the plugin's. The same token guards them, and serve tells the plugin whether a request came over loopback from this machine through no proxy. A built-in endpoint is never answered by a plugin.
+A plugin that `operad serve` started may answer requests under `/v1/<plugin name>` and send events on the `/v1/events` stream to the streams that name it in their query, each event's name starting with the plugin's. The same token guards them, and serve tells the plugin whether a request came over loopback from this machine through no proxy. A built-in endpoint is never answered by a plugin. When serve cannot load the trigger rules it starts only the plugins that declare they send no events, so their routes are still answered.
