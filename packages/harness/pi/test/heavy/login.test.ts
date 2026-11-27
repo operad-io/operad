@@ -127,13 +127,15 @@ function waitForLog(log: LogBackend, check: () => Promise<boolean>): Promise<voi
 }
 
 async function setup(
-  pi: Record<string, unknown> = {
+  pi: Record<string, unknown> | ((root: string) => Record<string, unknown>) = {
     models: ["openai-codex/a", "openai-codex/b", "openai/m"],
     model: "openai-codex/b",
   },
+  piAgentDir?: string,
 ) {
   const root = await tempRoot();
   const plugin = createPiHarnessPlugin({
+    piAgentDir,
     loginCommand: process.execPath,
     loginArgs: [FAKE],
     loginTimeoutMs: 20_000,
@@ -143,7 +145,7 @@ async function setup(
     home: root,
     cwd: root,
     store: new MemoryPluginStore({ root: join(root, "store") }),
-    settings: { pi },
+    settings: { pi: typeof pi === "function" ? pi(root) : pi },
   });
   const log = openLog({ path: join(root, "log", "log.sqlite") });
   const info = await log.startRun(flow.name, OBJECT);
@@ -328,6 +330,45 @@ describe("pi/login", () => {
     } finally {
       await server.stop(true);
       await log.close();
+    }
+  }, 30_000);
+
+  test("with its own credentials file, the list after the login has the new provider", async () => {
+    // As pi does, this one reads the credentials of the folder it is given.
+    const bin = await tempRoot();
+    const pi = join(bin, "pi");
+    writeFileSync(
+      pi,
+      `#!/bin/sh\necho 'provider model'\nif grep -q '"openai"' "$PI_CODING_AGENT_DIR/auth.json" 2>/dev/null; then echo 'openai fresh'; fi\n`,
+    );
+    chmodSync(pi, 0o755);
+    const own = await tempRoot();
+    const env = await setup((root) => ({ command: pi, authPath: join(root, "creds.json") }), join(own, "agent"));
+    try {
+      const run = env.runner(new FakeTimer()).run();
+      const answer = async (n: number, choice: string | undefined, text?: string) => {
+        await env.opened(n);
+        const waitId = (await listPending(env.log, env.registry))[0]?.waitId;
+        if (waitId === undefined) throw new Error("no wait");
+        await recordAnswer({
+          log: env.log,
+          home: env.root,
+          runId: env.runId,
+          waitId,
+          choice,
+          ...(text === undefined ? {} : { answers: [{ id: "value", text }] }),
+          actor: ACTOR,
+        });
+      };
+      await answer(1, "openai");
+      await answer(2, undefined, "sk-not-a-real-key");
+      const asked = await Promise.race([env.opened(3).then(() => true), run.then(() => false)]);
+      expect(asked).toBe(true);
+      expect((await listPending(env.log, env.registry))[0]?.choices).toEqual(["openai/fresh"]);
+      await answer(3, "openai/fresh");
+      expect(await run).toBe("ended");
+    } finally {
+      await env.log.close();
     }
   }, 30_000);
 

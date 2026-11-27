@@ -5,8 +5,18 @@
  * needs a list before one exists can wait for that refresh.
  */
 
-import { readFileSync, statSync } from "node:fs";
-import { join } from "node:path";
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+} from "node:fs";
+import { dirname, join } from "node:path";
 import { isRecord, type HarnessModelCapability, type HarnessModelInfo } from "@operad-io/engine";
 import { writeJsonAtomic } from "@operad-io/engine/platform";
 
@@ -129,6 +139,16 @@ export interface PiModelListOptions {
   readonly registryPath?: string | undefined;
   /** Test seam: reads a file as text; defaults to `readFileSync(path, "utf8")`. */
   readonly readFile?: ((path: string) => string) | undefined;
+  /** The files pi is made to read; absent when the credentials file is pi's default. */
+  readonly files?: PiListFiles | undefined;
+}
+
+/** What `pi --list-models` reads when a credentials file is configured. */
+export interface PiListFiles {
+  /** pi's own agent folder, which holds its settings and extensions. */
+  readonly agentDir: string;
+  readonly authPath: string;
+  readonly modelsPath: string;
 }
 
 interface KeptRead {
@@ -320,11 +340,51 @@ async function textOf(stream: unknown): Promise<string> {
   return stream instanceof ReadableStream ? await new Response(stream).text() : "";
 }
 
+/** Makes `at` a link to `target`; a link that already leads there stays. */
+function relink(target: string, at: string): void {
+  const found = lstatSync(at, { throwIfNoEntry: false });
+  if (found?.isSymbolicLink() === true && readlinkSync(at) === target) return;
+  // Removes a link or what pi made here, never what a link leads to.
+  rmSync(at, { recursive: true, force: true });
+  symlinkSync(target, at);
+}
+
+/**
+ * pi has no option for its credentials file, only for the folder it reads
+ * everything from (`PI_CODING_AGENT_DIR`). This makes such a folder under the
+ * operad home: links to what pi's own folder holds, with the credentials file,
+ * the models file and the registry store beside it replaced by the configured
+ * ones. pi locks and writes a linked file as the file it leads to.
+ */
+function listAgentDir(home: string, files: PiListFiles): string {
+  const dir = join(home, "harness", "pi", "list-agent");
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const configured: Readonly<Record<string, string>> = {
+    "auth.json": files.authPath,
+    "models.json": files.modelsPath,
+    "models-store.json": join(dirname(files.modelsPath), "models-store.json"),
+  };
+  const own = existsSync(files.agentDir) ? readdirSync(files.agentDir) : [];
+  for (const name of own) {
+    if (!Object.hasOwn(configured, name)) relink(join(files.agentDir, name), join(dir, name));
+  }
+  for (const [name, target] of Object.entries(configured)) {
+    if (existsSync(target)) relink(target, join(dir, name));
+    else rmSync(join(dir, name), { force: true });
+  }
+  return dir;
+}
+
 /** Asks pi once. Undefined means it failed, was killed, or answered with an error. */
 async function probe(options: PiModelListOptions): Promise<readonly PiCatalogueRow[] | undefined> {
   let child: ReturnType<typeof Bun.spawn>;
   try {
+    const env =
+      options.files === undefined
+        ? undefined
+        : { ...process.env, PI_CODING_AGENT_DIR: listAgentDir(options.home, options.files) };
     child = Bun.spawn([options.command, "--list-models"], {
+      ...(env === undefined ? {} : { env }),
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",

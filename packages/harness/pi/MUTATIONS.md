@@ -369,3 +369,7 @@ _The second "## T-0766" section above repeats the rows of the first; the rows of
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0822-M13 | packages/harness/pi/src/login.ts | the model choice read the list kept from before the login | `pi/login > the model choice asks pi again, not the list kept from before the login` |
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0824-M2 | packages/harness/pi/src/model-list.ts | `pi --list-models` was not given the configured credentials file, as before the fix | `pi/login > with its own credentials file, the list after the login has the new provider`; `the models pi declares > a configured credentials file is read with pi's other files, and none of them is changed` |
