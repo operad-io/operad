@@ -508,3 +508,9 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0810-M68 | packages/cli/src/plugin-description.ts | `terminal` had no description for a home that has not installed it | `plugin descriptions > a plugin installed on enable is described before its package is there, in the package's words` |
+
+## T-0817 — what the reviews of the terminal tasks found
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0817-M27 | packages/cli/src/main.ts | serve started no plugin when the trigger rules could not be loaded | `serve whose trigger rules cannot be loaded still serves terminals` |

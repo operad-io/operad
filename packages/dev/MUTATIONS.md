@@ -1753,3 +1753,11 @@ the row fields.
 |---|---|---|---|
 | T-0810-M62 | packages/dev/src/integrate.ts | cleanup released no worktree | `a removed folder > dev's cleanup stops a task worktree's terminals before it removes the worktree` |
 | T-0810-M63 | packages/dev/src/integrate.ts | cleanup released the worktree only after its hooks ran | `a removed folder > dev's cleanup stops a task worktree's terminals before it removes the worktree` |
+
+## T-0817 — what the reviews of the terminal tasks found
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0817-M1 | packages/dev/src/integrate.ts | a hook that runs `git worktree remove` without the variable released nothing | `a removed folder > dev's cleanup stops both worktrees' terminals before a hook that runs git worktree remove` |
+| T-0817-M2 | packages/dev/src/integrate.ts | cleanup did not release the checking worktree | `a removed folder > dev's cleanup stops both worktrees' terminals before a hook that names $OPERAD_WORKTREE`, `a removed folder > dev's cleanup stops both worktrees' terminals before a hook that runs git worktree remove` |
+| T-0817-M3 | packages/dev/src/gate.ts | the checking worktree was made again without releasing it | `a removed folder > dev making a checking worktree again stops its terminals first` |

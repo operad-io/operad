@@ -1521,3 +1521,19 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0810-M59 | packages/engine/src/platform/folder-holds.ts | a release stopped a process that is not its holder's child | `folder holds > a hold whose process is not its holder's child is dropped, and nothing is signaled` |
 | T-0810-M60 | packages/engine/src/platform/folder-holds.ts | a release matched folders by name prefix | `folder holds > releasing a folder stops the trees held in it and below it, and tells their holders` |
 | T-0810-M61 | packages/engine/src/platform/folder-holds.ts | a release that failed threw | `folder holds > a release never fails: no list, a broken entry or an unreadable table` |
+
+## T-0817 — what the reviews of the terminal tasks found
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0817-M4 | packages/engine/src/platform/pty.ts | a hang up looked only below the shell, not for what carries the marker | `after the shell exited > a hang up stops the job it left in another process group` |
+| T-0817-M5 | packages/engine/src/platform/folder-holds.ts | a release ignored a hold's marker | `after the shell exited > a release stops the job held by the terminal's marker` |
+| T-0817-M6 | packages/engine/src/platform/process-tree.ts | daemons were stopped with the rest | `after the shell exited > a process that left the terminal to be a daemon is not stopped` |
+| T-0817-M7 | packages/engine/src/platform/pty.ts | a hang up that could not list the processes left the group running | `after the shell exited > a hang up that cannot read the processes still stops the group, and is tried again` |
+| T-0817-M8 | packages/engine/src/platform/pty.ts | a rejected hang up was kept | `after the shell exited > a hang up that cannot read the processes still stops the group, and is tried again` |
+| T-0817-M16 | packages/engine/src/http/server.ts | a snapshot event counted toward the byte limit | `what a reader is given on joining > is held whatever its size, and does not count toward the byte limit` |
+| T-0817-M23 | packages/engine/src/plugin/registry.ts | a source was given no way to ask for a harness's command | `serve without trigger rules > starts only the plugins that say they need none, which can ask for a harness's command` |
+| T-0817-M24 | packages/engine/src/plugin/registry.ts | every plugin started without trigger rules | `serve without trigger rules > starts only the plugins that say they need none, which can ask for a harness's command` |
+| T-0817-M25 | packages/engine/src/plugin/validate.ts | a plugin of any kind could declare `interactiveCommand` | `a harness plugin's interactiveCommand > only a harness plugin declares one` |
+| T-0817-M28 | packages/engine/src/http/address.ts | `Via` was not a forwarding header | `a request from this machine > is not one from another address, to another name, or through a proxy` |
+| T-0817-M29 | packages/engine/src/http/address.ts | `X-Forwarded-*` and `CF-*` were not forwarding headers | `a request from this machine > is not one from another address, to another name, or through a proxy` |

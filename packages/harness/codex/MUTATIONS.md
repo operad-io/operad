@@ -187,3 +187,9 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 |---|---|---|---|
 | T-0709-M4 | packages/harness/codex/src/app-server.ts | `thread/resume` no longer asked to leave the earlier turns out | `codex/agent: resume > a resumed run asks for the thread without its turns, so no image data comes back` |
 | T-0709-M5 | packages/harness/codex/src/index.ts | a dropped line was not written to the step's log | `codex/agent: resume > an event line past the limit, an image in a result, is logged as skipped and the run goes on` |
+
+## T-0817 — what the reviews of the terminal tasks found
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0817-M31 | packages/harness/codex/src/index.ts | a person's command kept `app-server` | `codex's command for a person > is the command setting without app-server, and none without it` |
