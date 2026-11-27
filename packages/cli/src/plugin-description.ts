@@ -13,6 +13,7 @@ import { installedPackageFile } from "@operad-io/engine";
  */
 export const UNINSTALLED_DESCRIPTIONS: Readonly<Record<string, string>> = {
   "@operad-io/harness-claude": "chats and tasks run by Claude Code",
+  "@operad-io/terminal": "terminals in your repositories that keep running when you close their window",
 };
 
 function manifestIn(directory: string): Record<string, unknown> | undefined {

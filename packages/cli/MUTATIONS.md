@@ -502,3 +502,9 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 |---|---|---|---|
 | T-0810-M66 | packages/cli/src/main.ts | only `claude` of the install-on-enable plugins was installed again, so enabling `terminal` installed nothing | `publishing and installing the packages > enabling terminal from the packed tarballs installs its package, which then loads` |
 | T-0810-M67 | packages/cli/src/main.ts | only `claude`'s install omitted optional packages, so installing `terminal` brought back the other plugins' optional ones | `publishing and installing the packages > enabling terminal from the packed tarballs installs its package, which then loads` |
+
+## T-0810 — terminal is described before it is installed
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0810-M68 | packages/cli/src/plugin-description.ts | `terminal` had no description for a home that has not installed it | `plugin descriptions > a plugin installed on enable is described before its package is there, in the package's words` |

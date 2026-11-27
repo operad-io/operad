@@ -1,7 +1,7 @@
 {
   "name": "@operad-io/terminal",
   "version": "0.4.1",
-  "description": "operad: terminals that serve keeps, on this machine",
+  "description": "terminals in your repositories that keep running when you close their window",
   "type": "module",
   "exports": {
     ".": "./src/index.ts"

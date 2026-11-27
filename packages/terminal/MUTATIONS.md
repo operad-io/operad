@@ -52,3 +52,9 @@ the row fields.
 | T-0810-M42 | packages/terminal/src/host.ts | a deleted group stayed on its terminals | `groups > deleting a group leaves its terminals running, in no group` |
 | T-0810-M43 | packages/terminal/src/host.ts | a group was not removed from the store | `groups > are created, renamed and deleted` |
 | T-0810-M44 | packages/terminal/src/host.ts | groups were not written to the store | `groups > are created, renamed and deleted`, `groups > take terminals of any folder, one group for each, at the start or after` |
+
+## T-0810 — what the plugin list says terminal gives
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0810-M69 | packages/terminal/package.json | the package's description was written about operad, not about what the plugin gives | `plugin descriptions > every shipped plugin's package says in one line what it gives`, `plugin descriptions > a plugin installed on enable is described before its package is there, in the package's words` |
