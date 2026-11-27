@@ -145,6 +145,11 @@ export function portInUse(text: string): boolean {
   return /Failed to start server|EADDRINUSE|address already in use|port \d+ in use/i.test(text);
 }
 
+/** The address a serve's log names as the one it could not listen on, if it names one. */
+function failedAddress(text: string): string | undefined {
+  return /cannot listen on (\S+) port \d+/.exec(text)?.[1];
+}
+
 /** How many bytes a log holds now; a log that cannot be read holds none. */
 function logSize(log: string): number {
   try {
@@ -273,9 +278,12 @@ export async function ensureServer(options: EnsureServerOptions): Promise<string
   for (;;) {
     if (exitCode !== undefined && !adopted) {
       if (!lockCheck(serveLockPath(home))) {
-        if (portInUse(readSince(log, logBefore))) {
+        const written = readSince(log, logBefore);
+        if (portInUse(written)) {
+          const address = failedAddress(written);
+          const where = address === undefined ? "" : ` on ${address}`;
           throw new TuiStartError(
-            `operad serve could not start: port ${config.http.port} is in use and does not answer on ${url}; another program may hold the port; log ${log}:\n${tailOf(log)}`,
+            `operad serve could not start: port ${config.http.port}${where} is in use and does not answer on ${url}; another program may hold the port; log ${log}:\n${tailOf(log)}`,
           );
         }
         throw new TuiStartError(

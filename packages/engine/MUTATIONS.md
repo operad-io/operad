@@ -1466,3 +1466,14 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0791-M1 | packages/engine/src/plugin/registry.ts | a standing failure after the drain returned an empty list again | `a late failure keeps the items earlier plugins already gave` |
+
+## T-0809 — serve skips a listen address this machine does not have
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0809-M1 | packages/engine/src/http/server.ts | every configured address was bound, the missing one included | `an address that is not on this machine is skipped with a warning` |
+| T-0809-M2 | packages/engine/src/http/server.ts | a skipped address was not logged | `an address that is not on this machine is skipped with a warning` |
+| T-0809-M3 | packages/engine/src/http/server.ts | a start with no address left went on instead of failing | `a start with no address left on this machine fails and says why` |
+| T-0809-M4 | packages/engine/src/http/server.ts | a failed bind passed on the runtime's error without the address | `a port taken on an address this machine has fails and names the address` |
+| T-0809-M5 | packages/engine/src/http/address.ts | loopback counted as present only when an interface listed it | `an address that is not on this machine is skipped with a warning` |
+| T-0809-M6 | packages/engine/src/http/address.ts | addresses were compared as written, so another spelling of an IPv6 address counted as missing | `an address that is not on this machine is skipped with a warning` |

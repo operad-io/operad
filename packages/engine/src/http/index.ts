@@ -1,8 +1,12 @@
 export {
   isAllowedListenAddress,
   listenAddressKind,
+  missingAddressMessage,
+  noListenAddressMessage,
+  splitListenAddresses,
   validateListenAddresses,
   type ListenAddressKind,
+  type NetworkInterfaceList,
 } from "./address.ts";
 export type { PluginAdmin, PluginInfo, PluginOrigin, PluginSetup, PluginSwitchOptions } from "./plugins.ts";
 export { LINK_SCHEME, objectLink, pairLink } from "./link.ts";

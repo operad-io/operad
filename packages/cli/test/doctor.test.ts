@@ -48,6 +48,23 @@ describe("operad doctor", () => {
     );
   });
 
+  test("a listen address this machine lacks is warned about, and is a problem only when none is left", async () => {
+    const some = await runDoctor(
+      healthy({ listenAddresses: async () => ({ present: ["127.0.0.1"], missing: ["100.71.164.8"] }) }),
+    );
+    expect(some.ok).toBe(true);
+    expect(formatDoctor(some)).toContain(
+      "ok       100.71.164.8 is not on this machine now; serve does not listen there; restart serve once it is\n",
+    );
+    const none = await runDoctor(
+      healthy({ listenAddresses: async () => ({ present: [], missing: ["100.71.164.8"] }) }),
+    );
+    expect(none.ok).toBe(false);
+    expect(formatDoctor(none)).toContain(
+      "problem  100.71.164.8 is not on this machine now; there is no address left to listen on -> operad serve\n",
+    );
+  });
+
   test("git not installed is an ok line with a note, and an installed git adds no line", async () => {
     const without = await runDoctor(healthy({ gitInstalled: () => false }));
     expect(without.ok).toBe(true);

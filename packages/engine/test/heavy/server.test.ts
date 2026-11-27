@@ -1833,6 +1833,91 @@ describe("http server", () => {
     await h.close();
   });
 
+  /** A listener that binds nothing and records what it was asked for. */
+  function recordingListener(bound: string[]): typeof Bun.serve {
+    return ((init: { hostname: string }) => {
+      bound.push(init.hostname);
+      return { port: 1, stop: async (): Promise<void> => undefined };
+    }) as unknown as typeof Bun.serve;
+  }
+
+  test("an address that is not on this machine is skipped with a warning", async () => {
+    const h = await makeHarness();
+    const bound: string[] = [];
+    const logs: string[] = [];
+    try {
+      const server = await startHttpServer({
+        home: h.home,
+        config: {
+          enabled: true,
+          port: 1,
+          // Loopback needs no interface entry; the Tailscale IPv6 one is listed in another spelling.
+          listen: ["127.0.0.1", "100.71.164.8", "192.168.6.64", "::1", "fd7a:115c:a1e0:0:0:0:0:1"],
+        },
+        views: h.views,
+        log: h.log,
+        registry: h.registry,
+        listener: recordingListener(bound),
+        interfaces: () => ({
+          en0: [{ address: "192.168.6.64" }],
+          utun0: [{ address: "fd7a:115c:a1e0::1" }],
+        }),
+        onLog: (message) => logs.push(message),
+      });
+      const expected = ["127.0.0.1", "192.168.6.64", "::1", "fd7a:115c:a1e0:0:0:0:0:1"];
+      expect(bound).toEqual(expected);
+      expect(server.urls).toHaveLength(expected.length);
+      expect(logs).toEqual([
+        "http: 100.71.164.8 is not on this machine now; serve does not listen there; restart serve once it is",
+      ]);
+      await server.stop();
+    } finally {
+      await h.close();
+    }
+  });
+
+  test("a start with no address left on this machine fails and says why", async () => {
+    const h = await makeHarness();
+    const bound: string[] = [];
+    try {
+      const error = await startHttpServer({
+        home: h.home,
+        config: { enabled: true, port: 1, listen: ["100.71.164.8", "192.168.6.64"] },
+        views: h.views,
+        log: h.log,
+        registry: h.registry,
+        listener: recordingListener(bound),
+        interfaces: () => ({}),
+      }).catch((caught: unknown) => caught);
+      expect((error as Error).message).toBe(
+        "http: 100.71.164.8, 192.168.6.64 are not on this machine now; there is no address left to listen on",
+      );
+      expect(bound).toEqual([]);
+    } finally {
+      await h.close();
+    }
+  });
+
+  test("a port taken on an address this machine has fails and names the address", async () => {
+    const h = await makeHarness();
+    const holder = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() });
+    try {
+      const port = holder.port ?? 0;
+      const error = await startHttpServer({
+        home: h.home,
+        config: { enabled: true, port, listen: ["127.0.0.1"] },
+        views: h.views,
+        log: h.log,
+        registry: h.registry,
+      }).catch((caught: unknown) => caught);
+      expect((error as Error).message).toStartWith(`http: cannot listen on 127.0.0.1 port ${port}: `);
+      expect((error as Error).message).toContain("in use");
+    } finally {
+      await holder.stop(true);
+      await h.close();
+    }
+  });
+
   test("refuses a request body larger than one mebibyte", async () => {
     const h = await makeHarness();
     try {

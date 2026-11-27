@@ -448,3 +448,10 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0802-M1 | packages/cli/src/defaults.ts | `defaultPluginModule` no longer mapped `cron` to `@operad-io/source-cron`, so a fresh home named a package that does not exist | ``operad init` finds the agent on PATH > a fresh home loads cron from its package, so routines is a known command` |
+
+## T-0809 — doctor names a listen address this machine does not have
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0809-M7 | packages/cli/src/doctor.ts | no line for a missing address while others were present | `a listen address this machine lacks is warned about, and is a problem only when none is left` |
+| T-0809-M8 | packages/cli/src/doctor.ts | no problem line when no listen address was present | `a listen address this machine lacks is warned about, and is a problem only when none is left` |

@@ -82,7 +82,7 @@
           "default": [
             "127.0.0.1"
           ],
-          "description": "IP literals: loopback, an RFC 1918 or link-local address, or a Tailscale address. Wildcards are refused."
+          "description": "IP literals: loopback, an RFC 1918 or link-local address, or a Tailscale address. Wildcards are refused. serve skips an address this machine does not have when it starts, and fails when it has none of them."
         }
       },
       "additionalProperties": false
