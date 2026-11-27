@@ -458,3 +458,21 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 | T-0809-M10 | packages/cli/src/main.ts | doctor asked serve on the first configured address, present or not | `a real home with a missing address listed first asks serve on the next one and warns` |
 | T-0809-M11 | packages/cli/src/main.ts | the real doctor environment gave no listen addresses, so no warning was printed | `a real home with a missing address listed first asks serve on the next one and warns` |
 | T-0809-M12 | packages/cli/src/main.ts | the listen addresses were checked with the HTTP interface turned off | `a real home with a missing address listed first asks serve on the next one and warns` |
+
+## T-0812 — the plugin list offers the shipped plugins and describes each
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0812-M1 | packages/cli/src/main.ts | the list gave only the configured plugins | `GET /v1/plugins lists each shipped optional plugin the file does not name, off` |
+| T-0812-M2 | packages/cli/src/main.ts | a shipped plugin the file keys by another name was offered again | `a shipped plugin the file keys by another name is not offered again` |
+| T-0812-M3 | packages/cli/src/main.ts | an offered row had no version | `GET /v1/plugins lists each shipped optional plugin the file does not name, off` |
+| T-0812-M4 | packages/cli/src/main.ts | enabling a plugin enabled none of the plugins it needs | `turning on a plugin the file does not name adds it and what it needs, and off keeps it` |
+| T-0812-M5 | packages/cli/src/main.ts | a configured row had no description | ``GET /v1/plugins lists what `operad plugin list` prints, with where each comes from`` |
+| T-0812-M6 | packages/cli/src/main.ts | an offered row had no description | `GET /v1/plugins lists each shipped optional plugin the file does not name, off` |
+| T-0812-M7 | packages/cli/src/main.ts | `plugin list` printed no description | `memory is added from the shipped package and listed as enabled` |
+| T-0812-M8 | packages/cli/src/main.ts | an install line was not put on the row being installed | `GET /v1/plugins carries the line an install is on before the file names it` |
+| T-0812-M9 | packages/cli/src/main.ts | `serve` did not give the registry the optional plugins, so an offered row had no guide | `GET /v1/plugins lists each shipped optional plugin the file does not name, off` |
+| T-0812-M10 | packages/cli/src/plugin-description.ts | a plugin not installed yet had no description | `a plugin installed on enable is described before its package is there, in the package's words` |
+| T-0812-M11 | packages/cli/src/plugin-description.ts | the home's plugin project was not read | `a package in the home's plugin project gives its description on one line` |
+| T-0812-M12 | packages/cli/src/plugin-description.ts | a loose path plugin took the `package.json` of the directory above | `a path plugin takes the package.json beside it or above its src, and no other` |
+| T-0812-M13 | packages/dev/package.json | dev's description went back to naming itself | `every shipped plugin's package says in one line what it gives` |
