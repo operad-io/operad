@@ -1,6 +1,7 @@
 export { definePlugin } from "./define-plugin.ts";
 export { AccessError, AskTimeoutError, messageOf, PluginError, StartRefusedError, StepNotLoadedError } from "./errors.ts";
 export { defaultOperadHome } from "./home.ts";
+export { HOME_FLOW_PREFIX } from "./home-flows.ts";
 export { KERNEL_VERBS, openHome, type KernelVerb, type OpenHomeOptions, type OpenedHome } from "./context.ts";
 export {
   addPackage,
@@ -23,6 +24,7 @@ export {
 } from "./load.ts";
 export type { LoadPluginRegistryOptions } from "./load.ts";
 export { createPluginLogger } from "./logger.ts";
+export { OPTIONAL_PLUGINS_ENV, parseOptionalPlugins, shareOptionalPlugins, sharedOptionalPlugins } from "./offer.ts";
 export { guideBody, PluginRegistry, splitActionName } from "./registry.ts";
 export type {
   ActionInfo,

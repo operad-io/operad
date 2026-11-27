@@ -166,6 +166,7 @@ function pendingItemMarkdown(item: PendingItem): string[] {
   const lines = [`## ${item.runId} (${item.flow})`];
   lines.push(`- step: ${item.step ?? "-"}`);
   lines.push(`- waiting: ${item.prompt}`);
+  if (item.command !== undefined) lines.push("```", item.command, "```");
   if (item.choices.length > 0) {
     lines.push(`- choices: ${item.choices.join(", ")}`);
     for (const choice of item.choices) {

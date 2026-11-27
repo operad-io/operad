@@ -27,6 +27,7 @@ function capture(): { io: CliIo; text(): string } {
 
 async function waitingHome(
   objects: readonly string[],
+  command?: string,
 ): Promise<string> {
   const root = await tempRoot();
   const home = join(root, "home");
@@ -52,6 +53,7 @@ async function waitingHome(
             step: "ask",
             prompt: "Approve?",
             choices: ["yes"],
+            ...(command === undefined ? {} : { command }),
             waitKind: "step",
             effectId: null,
           },
@@ -88,5 +90,23 @@ describe("operad pending shows the object's title", () => {
     expect(await main(["pending"], { home, io: out.io })).toBe(0);
     expect(out.text()).toContain("  gone\n");
     expect(out.text()).toContain("  waiting: Approve?");
+  });
+});
+
+describe("operad pending shows a question's command", () => {
+  test("alone on its own line, and as the item's command in --json", async () => {
+    const command = "'/home/a b/.bin/tool' auth login some-provider";
+    const home = await waitingHome(["item:one"], command);
+    const out = capture();
+    expect(await main(["pending"], { home, io: out.io })).toBe(0);
+    const lines = out.text().split("\n");
+    expect(lines[2]).toBe("  waiting: Approve?");
+    expect(lines[3]).toBe(`    ${command}`);
+    expect(lines[4]).toBe("  choices: yes");
+
+    const json = capture();
+    expect(await main(["pending", "--json"], { home, io: json.io })).toBe(0);
+    const items = JSON.parse(json.text()) as { command?: string }[];
+    expect(items[0]?.command).toBe(command);
   });
 });

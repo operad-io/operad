@@ -72,8 +72,67 @@ const plugin = definePlugin({
         };
       },
     },
+    {
+      name: "sign_in",
+      results: ["answered", "waiting"],
+      run: async (ctx) => {
+        await ctx.ask({ prompt: "Signed in?", choices: ["yes"], command: "tool auth login", graceSecs: 0 });
+        return { result: "answered" };
+      },
+    },
+    {
+      // A step's own waiting result, which nothing checks before the wait is made.
+      name: "unreadable",
+      results: ["waiting"],
+      run: () => ({
+        result: "waiting",
+        data: { waitId: "w1", prompt: "Signed in?", choices: ["yes"], command: "one\ntwo" },
+      }),
+    },
   ],
   flows: [
+    defineFlow({
+      name: "unreadable",
+      entry: "work",
+      steps: [
+        {
+          id: "work",
+          kind: "plugin",
+          params: { use: "probe/unreadable", params: {} },
+          replay: "safe",
+          next: { waiting: "person" },
+        },
+        {
+          id: "person",
+          kind: "wait_person",
+          params: { prompt: "Waiting?", choices: ["yes"] },
+          replay: "safe",
+          next: { yes: "done", interrupted: "done" },
+        },
+        { id: "done", kind: "end", params: { status: "done" }, replay: "safe" },
+      ],
+    }),
+    defineFlow({
+      name: "sign_in",
+      entry: "work",
+      steps: [
+        {
+          id: "work",
+          kind: "plugin",
+          params: { use: "probe/sign_in", params: {} },
+          replay: "safe",
+          next: { answered: "done", waiting: "person" },
+        },
+        {
+          id: "person",
+          kind: "wait_person",
+          params: { prompt: "Waiting?", choices: ["yes"] },
+          replay: "safe",
+          next: { yes: "done", interrupted: "done" },
+        },
+        { id: "done", kind: "end", params: { status: "done" }, replay: "safe" },
+      ],
+    }),
     single("explode", "probe/explode", { ok: "done", failed: "failed" }),
     single("stuck", "probe/stuck", { ok: "done", interrupted: "failed" }),
     single("echo", "probe/echo", { ok: "done" }),
@@ -175,6 +234,18 @@ describe("runFlow", () => {
     const done = await answer(run, wait.id, "stop", "not today");
     expect(done.end).toBe("failed");
     await expect(answer(done, wait.id, "go")).rejects.toThrow(/not waiting/);
+  });
+
+  test("a wait carries the command its question asked the person to run", async () => {
+    const run = await runFlow(plugin, "sign_in", local);
+    expect(run.status).toBe("waiting_person");
+    expect(run.wait?.command).toBe("tool auth login");
+  });
+
+  test("a command a step's result carries that cannot be read is left off the wait", async () => {
+    const run = await runFlow(plugin, "unreadable", local);
+    expect(run.wait?.prompt).toBe("Signed in?");
+    expect(run.wait?.command).toBeUndefined();
   });
 
   test("settings, secrets and the access profile reach the step", async () => {

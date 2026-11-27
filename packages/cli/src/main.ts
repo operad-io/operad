@@ -39,7 +39,10 @@ import {
   historyEntries,
   installedPackageFile,
   listPending,
+  listFlows,
+  type AskTimer,
   listRunning,
+  HOME_FLOW_PREFIX,
   type RunningItem,
   loadConfiguredPlugins,
   loadPlugin,
@@ -77,6 +80,7 @@ import {
   serve,
   serveLockPath,
   setPluginEnabled,
+  shareOptionalPlugins,
   splitActionName,
   startHttpServer,
   storeRootOf,
@@ -102,7 +106,8 @@ import {
   type ViewObject,
   type ViewRow,
 } from "@operad-io/engine";
-import { loginBotFor } from "@operad-io/bot";
+import { flowStarterFor } from "./start-flow.ts";
+import { loginAction, loginBotFor } from "@operad-io/bot";
 import { findGit, stopAllKeptWorkers } from "@operad-io/engine/platform";
 import { ChannelTypeError, runMcpServer } from "@operad-io/mcp";
 import {
@@ -133,6 +138,7 @@ import {
   serveStartFlags,
   startWithRetry,
 } from "./http-bind.ts";
+import { realLoginTimer, showLoginCommand } from "./login-command.ts";
 import { QrTooLongError, encodeQr, renderQr } from "./qr.ts";
 import {
   DEFAULT_STOP_TIMEOUT_SECS,
@@ -259,6 +265,8 @@ export interface MainOptions {
   readonly doctor?: DoctorEnv | undefined;
   /** Replaces the `bun add` command in a test for `plugin add`; defaults to Bun. */
   readonly pluginInstall?: InstallRunner | undefined;
+  /** Replaces the timer of `bot login`'s wait for its question in a test. */
+  readonly loginTimer?: AskTimer | undefined;
 }
 
 /** What the CLI hands the terminal app. */
@@ -322,6 +330,8 @@ const HELP = [
   "  trigger rules        the rules in force, with where each came from",
   "  operad:start <id>    start a pending event",
   "  operad:dismiss <id>  dismiss a pending event",
+  "  start home:<name> [--params <json>]",
+  "                       start a flow of the home once; serve runs it",
   "  <plugin>:<action>    an action on one object",
   "  <plugin> <verb>      a verb a loaded plugin declares",
   "",
@@ -495,7 +505,9 @@ function commandUsage(args: readonly string[]): string | undefined {
         : "usage: operad trigger <source> <key> [--type t] [--object o] [--summary text] [--data file]";
     case "operad:start":
     case "start":
-      return `usage: operad ${command} <id>`;
+      return sub?.startsWith(HOME_FLOW_PREFIX) === true
+        ? `usage: operad ${command} home:<name> [--params <json>]`
+        : `usage: operad ${command} <id>`;
     case "operad:dismiss":
     case "dismiss":
       return `usage: operad ${command} <id>`;
@@ -576,13 +588,16 @@ export async function openContext(
   // a kernel with rules hands it over, so serve does not build a second one.
   let eventKernel: Kernel | undefined;
   let opened: OpenedHome | undefined;
+  const { optional } = pluginOffer(home);
+  // The tools server a harness opens for an agent reads the same list.
+  shareOptionalPlugins(optional);
   const context = await openHome({
     home,
     cwd,
     config,
     follow,
     installOnEnable: INSTALL_ON_ENABLE,
-    optional: pluginOffer(home).optional,
+    optional,
     ...(scope === undefined ? {} : { scope }),
     ...(viewsCwd === undefined ? {} : { viewsCwd }),
     cancelSource: "cli",
@@ -1001,6 +1016,8 @@ async function commandPending(
     io.write(`${name}  ${item.flow}  ${item.step ?? "-"}\n`);
     if (item.row !== undefined) io.write(`  ${item.row.title}\n`);
     io.write(`  waiting: ${item.prompt}\n`);
+    // Alone on its line, so it can be copied whole.
+    if (item.command !== undefined) io.write(`    ${item.command}\n`);
     if (item.choices.length > 0) {
       io.write(`  choices: ${item.choices.join(", ")}\n`);
     }
@@ -1653,6 +1670,7 @@ async function commandAction(
   io: CliIo,
   argv: readonly string[],
   tty: boolean,
+  loginTimer: AskTimer,
 ): Promise<boolean> {
   // A plugin command and an action may share a plain name (`plan` is both a
   // dev command and the action that creates a plan). The command keeps the
@@ -1731,6 +1749,16 @@ async function commandAction(
     actor: actorOfCli(),
   });
   printValue(io, run.value);
+  if (run.plugin === "bot" && run.action === loginAction.name) {
+    await showLoginCommand({
+      home: context.home,
+      config: context.config,
+      registry: context.registry,
+      object: `${object.type}:${object.row.id}`,
+      write: (text) => io.write(text),
+      timer: loginTimer,
+    });
+  }
   return true;
 }
 
@@ -1910,12 +1938,38 @@ function kernelAction(
   return registry.resolveCommand([command]) === undefined ? command : undefined;
 }
 
+/** `start home:<name> [--params <json>]`: a flow of the home, once, now. */
+async function commandStartFlow(
+  context: Context,
+  io: CliIo,
+  argv: readonly string[],
+): Promise<void> {
+  const given = takeValueFlag(argv, "--params");
+  const [flow = "", ...rest] = given.args;
+  if (rest.length > 0) throw new UsageError("start takes one flow and --params <json>");
+  let params: unknown;
+  if (given.value !== undefined) {
+    try {
+      params = JSON.parse(given.value);
+    } catch (error) {
+      throw new ViewError("args", `--params is not valid JSON: ${messageOf(error)}`);
+    }
+  }
+  const starter = flowStarterFor(kernelFor(context, io, []), (message) => io.error(`${message}\n`));
+  const started = await starter.start(flow, params, actorOfCli());
+  io.write(`started ${started.runId}\n`);
+}
+
 async function commandKernelAction(
   context: Context,
   io: CliIo,
   action: "start" | "dismiss",
   argv: readonly string[],
 ): Promise<void> {
+  if (action === "start" && argv[0]?.startsWith(HOME_FLOW_PREFIX) === true) {
+    await commandStartFlow(context, io, argv);
+    return;
+  }
   const id = argv[0];
   if (id === undefined) throw new UsageError(`${action} needs a pending id`);
   if (argv.length > 1) throw new UsageError(`${action} takes one pending id`);
@@ -2075,24 +2129,9 @@ export function runningLine(item: RunningItem): string {
 }
 
 function commandFlows(context: Context, io: CliIo, json: boolean): void {
-  const flows = context.registry.flows();
+  const flows = listFlows(context.registry);
   if (json) {
-    io.write(
-      `${JSON.stringify(
-        flows.map((entry) => {
-          const problem = context.registry.startProblem(entry.flow.name);
-          return {
-            name: entry.flow.name,
-            plugin: entry.plugin,
-            source: entry.source ?? null,
-            startable: problem === undefined,
-            ...(problem === undefined ? {} : { problem }),
-          };
-        }),
-        null,
-        2,
-      )}\n`,
-    );
+    io.write(`${JSON.stringify(flows, null, 2)}\n`);
     return;
   }
   if (flows.length === 0) {
@@ -2101,13 +2140,9 @@ function commandFlows(context: Context, io: CliIo, json: boolean): void {
   }
   for (const entry of flows) {
     const source =
-      entry.source === undefined || entry.source === entry.plugin
-        ? ""
-        : `  (${entry.source})`;
-    const problem = context.registry.startProblem(entry.flow.name);
-    io.write(
-      `${entry.flow.name}  ${entry.plugin}${source}${problem === undefined ? "" : `  ${problem}`}\n`,
-    );
+      entry.source === null || entry.source === entry.plugin ? "" : `  (${entry.source})`;
+    const problem = entry.problem === undefined ? "" : `  ${entry.problem}`;
+    io.write(`${entry.name}  ${entry.plugin}${source}${problem}\n`);
   }
 }
 
@@ -2207,6 +2242,7 @@ async function commandServe(
           registry: context.registry,
           kernel,
           plugins: pluginAdminFor(context),
+          flows: flowStarterFor(kernel, (message) => io.error(`${message}\n`)),
           pluginHttp: (name) => kernel.pluginHttp(name),
           onListen: (url) => io.write(`http ${url}\n`),
           onLog: (message) => io.error(`${message}\n`),
@@ -2327,8 +2363,9 @@ async function commandRunInternal(
   const run = await context.log.run(runId);
   if (run === undefined) throw new Error(`no run "${runId}"`);
   const found = context.registry.flow(run.flow);
-  if (found === undefined) {
-    throw new StateError(`run "${runId}": flow "${run.flow}" is not loaded`);
+  const missing = `flow "${run.flow}" is not loaded`;
+  if (found === undefined && !run.flow.startsWith(HOME_FLOW_PREFIX)) {
+    throw new StateError(`run "${runId}": ${missing}`);
   }
   const problem = context.registry.startProblem(run.flow);
   if (problem !== undefined) throw new StateError(`run "${runId}": ${problem}`);
@@ -2351,6 +2388,13 @@ async function commandRunInternal(
   }
   const startProblems = [...context.problems];
   const kernel = kernelFor(context, io, rules);
+  // serve leaves a flow of the home it has not read to this process, which read
+  // the file now: when it does not load here either, the run fails.
+  if (found === undefined) {
+    io.error(`run ${runId}: ${missing}\n`);
+    await kernel.failRun(runId, missing);
+    return;
+  }
   // A start that died after creating its run left no start files; restore
   // them so this runner starts from the input and event that were recorded.
   kernel.adoptStart(run);
@@ -3472,6 +3516,7 @@ export async function main(
           write: (text) => io.write(text),
           error: (text) => io.error(text),
           installOnEnable: INSTALL_ON_ENABLE,
+          optional: pluginOffer(home).optional,
           ...(claudeChannel ? { claudeChannel: true } : {}),
           ...(types === undefined ? {} : { types }),
         });
@@ -3821,7 +3866,8 @@ export async function main(
           `plugin "${attempted}" is disabled; turn it on with \`operad plugin enable ${attempted}\``,
         );
       }
-      if (await commandAction(context, io, actionRepo.args, tty)) return 0;
+      const loginTimer = options.loginTimer ?? realLoginTimer;
+      if (await commandAction(context, io, actionRepo.args, tty, loginTimer)) return 0;
       if (await commandPlugin(context, io, args)) return 0;
       const candidates: CommandCandidate[] = [
         ...context.registry

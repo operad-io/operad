@@ -109,3 +109,18 @@ An address is the plugin's to validate, not the kernel's: the kernel checks the
 scheme and length, and the plugin checks the host and path of a login address
 before it puts it on a question. A client opens only an address that passed
 those checks.
+
+### D9: A question may carry a command for the person to run
+
+`ctx.ask` accepts `command`: one command line the person runs themselves, in
+their own terminal, such as the login of another program. The kernel checks
+before anyone is asked that it is a non-empty single line with no control or
+format character (such as a bidirectional override or a zero-width space), at
+most 2048 characters, and never runs it. It carries the line
+unchanged: into the wait's record, the pending view, the HTTP pending read and
+the MCP `pending` tool, and a question that runs out of grace keeps it on the
+wait that follows. `operad pending` prints it on a line of its own, so it can be
+copied whole. `operad bot login` prints it the same way: after starting the
+login it waits for the login's first question while a `serve` runs it, at most
+30 seconds. The question's text still says the command, for a client that does
+not read the field. A flow's `wait_person` step takes no command.

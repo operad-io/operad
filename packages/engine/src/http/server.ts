@@ -5,6 +5,8 @@
  */
 
 import type { PluginAdmin } from "./plugins.ts";
+import type { FlowStarter } from "./flows.ts";
+import { listFlows } from "../views/flows.ts";
 import { randomBytes } from "node:crypto";
 import type { HttpConfig } from "../config/config.ts";
 import type { LogBackend } from "../log/types.ts";
@@ -80,6 +82,7 @@ const BUILT_IN_ENDPOINTS: ReadonlySet<string> = new Set([
   "attachments",
   "commands",
   "events",
+  "flows",
   "keys",
   "objects",
   "pending",
@@ -102,6 +105,8 @@ export interface HttpServerOptions {
   readonly kernel?: Kernel | undefined;
   /** Lists and switches plugins for `/v1/plugins`; without it the endpoint is `404`. */
   readonly plugins?: PluginAdmin | undefined;
+  /** Starts a flow for `/v1/flows/start`; without it the endpoint is `404`. */
+  readonly flows?: FlowStarter | undefined;
   readonly onLog?: ((message: string) => void) | undefined;
   /** What a running plugin serves under `/v1/<name>` and on the event stream. */
   readonly pluginHttp?: ((plugin: string) => PluginHttp | undefined) | undefined;
@@ -787,6 +792,38 @@ function createHandler(
 
     if (method === "GET" && path === "/v1/running") {
       return json(await listRunning(options.log, options.clock, options.views));
+    }
+
+    if (path === "/v1/flows") {
+      if (method !== "GET") return errorResponse(405, "method", "this endpoint takes GET");
+      return json({ flows: listFlows(options.registry) });
+    }
+
+    if (path === "/v1/flows/start") {
+      const starter = options.flows;
+      if (starter === undefined) return errorResponse(404, "not-found", "no such endpoint");
+      if (method !== "POST") return errorResponse(405, "method", "this endpoint takes POST");
+      const body = await readBody(request);
+      if (!isRecord(body)) {
+        return errorResponse(400, "args", "the body must be an object");
+      }
+      const { flow, params } = body;
+      if (typeof flow !== "string" || flow.length === 0) {
+        return errorResponse(400, "args", "the body needs a flow");
+      }
+      const actor: Actor = { via: clientName(request.headers.get(CLIENT_HEADER)), id: token.label };
+      try {
+        const started = await starter.start(flow, params, actor);
+        onLog(`http: flow "${flow}" started as ${started.runId} via ${actor.via} as ${actor.id}`);
+        return json(started);
+      } catch (error) {
+        if (error instanceof ViewError) {
+          onLog(`http: flow "${flow}" refused (${viewErrorStatus(error.kind)}): ${error.message}`);
+          throw error;
+        }
+        onLog(`http: flow "${flow}" refused (422): ${messageOf(error)}`);
+        return errorResponse(422, "refused", messageOf(error));
+      }
     }
 
     const setupOf = /^\/v1\/plugins\/([^/]+)\/setup$/.exec(path);

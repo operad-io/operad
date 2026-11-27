@@ -346,6 +346,13 @@ The rows above reused ids that other packages hold for T-0790 (T-0790-M1); they 
 
 _The second "## T-0766" section above repeats the rows of the first; the rows of the first stand._
 
+## T-0814 — a question carries a command for the person to run
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0814-M1 | packages/harness/pi/src/login.ts | the provider question carried no command | `pi/login > the first question names the bundled pi when pi is not on PATH` |
+| T-0814-M2 | packages/harness/pi/src/login.ts | the sentence did not say that logging in here takes an API key | `pi/login > the first question offers API-key routes only and tells where a ChatGPT plan logs in` |
+
 ## T-0817 — what the reviews of the terminal tasks found
 
 | id | file | mutation | failing test |

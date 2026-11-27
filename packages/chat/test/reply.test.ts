@@ -167,6 +167,28 @@ describe("chat/reply", () => {
   });
 });
 
+describe("a question the chat's asker gave up on", () => {
+  test("keeps the command the asker reports", async () => {
+    const r = await rig(async (ctx) => {
+      await ctx.ask({ prompt: "Signed in?", choices: ["yes", "no"], resume: "s-q" });
+      return reply("continued", "s-q");
+    });
+    const chat = await r.chat();
+    await r.say(chat, "do it");
+    // The command is only in the outcome, so nothing but the outcome can carry it on.
+    const waiting = await r.round(chat, {}, {
+      async ask() {
+        return { kind: "timeout" as const, waitId: "w1", prompt: "Signed in?", choices: ["yes", "no"], command: "tool auth login" };
+      },
+      async useGrant() {
+        return false;
+      },
+    });
+    expect(waiting.result).toBe("waiting");
+    expect(waiting.data).toMatchObject({ waitId: "w1", command: "tool auth login" });
+  });
+});
+
 describe("a chat that names a refresh step", () => {
   test("a reply fails, and never answers from the older copy, when that step is not loaded", async () => {
     const r = await rig(() => reply("never"));

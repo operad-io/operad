@@ -509,6 +509,42 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 |---|---|---|---|
 | T-0810-M68 | packages/cli/src/plugin-description.ts | `terminal` had no description for a home that has not installed it | `plugin descriptions > a plugin installed on enable is described before its package is there, in the package's words` |
 
+## T-0813 — the guide of a plugin config.json does not name
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0813-M1 | packages/cli/src/main.ts | opening the home did not share the optional plugins | `the tools opened in an agent's process answer it once the home was opened` |
+| T-0813-M5 | packages/cli/src/main.ts | `operad mcp` did not pass the optional plugins to the tools server | ``operad mcp` answers it` |
+## T-0814 — a question carries a command for the person to run
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0814-M7 | packages/cli/src/main.ts | `operad pending` did not print the command on its own line | `operad pending shows a question's command > alone on its own line, and as the item's command in --json` |
+
+## T-0814 rework 1 — `operad bot login` prints the command
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0814-M9 | packages/cli/src/main.ts | `bot login` ended after its first line, without the question | `operad bot login > waits for the question serve asks and prints its command on its own line` |
+| T-0814-M10 | packages/cli/src/login-command.ts | `bot login` waited with no `serve` running | `operad bot login > does not wait when no serve is running` |
+| T-0814-M11 | packages/cli/src/login-command.ts | `bot login` went on waiting after the login ended | `operad bot login > stops waiting when the login ends without a question` |
+| T-0814-M12 | packages/cli/src/login-command.ts | the end of the wait time did not end the command | `operad bot login > stops waiting after 30 seconds without a question` |
+| T-0814-M13 | packages/cli/src/login-command.ts | the log was opened without change events, so the question `serve` asked was never seen | `operad bot login > waits for the question serve asks and prints its command on its own line` |
+
+| T-0815-M6 | packages/cli/src/main.ts | serve gave its HTTP server no way to start a flow | `serve lists the flows over HTTP and runs one a client starts to its end` |
+| T-0815-M7 | packages/cli/src/main.ts | `start home:<name>` was read as a pending id | `the run takes the params, reaches its end and records who started it`, `a flow already running is not started twice`, `a refused start says why and starts nothing` |
+| T-0815-M8 | packages/cli/src/start-flow.ts | the params did not reach the run | `the run takes the params, reaches its end and records who started it`, `serve lists the flows over HTTP and runs one a client starts to its end` |
+| T-0815-M9 | packages/cli/src/start-flow.ts | a file that did not load gave no reason | `a refused start says why and starts nothing` |
+| T-0815-M10 | packages/cli/src/start-flow.ts | a plugin's flow started by hand | `serve lists the flows over HTTP and runs one a client starts to its end` |
+| T-0815-M11 | packages/cli/src/start-flow.ts | params that are not an object were accepted | `a refused start says why and starts nothing`, `serve lists the flows over HTTP and runs one a client starts to its end` |
+| T-0815-M12 | packages/cli/src/main.ts | params that are not JSON failed without naming `--params` | `a refused start says why and starts nothing` |
+| T-0815-M13 | packages/cli/src/start-flow.ts | a flow that cannot start was not answered as a refusal | `a refused start says why and starts nothing` |
+| T-0815-M14 | packages/cli/src/start-flow.ts | a flow already running was not refused as running | `a flow already running is not started twice` |
+| T-0815-M16 | packages/cli/src/start-flow.ts | who started the run was not recorded | `the run takes the params, reaches its end and records who started it`, `serve lists the flows over HTTP and runs one a client starts to its end` |
+| T-0815-M18 | packages/cli/src/main.ts | extra arguments to a start were ignored | `a refused start says why and starts nothing` |
+
+| T-0815-M21 | packages/cli/src/main.ts | the run process did not fail a run of a home flow that does not load | `a run of a flow whose file no longer loads fails, or is handed to its own process to fail` |
+
 ## T-0817 — what the reviews of the terminal tasks found
 
 | id | file | mutation | failing test |

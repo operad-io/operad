@@ -85,12 +85,14 @@ uses the Codex CLI's own client id, and operad presenting it as its own step is
 the risk the owner decided against. A person who wants their
 ChatGPT plan, or another subscription (ADR 0024 D3 gives the reason for
 Anthropic), runs pi's own login, `pi auth login openai-codex`. The first
-question of the login says so in one line, with the command a person can run:
-`pi ...` when `pi` is on `PATH` (or the `command` setting), else the full path
-of the pi operad installed in the home (D9). operad only checks whether pi is
-signed in, as it does for `claude` and `codex`: `signedIn` reads `authPath` on
-every call, so the next check sees a login made elsewhere with no restart of
-`serve`.
+question of the login says in plain words that logging in there takes an API key
+and that a ChatGPT plan logs in by running that command instead. The command a
+person can run is in that sentence and, alone, in the question's `command` (ADR
+0008 D9): `pi ...` when `pi` is on `PATH` (or the `command` setting), else the
+full path of the pi operad installed in the home (D9). operad only checks
+whether pi is signed in, as it does for `claude` and `codex`: `signedIn` reads
+`authPath` on every call, so the next check sees a login made elsewhere with no
+restart of `serve`.
 
 The providers and the models are pi's own catalog, read through the child and
 `ctx.harnessModels`; operad names no provider or model of its own. The model

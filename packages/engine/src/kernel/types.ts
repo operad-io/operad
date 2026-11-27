@@ -215,6 +215,8 @@ export interface PendingWait {
   readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
   /** The form the person fills in, when the question was one. */
   readonly questions?: readonly AskQuestion[] | undefined;
+  /** The command the person runs, when the question carried one. */
+  readonly command?: string | undefined;
   readonly kind: WaitKind;
   readonly effectId: string | null;
   readonly ask?: AskedWait | undefined;
@@ -302,6 +304,8 @@ export interface WaitingForPersonPayload {
   readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
   /** The form the person fills in, when the question was one. */
   readonly questions?: readonly AskQuestion[] | undefined;
+  /** The command the person runs, when the question carried one. */
+  readonly command?: string | undefined;
   readonly waitKind: WaitKind;
   readonly effectId: string | null;
   readonly ask?: AskedWait;
