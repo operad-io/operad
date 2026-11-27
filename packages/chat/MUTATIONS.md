@@ -777,3 +777,9 @@ The rows above reused ids that other packages hold for T-0790 (T-0790-M1, T-0790
 | T-0793-M1 | packages/chat/src/model.ts | the line that ends a stretch lost its closing sentence `Send /new to start clean.` | `/private > a bot chat turns the stretch on and off with the same command, and says what it is and is not` (and `sending a reply > a stretch that is not remembered sends a line when another client starts and ends it, and none for Telegram's own command` in packages/telegram) |
 | T-0789-M1 | packages/chat/src/reply.ts | removed the `await` before `ctx.logger.write` in the after-step handler (an un-awaited promise in source) | `bun run lint` (run by hand; the checks do not run it) fails: `typescript(no-floating-promises)` at reply.ts:1500 |
 | T-0798-M1 | packages/chat/src/views.ts | the chat row left `channels` out of its data | `a chat row's channels > a bound chat's row lists its channels, and an unbound chat's has none` |
+
+## T-0818 — follow-ups of the question's command
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0818-M1 | packages/chat/src/reply.ts | the chat's asker dropped the command of a question that ran out of grace | `a question the chat's asker gave up on > keeps the command the asker reports` |
