@@ -1625,3 +1625,8 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0824-M1 | packages/engine/src/runner/step-worker.ts | a worker's question did not tell the runner it has a `recheck`, as before the fix | `step worker in this process > runs a question's recheck when the parent asks and sends back what it says`; `pi/login > a login program that ends while the key question is open closes it and gives its reason` (packages/harness/pi, timed out) |
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0825-M1 | packages/engine/src/runner/runner.ts | any message from a settled step's worker ended the worker, as before the fix | `a cancelled step in a worker > finishes its cleanup while it withdraws a question and gives a place back` |
+| T-0825-M2 | packages/engine/src/runner/runner.ts | a settled step's worker was not served the place its cleanup gives back | `a cancelled step in a worker > finishes its cleanup while it withdraws a question and gives a place back` |
