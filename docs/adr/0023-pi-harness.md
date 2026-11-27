@@ -95,7 +95,10 @@ whether pi is signed in, as it does for `claude` and `codex`: `signedIn` reads
 restart of `serve`.
 
 The providers and the models are pi's own catalog, read through the child and
-`ctx.harnessModels`; operad names no provider or model of its own. The model
+`ctx.harnessModels`; operad names no provider or model of its own. When the
+`models` setting names no list, the step asks `pi --list-models` again once the
+login is done, because a list operad kept from before the login lacks the models
+the new credential opens. The model
 preselected after a login is the harness's declared default when it belongs to
 the provider, else the first model the catalog lists for that provider; the
 step checks the choice against the catalog before it returns. The credential is

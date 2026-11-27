@@ -9,6 +9,8 @@ import { readState } from "./service.ts";
 export interface RecordAnswerOptions {
   readonly log: LogBackend;
   readonly runId: string;
+  /** The operad home; the answer to a secret question needs it. */
+  readonly home?: string | undefined;
   /**
    * The question the answer is for, when the person answers one by its id. An
    * answer to a question that is closed is refused and recorded.
@@ -87,6 +89,7 @@ export async function recordAnswer(options: RecordAnswerOptions): Promise<void> 
     }
     await answerAsk({
       log: options.log,
+      home: options.home,
       runId: options.runId,
       state,
       ask,

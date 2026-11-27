@@ -123,7 +123,12 @@ function waitForLog(log: LogBackend, check: () => Promise<boolean>): Promise<voi
   });
 }
 
-async function setup() {
+async function setup(
+  pi: Record<string, unknown> = {
+    models: ["openai-codex/a", "openai-codex/b", "openai/m"],
+    model: "openai-codex/b",
+  },
+) {
   const root = await tempRoot();
   const plugin = createPiHarnessPlugin({
     loginCommand: process.execPath,
@@ -135,12 +140,7 @@ async function setup() {
     home: root,
     cwd: root,
     store: new MemoryPluginStore({ root: join(root, "store") }),
-    settings: {
-      pi: {
-        models: ["openai-codex/a", "openai-codex/b", "openai/m"],
-        model: "openai-codex/b",
-      },
-    },
+    settings: { pi },
   });
   const log = openLog({ path: join(root, "log", "log.sqlite") });
   const info = await log.startRun(flow.name, OBJECT);
@@ -255,6 +255,7 @@ describe("pi/login", () => {
       if (second?.waitId === undefined) throw new Error("no key wait");
       await recordAnswer({
         log: env.log,
+        home: env.root,
         runId: env.runId,
         waitId: second.waitId,
         choice: undefined,
@@ -277,6 +278,44 @@ describe("pi/login", () => {
       const result = (await facts(env.log, env.runId)).find((fact) => fact.kind === "step_result");
       expect(result?.payload).toMatchObject({ result: "done", data: { provider: "openai", model: "openai/m" } });
       expect(JSON.stringify(await facts(env.log, env.runId))).not.toContain("sk-not-a-real-key");
+    } finally {
+      await env.log.close();
+    }
+  }, 30_000);
+
+  test("the model choice asks pi again, not the list kept from before the login", async () => {
+    // A pi whose list has the model the new key opens.
+    const bin = await tempRoot();
+    const pi = join(bin, "pi");
+    writeFileSync(pi, "#!/bin/sh\necho 'provider model'\necho 'openai fresh'\n");
+    chmodSync(pi, 0o755);
+    const env = await setup({ command: pi });
+    // What a look at the models before the login keeps: pi listed none.
+    mkdirSync(join(env.root, "harness", "pi"), { recursive: true });
+    writeFileSync(join(env.root, "harness", "pi", "model-list.json"), JSON.stringify({ at: Date.now(), list: [] }));
+    try {
+      const run = env.runner(new FakeTimer()).run();
+      const answer = async (n: number, choice: string | undefined, text?: string) => {
+        await env.opened(n);
+        const waitId = (await listPending(env.log, env.registry))[0]?.waitId;
+        if (waitId === undefined) throw new Error("no wait");
+        await recordAnswer({
+          log: env.log,
+          home: env.root,
+          runId: env.runId,
+          waitId,
+          choice,
+          ...(text === undefined ? {} : { answers: [{ id: "value", text }] }),
+          actor: ACTOR,
+        });
+      };
+      await answer(1, "openai");
+      await answer(2, undefined, "sk-not-a-real-key");
+      const asked = await Promise.race([env.opened(3).then(() => true), run.then(() => false)]);
+      expect(asked).toBe(true);
+      expect((await listPending(env.log, env.registry))[0]?.choices).toEqual(["openai/fresh"]);
+      await answer(3, "openai/fresh");
+      expect(await run).toBe("ended");
     } finally {
       await env.log.close();
     }

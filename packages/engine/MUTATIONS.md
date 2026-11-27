@@ -1598,3 +1598,19 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0821-M2 | packages/engine/src/views/history.ts | the printed entry left the command out | `a question's command is a line of its own, whole, where the question is` |
 | T-0821-M3 | packages/engine/src/views/history.ts | the History section left the command out | `a question's command is a line of its own, whole, where the question is` |
 | T-0821-M4 | packages/engine/src/views/history.ts | the section's fence was three backticks whatever the command held | `a question's command is a line of its own, whole, where the question is` |
+## T-0822 — a secret answer reaches the step
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0822-M1 | packages/engine/src/runner/ask.ts | the step did not read the hand-over, so it got no text from another process | `a secret answer over HTTP reaches the step, is never recorded, and a second is refused`, `the pi login over HTTP saves the key and ends logged in` |
+| T-0822-M2 | packages/engine/src/runner/ask.ts | the answerer removed the text when the step had already written the fact from its claim | `a secret answer's hand-over > it is kept when the step writes the answer's fact before the answerer does` |
+| T-0822-M3 | packages/engine/src/views/presentation.ts | an answer over HTTP named no home | `the pi login over HTTP saves the key and ends logged in`, `a secret answer over HTTP reaches the step, is never recorded, and a second is refused` |
+| T-0822-M4 | packages/engine/src/runner/ask.ts | an answer that lost the claim was not refused | `a secret answer's hand-over > a second answer that loses the claim is refused and leaves the first one's text` |
+| T-0822-M5 | packages/engine/src/runner/ask.ts | an answer that lost the claim removed every text of the question | `a secret answer's hand-over > a second answer that loses the claim is refused and leaves the first one's text` |
+| T-0822-M6 | packages/engine/src/runner/ask.ts | an answer that lost the claim left its own text | `a secret answer's hand-over > a second answer that loses the claim is refused and leaves the first one's text` |
+| T-0822-M7 | packages/engine/src/runner/secret-answers.ts | the file was written with the default mode | `a secret answer's hand-over > only the owner can read what waits for the step` |
+| T-0822-M8 | packages/engine/src/runner/ask.ts | an answer refused because the question closed left its text | `a secret answer's hand-over > an answer the question closed before leaves nothing behind` |
+| T-0822-M9 | packages/engine/src/runner/ask.ts | a step that stopped waiting left the question's texts | `a secret answer's hand-over > a step that stops waiting removes an answer that was never claimed` |
+| T-0822-M10 | packages/engine/src/runner/ask.ts | a secret answer with no home was taken as success without reaching the step | `a secret answer's hand-over > an answer that cannot name a home to hand it through is refused before it is claimed` |
+| T-0822-M11 | packages/engine/src/loop/serve.ts | `serve` did not remove left-over texts when it started | `a secret answer's hand-over > a left-over answer is removed once it is stale, by a sweep and when serve starts` |
+| T-0822-M12 | packages/engine/src/runner/secret-answers.ts | the sweep removed a text that was not stale yet | `a secret answer's hand-over > a left-over answer is removed once it is stale, by a sweep and when serve starts` |

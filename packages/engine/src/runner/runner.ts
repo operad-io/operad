@@ -576,6 +576,7 @@ export class Runner {
   private asks(): AskHost {
     this.askHost ??= new AskHost({
       log: this.log,
+      home: this.registry.home,
       graceSecs: this.askGraceSecs,
       timer: this.askTimer,
       pause: () => {

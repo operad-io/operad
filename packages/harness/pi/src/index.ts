@@ -59,6 +59,7 @@ import {
   piModelListReady,
   piModelWindows,
   readPiModelList,
+  refreshPiModelList,
 } from "./model-list.ts";
 import { DEFAULT_PI_COMMAND, findPi, PI_FLOOR, PI_VERSION } from "./pi-install.ts";
 import { runLoginStep, type LoginRunOptions } from "./login.ts";
@@ -440,7 +441,17 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
         // model they chose (ADR 0023 D11).
         results: ["done", "failed"],
         timeoutSecs: 660,
-        run: (ctx: StepContext) => runLoginStep(ctx, loginOptions),
+        run: (ctx: StepContext) =>
+          runLoginStep(ctx, {
+            ...loginOptions,
+            // A list kept from before the login lacks the models it opens.
+            afterLogin: async () => {
+              if (stringList(ctx.settings.models) !== undefined) return;
+              const command = piCommandFor(ctx.settings, ctx.home);
+              const context = { home: ctx.home, log: (message: string) => void ctx.logger.write(message) };
+              await refreshPiModelList(listOptions(command, context, modelsPathOf(ctx.settings)));
+            },
+          }),
       },
       {
         name: "agent",

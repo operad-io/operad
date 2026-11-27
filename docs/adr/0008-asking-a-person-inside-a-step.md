@@ -105,6 +105,19 @@ before anyone sees it otherwise. An answer to a secret question whose step has
 ended is refused like any other late answer, and the person is asked again. A
 client masks the input and never echoes the value.
 
+The process that takes an answer (`serve` for an answer over HTTP) is usually
+not the process that runs the step, so the text crosses between them in a file
+under the home's `secrets/` directory, where the engine already keeps secrets:
+`secrets/answers/`, mode 0700, one file of mode 0600 per answer. The file is
+written before the answer is claimed, and the claim carries only the file's
+random name, so whoever sees the claim finds the text, and a second answer that
+loses the claim removes its own file and no other. The step removes the file as
+it reads it. The file of a refused answer is removed at once, and a step that
+stops waiting removes whatever is left for its question. A file a dead process
+left is removed once it is ten minutes old, when `serve` starts or the next
+secret answer is written. A caller that cannot name the home cannot answer a
+secret question.
+
 An address is the plugin's to validate, not the kernel's: the kernel checks the
 scheme and length, and the plugin checks the host and path of a login address
 before it puts it on a question. A client opens only an address that passed

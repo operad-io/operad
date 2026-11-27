@@ -35,6 +35,12 @@ import {
   storedAnswers,
   storedQuestions,
 } from "../plugin/question-form.ts";
+import {
+  dropSecretAnswer,
+  dropSecretAnswers,
+  putSecretAnswers,
+  takeSecretAnswers,
+} from "./secret-answers.ts";
 
 /** How often a waiting step looks again when no change was announced. */
 const RECHECK_MS = 1000;
@@ -213,32 +219,11 @@ function claimKey(runId: string, waitId: string): string {
   return `${runId}:ask:${waitId}`;
 }
 
-/**
- * The full answers of a secret question, kept only for the step that is running
- * in this process (ADR 0008 D8). They never reach a fact, an input or history.
- */
-const secretAnswers = new Map<string, readonly AskQuestionAnswer[]>();
-
-function secretKey(runId: string, waitId: string): string {
-  return `${runId}:secret:${waitId}`;
-}
-
 /** True when any question of the form takes a secret answer. */
 export function hasSecretQuestion(
   questions: readonly AskQuestion[] | undefined,
 ): boolean {
   return questions?.some((question) => question.secret === true) ?? false;
-}
-
-/** Takes the secret answers a running step is waiting for; they are used once. */
-export function takeSecretAnswers(
-  runId: string,
-  waitId: string,
-): readonly AskQuestionAnswer[] | undefined {
-  const key = secretKey(runId, waitId);
-  const found = secretAnswers.get(key);
-  secretAnswers.delete(key);
-  return found;
 }
 
 /** The answers a fact or an input carries: a secret question's text is left out. */
@@ -276,6 +261,25 @@ async function claimedAnswer(
     return undefined;
   }
   return answerOf(input.payload, questions);
+}
+
+/**
+ * The secret text the claimed answer left for the step (ADR 0008 D8). The claim
+ * carries only the name of the hand-over; the text is read once.
+ */
+async function claimedSecret(
+  log: LogBackend,
+  home: string,
+  runId: string,
+  waitId: string,
+): Promise<readonly AskQuestionAnswer[] | undefined> {
+  const input = await log.findInput(
+    inputIdFor("person", claimKey(runId, waitId)),
+  );
+  if (input === undefined || !isRecord(input.payload)) return undefined;
+  const ref = input.payload.secretRef;
+  if (typeof ref !== "string") return undefined;
+  return takeSecretAnswers(home, runId, waitId, ref);
 }
 
 function answeredFact(waitId: string, answer: AskedAnswer): FactSpec {
@@ -326,6 +330,8 @@ export function answerableAsks(
 
 export interface AnswerAskOptions {
   readonly log: LogBackend;
+  /** The home a secret answer is handed to the step through; a secret question needs it. */
+  readonly home: string | undefined;
   readonly runId: string;
   readonly state: KernelState;
   readonly ask: AskRecord;
@@ -436,11 +442,23 @@ export async function answerAsk(options: AnswerAskOptions): Promise<void> {
       await refuse("a secret question takes an answer with its text");
     }
   }
-  const secret = hasSecretQuestion(ask.questions);
   const recorded = recordedAnswers(resolved.answers, ask.questions);
-  if (secret && resolved.answers !== undefined) {
-    secretAnswers.set(secretKey(runId, ask.waitId), resolved.answers);
+  // The text is in place before the claim, so whoever sees the claim finds it.
+  let handOver: { readonly home: string; readonly ref: string } | undefined;
+  if (hasSecretQuestion(ask.questions) && resolved.answers !== undefined) {
+    const home = options.home;
+    if (home === undefined) {
+      throw new StateError(`run ${runId}: a secret answer cannot be taken here`);
+    }
+    handOver = {
+      home,
+      ref: await putSecretAnswers(home, runId, ask.waitId, resolved.answers),
+    };
   }
+  const drop = async (): Promise<void> => {
+    if (handOver === undefined) return;
+    await dropSecretAnswer(handOver.home, runId, ask.waitId, handOver.ref);
+  };
 
   const payload: Record<string, JsonValue> = {
     kind: "ask_answer",
@@ -448,17 +466,23 @@ export async function answerAsk(options: AnswerAskOptions): Promise<void> {
     choice: resolved.choice ?? null,
     note: options.note ?? null,
     ...(recorded === undefined ? {} : { answers: answersJson(recorded) }),
+    ...(handOver === undefined ? {} : { secretRef: handOver.ref }),
     actor: { via: actor.via, id: actor.id },
   };
-  const claim = await log.recordInput(
-    runId,
-    "person",
-    claimKey(runId, ask.waitId),
-    payload,
-  );
-  if (claim.duplicate) {
-    secretAnswers.delete(secretKey(runId, ask.waitId));
-    throw new StateError(`run ${runId}: already answered`);
+  let claimed = false;
+  try {
+    const claim = await log.recordInput(
+      runId,
+      "person",
+      claimKey(runId, ask.waitId),
+      payload,
+    );
+    if (claim.duplicate) {
+      throw new StateError(`run ${runId}: already answered`);
+    }
+    claimed = true;
+  } finally {
+    if (!claimed) await drop();
   }
   const answer: AskedAnswer = {
     choice: resolved.choice,
@@ -466,14 +490,15 @@ export async function answerAsk(options: AnswerAskOptions): Promise<void> {
     actor,
     answers: recorded,
   };
+  // From here the claim stands: the step may write its fact and read the text.
   const written = await appendWhen(log, runId, (asks) =>
     asks.get(ask.waitId)?.status === "open" ? [answeredFact(ask.waitId, answer)] : [],
   );
   if (written.length === 0) {
-    secretAnswers.delete(secretKey(runId, ask.waitId));
     const closed = (await scanAsks(log, runId)).asks.get(ask.waitId);
     // The reconciling step wrote the fact from this claim: that is success.
     if (closed?.status === "answered" && closed.answer?.choice === choice) return;
+    await drop();
     await refuse("the question is closed, its step has ended");
   }
 }
@@ -489,6 +514,8 @@ function narrowest(...values: readonly (number | undefined)[]): number {
 
 export interface AskHostOptions {
   readonly log: LogBackend;
+  /** The home a secret answer is handed to the step through. */
+  readonly home: string;
   /** `ask.graceSecs` from config.json. */
   readonly graceSecs?: number | undefined;
   readonly timer?: AskTimer | undefined;
@@ -499,12 +526,14 @@ export interface AskHostOptions {
 /** Serves the questions of the steps one runner starts. */
 export class AskHost {
   private readonly log: LogBackend;
+  private readonly home: string;
   private readonly graceSecs: number;
   private readonly timer: AskTimer;
   private readonly pause: (() => () => void) | undefined;
 
   constructor(options: AskHostOptions) {
     this.log = options.log;
+    this.home = options.home;
     this.graceSecs = options.graceSecs ?? DEFAULT_ASK_GRACE_SECS;
     this.timer = options.timer ?? realAskTimer;
     this.pause = options.pause;
@@ -598,7 +627,11 @@ export class AskHost {
           throw new Error(`the question ${waitId} is gone from the log`);
         }
         if (record.status === "answered" && record.answer !== undefined) {
-          const shown = takeSecretAnswers(runId, waitId);
+          // A fact the step's own recheck wrote carries no answers.
+          const shown =
+            hasSecretQuestion(questions) && record.answer.answers !== undefined
+              ? await claimedSecret(this.log, this.home, runId, waitId)
+              : undefined;
           return {
             kind: "answered",
             answer: {
@@ -683,6 +716,9 @@ export class AskHost {
     } finally {
       cancelTimer?.();
       resume?.();
+      if (hasSecretQuestion(questions)) {
+        await dropSecretAnswers(this.home, runId, waitId);
+      }
     }
   }
 }

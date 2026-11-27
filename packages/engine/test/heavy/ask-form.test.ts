@@ -77,6 +77,7 @@ const TWO = [
 ];
 
 interface Env {
+  readonly home: string;
   readonly log: LogBackend;
   readonly registry: PluginRegistry;
   create(flow: string, name: string, extra?: Record<string, unknown>): Promise<string>;
@@ -165,6 +166,7 @@ async function setup(): Promise<Env> {
   const flows = new Map<string, string>();
   const params = new Map<string, Record<string, unknown>>();
   return {
+    home,
     log,
     registry,
     async create(flow, name, extra = {}) {
@@ -635,6 +637,7 @@ describe("a question with an address, a code and a secret answer", () => {
 
       await recordAnswer({
         log: env.log,
+        home: env.home,
         runId: id,
         waitId,
         choice: undefined,
@@ -684,6 +687,7 @@ describe("a question with an address, a code and a secret answer", () => {
       await expect(
         recordAnswer({
           log: env.log,
+          home: env.home,
           runId: id,
           waitId,
           choice: undefined,
@@ -693,6 +697,7 @@ describe("a question with an address, a code and a secret answer", () => {
       ).rejects.toThrow("a secret question takes an answer with its text");
       await recordAnswer({
         log: env.log,
+        home: env.home,
         runId: id,
         waitId,
         choice: undefined,
