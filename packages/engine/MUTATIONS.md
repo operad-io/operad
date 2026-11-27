@@ -1506,3 +1506,5 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0815-M5 | packages/engine/src/http/server.ts | `GET /v1/flows` was not routed | `serve lists the flows over HTTP and runs one a client starts to its end` |
 | T-0815-M15 | packages/engine/src/trigger/kernel.ts | a start with no event answered started for a flow already running | `a flow already running is not started twice` |
 | T-0815-M17 | packages/engine/src/http/server.ts | an HTTP start did not carry the client's name as the actor | `serve lists the flows over HTTP and runs one a client starts to its end` |
+| T-0815-M19 | packages/engine/src/loop/serve.ts | serve failed a run of a home flow it had not read, as before | `serve runs a flow added after it read the home to its end`, `a run of a flow whose file no longer loads fails, or is handed to its own process to fail` |
+| T-0815-M20 | packages/engine/src/plugin/registry.ts | a home flow with no file counted as having one | `a run of a flow whose file no longer loads fails, or is handed to its own process to fail` |

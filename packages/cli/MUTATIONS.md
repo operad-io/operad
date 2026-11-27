@@ -500,3 +500,4 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 | T-0815-M14 | packages/cli/src/start-flow.ts | a flow already running was not refused as running | `a flow already running is not started twice` |
 | T-0815-M16 | packages/cli/src/start-flow.ts | who started the run was not recorded | `the run takes the params, reaches its end and records who started it`, `serve lists the flows over HTTP and runs one a client starts to its end` |
 | T-0815-M18 | packages/cli/src/main.ts | extra arguments to a start were ignored | `a refused start says why and starts nothing` |
+| T-0815-M21 | packages/cli/src/main.ts | the run process did not fail a run of a home flow that does not load | `a run of a flow whose file no longer loads fails, or is handed to its own process to fail` |
