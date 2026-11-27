@@ -478,3 +478,10 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 |---|---|---|---|
 | T-0810-M64 | packages/cli/src/main.ts | serve did not hand its plugins' routes to the HTTP server | `a home that enables terminal serves it, and stopping serve ends its terminals` |
 | T-0810-M65 | packages/cli/src/defaults.ts | `plugin enable terminal` was not offered | `a home that enables terminal serves it, and stopping serve ends its terminals` |
+
+## T-0810 — enabling terminal installs its package
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0810-M66 | packages/cli/src/main.ts | only `claude` of the install-on-enable plugins was installed again, so enabling `terminal` installed nothing | `publishing and installing the packages > enabling terminal from the packed tarballs installs its package, which then loads` |
+| T-0810-M67 | packages/cli/src/main.ts | only `claude`'s install omitted optional packages, so installing `terminal` brought back the other plugins' optional ones | `publishing and installing the packages > enabling terminal from the packed tarballs installs its package, which then loads` |
