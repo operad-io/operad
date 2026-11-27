@@ -628,10 +628,16 @@ export class AskHost {
         }
         if (record.status === "answered" && record.answer !== undefined) {
           // A fact the step's own recheck wrote carries no answers.
-          const shown =
-            hasSecretQuestion(questions) && record.answer.answers !== undefined
-              ? await claimedSecret(this.log, this.home, runId, waitId)
-              : undefined;
+          let answers = record.answer.answers;
+          if (hasSecretQuestion(questions) && answers !== undefined) {
+            answers = await claimedSecret(this.log, this.home, runId, waitId);
+            // The fact's own answers read as skipped, which no person did.
+            if (answers === undefined) {
+              throw new Error(
+                "the secret answer is no longer there, so the step cannot receive it",
+              );
+            }
+          }
           return {
             kind: "answered",
             answer: {
@@ -639,9 +645,7 @@ export class AskHost {
               ...(record.answer.note === undefined
                 ? {}
                 : { note: record.answer.note }),
-              ...(record.answer.answers === undefined && shown === undefined
-                ? {}
-                : { answers: shown ?? record.answer.answers }),
+              ...(answers === undefined ? {} : { answers }),
               actor: record.answer.actor,
             },
           };
