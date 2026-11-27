@@ -7,11 +7,10 @@ function harness(
   name: string,
   agentMissing: unknown,
   calls: string[] = [],
-  kind: "harness" | "domain" = "harness",
 ) {
   return definePlugin({
     name,
-    kind,
+    kind: "harness",
     version: "0.0.0",
     agentMissing: agentMissing as never,
     models: () => {
@@ -86,6 +85,7 @@ describe("a harness plugin whose agent is missing", () => {
   });
 
   test("only a harness plugin declares it", () => {
-    expect(() => load([harness("h", () => undefined, [], "domain")])).toThrow(/only a harness/);
+    const domain = definePlugin({ name: "h", kind: "domain", version: "0.0.0", agentMissing: () => undefined });
+    expect(() => load([domain as never])).toThrow(/agentMissing: only a harness/);
   });
 });
