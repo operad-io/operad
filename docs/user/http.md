@@ -73,6 +73,8 @@ otherwise. An object id in a path is URL-encoded; `<id>` may be the bare id or
 |---|---|
 | `GET /v1/types` | `{ "types": [{ "type": "task", "title": "Task", "plugin": "dev" }] }`: the object types with views, their display names and the name of the plugin each belongs to (a client groups types by it). A plugin that names its list (`dev` names it `Projects`) also sends `"pluginTitle"` on each of its types, and a client titles the plugin's tab with it; without it a client shows the plugin's name. A type that declares filters also carries `"filters"`, in display order (`[{ "name": "active", "states": ["proposed", ...] }, { "name": "all" }, ...]`), and `"defaultFilter"`. A type without filters carries neither. Every type of a plugin that declares `objectsUnderSettings` also carries `"settings": true`: such a plugin gets no tab of its own, and its top-level objects belong under settings. |
 | `GET /v1/keys` | `{ "keys": [{ "key": "m", "action": "dev:merge", "source": "plugin" }] }`: the key bindings in force, the plugins' defaults with the person's `keys.json` overrides applied; `source` is `user` for an override. |
+| `GET /v1/flows` | The loaded flows, the same entries as `operad flows --json`. See [Flows](#flows). |
+| `POST /v1/flows/start` | Starts a flow of the home once, now. The body is `{ "flow": "home:<name>", "params"?: { ... } }`; the answer is `{ "flow", "runId" }`. See [Flows](#flows). |
 | `GET /v1/objects?type=<type>&filter=<name>&cursor=<c>` (also `root` and `parent=<id>`, see [Levels](cli.md#levels)) | `{ "rows": [...], "next": "<c>", "hidden": 3 }`: one page of the list. `rows` carry the plugin's `id`, `title`, `state` and optional `note`, `wait`, `mark` and `badge` (see [Row marks](#row-marks)), plus `waiting` and `running`; an error row also carries `error`. `filter` keeps the rows the named filter shows, and `hidden` counts the rows of the type it left out (the whole type, not only this page). Without `filter` the type's default filter applies when it has filters; a type without filters lists every row and has no `hidden`. `filter=all` lists every row and has no `hidden`. An unknown name is a `400` that names the allowed ones. `next` pages within the filtered list. |
 | `GET /v1/pending` | The same list as `operad pending`, with the actions each item offers. A question carries `waitId`, the id an answer quotes, and may carry `choiceInfo`, keyed by a choice with optional `label`, `hint`, `role` and `note`. A question the agent asked as a form (a chat agent asking one or more questions) also carries `questions`: `[{ "id", "text", "body"?, "header"?, "choices"?: [{ "label", "description"? }], "multiple"?, "freeText"? }]`. Its answers name a question by `id`; `multiple` says more than one label may be picked, and `freeText` says the person may answer in their own words. A question may also carry `body`, Markdown too long for its text. A plan review is a form of one question: its `text` is the plan's title, its `body` is the plan's Markdown, and its `choices` are `Approve` and `Request changes`. A form has no `choices` of its own: when it has exactly one question with choices and does not take more than one label, `choices` carries that question's labels, so a client that cannot draw the form still answers it. A wait that its plugin is about to answer automatically (dev: a passed review of a task in a plan at auto merge) is not listed, so the count does not flicker; it is listed if the automatic answer does not come. An item a plugin raises without a run waiting (`kind` `standing`, no actions, `runId` `<plugin>:<id>`) is in the list too, and goes when the plugin stops reporting it. An item that is about an object also carries `object` (`<type>:<id>`), its `link` and its `row`: the same row `GET /v1/objects?type=…` returns for that object (`id`, `title`, `state`, optional `note`, `mark`, `badge`, `waiting`, `running`), so a client does not read each object. When the row cannot be built (the object is gone, no loaded plugin shows its type, or the plugin's row fails) the item carries the error row the list shows for a bad row, with `state` `error` and an `error` message; the list itself never fails for one object. A candidate has no object and no `row`. `operad pending` prints the row's title under each line that has one. |
 | `GET /v1/running` | The same list as `operad running`. Each item has `runId`, `flow`, `step`, `stepLabel`, `queued`, `startedAt` and `elapsedMs` (the run's age), and: `object`, the object's id as rows and `operad show` name it (for example `operad/T-0048-type-filters`), or `null` for a run with no object; `title`, that object's row title, or `null` when there is no object or the lookup failed (a failed lookup never fails the list); `stepStartedAt` and `stepElapsedMs`, when the current step's current attempt started and how long it has run (`null` before the first step); `mark`, the object's row mark (one of the [row marks](#row-marks)), left out when the row has none or cannot be built. The step time starts again when the step changes and on a new attempt. |
@@ -341,6 +343,48 @@ The same list carries each loaded harness's `models`, with a description of each
 A change takes effect at the next load, as on the command line: the next `operad` command, or the next `serve` load. The answer shows the new `enabled` at once, but the running `serve` still has the plugin as it loaded it. `serve` watches `config.json`, and after the file has been quiet for a moment it reloads by itself and says so on its own output (`reloading: ...`). There is no field or event that says a reload is due; a client sees the reload as its event stream ending and reconnecting, and then refetches its lists (see [Events](#events)).
 
 Like `POST /v1/act`, a switch is recorded with the caller as `{ "via": "<client>", "id": "<token label>" }`: as an event in the run log, and as a line in `serve`'s log: `http: plugin "dev" disabled via tui as operad app`. A refusal is logged with its status. The bearer token is required, as on every endpoint.
+
+## Flows
+
+`GET /v1/flows` answers `{ "flows": [...] }`, every loaded flow: those of the plugins, those a plugin made from a repository's settings, and the [flows of the home](home-flows.md).
+
+```json
+{
+  "name": "home:nightly",
+  "plugin": "home",
+  "source": null,
+  "startable": true,
+  "path": "/home/me/.operad/flows/nightly.flow.ts",
+  "entry": "run",
+  "steps": [
+    { "id": "run", "kind": "plugin", "use": "shell/command", "next": { "pass": "end_done", "fail": "end_failed", "interrupted": "end_failed" } },
+    { "id": "end_done", "kind": "end", "status": "done" },
+    { "id": "end_failed", "kind": "end", "status": "failed" }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `name` | The flow's name. A flow of the home is `home:<file name>`. |
+| `plugin` | The plugin the flow belongs to, `home` for a flow of the home. |
+| `source` | Where that plugin was loaded from, or `null`. |
+| `startable`, `problem` | `startable` is `false` when a step the flow needs is not loaded, and `problem` then says why. |
+| `path` | The file of a flow of the home, on the machine `serve` runs on. Other flows have none. |
+| `entry` | The id of the first step. |
+| `steps` | The steps. Each has an `id` and a `kind`: `plugin` (calls a plugin's step), `wait_person` (waits for a person), `wait` (waits for a time or a condition) or `end`. `use` is the plugin step it calls, `<plugin>/<step>`, on a `plugin` step and on a `wait` that checks a condition. `next` maps each result or choice to the id of the step that follows; the id `end` finishes the flow. An `end` step has `status` (`done`, `failed` or `cancelled`) and no `next`. |
+
+The steps have the fields `dev.flowList` gives for a TypeScript flow of a repository (`id`, `kind`, `use`; see [Settings](#settings)), with `next` and `status` added, so a client draws both the same way. A file of the home that did not load is not in the list; `serve` writes its reason to the error output.
+
+A client that offers flows for a routine takes the names from this list and adds the routine with [`POST /v1/commands`](#endpoints), as `routines add --flow <name>`.
+
+`POST /v1/flows/start` starts a flow of the home once, as `operad start home:<name>` does:
+
+```json
+{ "flow": "home:nightly", "params": { "folder": "/tmp" } }
+```
+
+The answer is `{ "flow": "home:nightly", "runId": "<run>" }`, and the run is in `GET /v1/running` while it goes. `params` is an optional JSON object. A refused start answers with the reason and starts nothing: `400` for a body without a `flow` or `params` that are not an object, `404` for a flow that is not loaded, `409` for a flow already running, and `422` for a flow that cannot start or is not of the home.
 
 ## Row marks
 

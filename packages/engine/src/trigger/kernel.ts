@@ -243,7 +243,7 @@ export class Kernel {
         undefined,
         request.access,
       );
-      return { kind: "started", runId: realized.runId, duplicate: false };
+      return { kind: realized.kind, runId: realized.runId, duplicate: false };
     }
 
     if (

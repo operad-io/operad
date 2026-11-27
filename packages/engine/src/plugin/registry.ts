@@ -7,7 +7,7 @@ import { FlowError, validateFlow } from "../flow/validate.ts";
 import type { JsonValue } from "../log/types.ts";
 import { validateActionArgs } from "./action-schema.ts";
 import { readDeclaredFlows, writeDeclaredFlow } from "./declared-flows.ts";
-import { HOME_FLOW_OWNER, loadHomeFlows } from "./home-flows.ts";
+import { HOME_FLOW_OWNER, homeFlowsDirectory, loadHomeFlows } from "./home-flows.ts";
 import type { HomeFlowRefusal } from "./home-flows.ts";
 import { readFile } from "node:fs/promises";
 import { AccessError, AskTimeoutError, messageOf, PluginError, StepNotLoadedError } from "./errors.ts";
@@ -304,6 +304,7 @@ export class PluginRegistry {
   >();
   /** The flows of `<home>/flows`, by name, and the files refused. */
   private homeFlowMap: ReadonlyMap<string, FlowDefinition> = new Map();
+  private homeFlowFiles: ReadonlyMap<string, string> = new Map();
   private homeFlowRefusals: readonly HomeFlowRefusal[] = [];
   private readonly refusalList: PluginRefusal[] = [];
   private readonly settingsByPlugin: ReadonlyMap<
@@ -759,14 +760,22 @@ export class PluginRegistry {
    */
   async loadHomeFlows(): Promise<readonly HomeFlowRefusal[]> {
     this.homeFlowMap = new Map();
+    this.homeFlowFiles = new Map();
     const found = await loadHomeFlows(
       this.home,
       this.stepTypes(),
       (name) => this.flow(name) !== undefined,
     );
     this.homeFlowMap = new Map(found.flows.map((item) => [item.flow.name, item.flow]));
+    const directory = homeFlowsDirectory(this.home);
+    this.homeFlowFiles = new Map(found.flows.map((item) => [item.flow.name, join(directory, item.file)]));
     this.homeFlowRefusals = found.refused;
     return found.refused;
+  }
+
+  /** The file a flow of the home was read from; undefined for any other flow. */
+  homeFlowFile(name: string): string | undefined {
+    return this.homeFlowFiles.get(name);
   }
 
   /** The flow files of the home the last read refused. */

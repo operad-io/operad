@@ -1,6 +1,7 @@
 export { definePlugin } from "./define-plugin.ts";
 export { AccessError, AskTimeoutError, messageOf, PluginError, StartRefusedError, StepNotLoadedError } from "./errors.ts";
 export { defaultOperadHome } from "./home.ts";
+export { HOME_FLOW_PREFIX } from "./home-flows.ts";
 export { KERNEL_VERBS, openHome, type KernelVerb, type OpenHomeOptions, type OpenedHome } from "./context.ts";
 export {
   addPackage,

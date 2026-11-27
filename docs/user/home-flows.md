@@ -35,9 +35,23 @@ The name the file gives inside `defineFlow` does not matter; the file name does.
 ## Using them
 
 - `operad flows` lists them with the plugin column `home`.
+- `operad start home:nightly` starts one once, now; see [starting one by hand](#starting-one-by-hand).
 - `operad routines add --flow home:nightly --schedule "0 3 * * *"` starts one on a schedule.
 
 - `operad routines to-flow <id>` turns a routine that runs one command into such a file, ready to edit, and points the routine at it.
+
+## Starting one by hand
+
+```sh
+operad start home:nightly
+operad start home:nightly --params '{"folder":"/tmp"}'
+```
+
+The command prints `started <run>`. `serve` runs it, so a run started while `serve` is stopped waits until it starts again. It is a run like any other: it shows in `operad running` while it goes, and `operad history <run>` says what each step did. A client does the same with `POST /v1/flows/start` (see [http](http.md#flows)).
+
+`--params` is a JSON object the steps of the flow can read as the run's params; leave it out when the flow needs none. The run belongs to `flow:home:nightly`, the same as a routine of the flow that names no other object, so a flow whose run is still going is not started again.
+
+A start is refused, with the reason, and starts nothing when: the flow is not loaded (for a file that did not load, the reason says why), a step it needs is not loaded, the params are not a JSON object, or it is already running. Only flows of the home start this way; a plugin's flow is started by its plugin.
 
 ## Loading
 
