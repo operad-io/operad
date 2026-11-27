@@ -39,7 +39,6 @@ import {
   historyEntries,
   installedPackageFile,
   listPending,
-  realAskTimer,
   type AskTimer,
   listRunning,
   type RunningItem,
@@ -135,7 +134,7 @@ import {
   serveStartFlags,
   startWithRetry,
 } from "./http-bind.ts";
-import { showLoginCommand } from "./login-command.ts";
+import { realLoginTimer, showLoginCommand } from "./login-command.ts";
 import { QrTooLongError, encodeQr, renderQr } from "./qr.ts";
 import {
   DEFAULT_STOP_TIMEOUT_SECS,
@@ -3841,7 +3840,7 @@ export async function main(
           `plugin "${attempted}" is disabled; turn it on with \`operad plugin enable ${attempted}\``,
         );
       }
-      const loginTimer = options.loginTimer ?? realAskTimer;
+      const loginTimer = options.loginTimer ?? realLoginTimer;
       if (await commandAction(context, io, actionRepo.args, tty, loginTimer)) return 0;
       if (await commandPlugin(context, io, args)) return 0;
       const candidates: CommandCandidate[] = [

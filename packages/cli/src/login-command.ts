@@ -19,6 +19,12 @@ import {
 /** The longest the command line waits for the login's first question, in seconds. */
 export const LOGIN_QUESTION_WAIT_SECS = 30;
 
+/** The timer of that wait; the returned function cancels it. Tests inject their own. */
+export const realLoginTimer: AskTimer = (ms, fire) => {
+  const handle = setTimeout(fire, ms);
+  return () => clearTimeout(handle);
+};
+
 export interface LoginCommandWait {
   readonly home: string;
   readonly config: OperadConfig;
