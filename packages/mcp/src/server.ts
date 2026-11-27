@@ -3,7 +3,9 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { Kernel, ViewError, defaultOperadHome, isRecord, listPending, loadTriggerRules, messageOf, openHome, type ActionInfo, type LogBackend, type OperadConfig, type PluginRegistry, type Views } from "@operad-io/engine";
+import { Kernel, ViewError, defaultOperadHome, isRecord, listPending, loadTriggerRules, messageOf, openHome, type ActionInfo, type LogBackend, type OperadConfig, type PluginRegistry, type Views,
+  sharedOptionalPlugins,
+} from "@operad-io/engine";
 import { InvalidToolArguments } from "./arguments.ts";
 import { actionInfoNamed, actionMayRun, mcpPolicy } from "./policy.ts";
 import {
@@ -106,6 +108,11 @@ export interface McpServerOptions {
   readonly types?: readonly string[] | undefined;
   /** Plugins whose missing package is reported as "not installed; run `operad plugin enable`". */
   readonly installOnEnable?: readonly string[] | undefined;
+  /**
+   * The shipped plugins `config.json` need not name, by name and module, so
+   * their setup guides are readable; absent, the list this process was handed.
+   */
+  readonly optional?: Readonly<Record<string, string>> | undefined;
 }
 
 interface OpenContext {
@@ -180,12 +187,14 @@ async function openContext(
   clock: () => number,
   onLog: (message: string) => void | Promise<void>,
   installOnEnable: readonly string[] | undefined,
+  optional: Readonly<Record<string, string>> | undefined = sharedOptionalPlugins(),
 ): Promise<OpenContext> {
   const opened = await openHome({
     home,
     cwd,
     clock,
     ...(installOnEnable === undefined ? {} : { installOnEnable }),
+    ...(optional === undefined ? {} : { optional }),
     cancelSource: "mcp",
     onLog: (message) => {
       void onLog(message);
@@ -432,7 +441,7 @@ export async function runMcpServer(
   const send = lineWriter(write);
   const input = options.input ?? Bun.stdin.stream();
 
-  const opened = await openContext(home, cwd, clock, log, options.installOnEnable);
+  const opened = await openContext(home, cwd, clock, log, options.installOnEnable, options.optional);
   let channel: ChannelHandle | undefined;
   try {
     if (options.claudeChannel === true) {
@@ -499,6 +508,8 @@ export interface OpenMcpToolsOptions {
   readonly onLog?: ((message: string) => void) | undefined;
   /** Plugins whose missing package is reported as "not installed; run `operad plugin enable`". */
   readonly installOnEnable?: readonly string[] | undefined;
+  /** As `McpServerOptions.optional`. */
+  readonly optional?: Readonly<Record<string, string>> | undefined;
 }
 
 /**
@@ -516,6 +527,7 @@ export async function openMcpTools(options: OpenMcpToolsOptions = {}): Promise<M
       options.onLog?.(message);
     },
     options.installOnEnable,
+    options.optional,
   );
   const context = toolContext(opened, clock);
   return {

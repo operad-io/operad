@@ -1521,3 +1521,10 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0810-M59 | packages/engine/src/platform/folder-holds.ts | a release stopped a process that is not its holder's child | `folder holds > a hold whose process is not its holder's child is dropped, and nothing is signaled` |
 | T-0810-M60 | packages/engine/src/platform/folder-holds.ts | a release matched folders by name prefix | `folder holds > releasing a folder stops the trees held in it and below it, and tells their holders` |
 | T-0810-M61 | packages/engine/src/platform/folder-holds.ts | a release that failed threw | `folder holds > a release never fails: no list, a broken entry or an unreadable table` |
+
+## T-0813 — the guide of a plugin config.json does not name
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0813-M6 | packages/engine/src/plugin/load.ts | an offered plugin the file does not name was not counted as off | `an offered plugin that config.json does not name yet has its guide readable; a named one that is on does not` |
+| T-0813-M7 | packages/engine/src/plugin/load.ts, registry.ts | a name neither configured nor offered got an offered module's guide | `an offered plugin that config.json does not name yet has its guide readable; a named one that is on does not` |

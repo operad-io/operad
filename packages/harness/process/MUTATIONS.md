@@ -294,3 +294,9 @@ and the row fields.
 | T-0766-M14 | packages/harness/process/src/step.ts | the result data dropped the worker's compaction note | `a worker's compaction becomes the result's compacted flag and compaction note` |
 
 _This section repeats the T-0766 rows above it; the rows above stand._
+
+## T-0813 — the guide of a plugin config.json does not name
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0813-M3 | packages/harness/process/src/operad-tools.ts | the server command left out `--optional` | `the tools server a harness starts answers it` |

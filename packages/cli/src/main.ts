@@ -77,6 +77,7 @@ import {
   serve,
   serveLockPath,
   setPluginEnabled,
+  shareOptionalPlugins,
   splitActionName,
   startHttpServer,
   storeRootOf,
@@ -576,13 +577,16 @@ export async function openContext(
   // a kernel with rules hands it over, so serve does not build a second one.
   let eventKernel: Kernel | undefined;
   let opened: OpenedHome | undefined;
+  const { optional } = pluginOffer(home);
+  // The tools server a harness opens for an agent reads the same list.
+  shareOptionalPlugins(optional);
   const context = await openHome({
     home,
     cwd,
     config,
     follow,
     installOnEnable: INSTALL_ON_ENABLE,
-    optional: pluginOffer(home).optional,
+    optional,
     ...(scope === undefined ? {} : { scope }),
     ...(viewsCwd === undefined ? {} : { viewsCwd }),
     cancelSource: "cli",
@@ -3474,6 +3478,7 @@ export async function main(
           write: (text) => io.write(text),
           error: (text) => io.error(text),
           installOnEnable: INSTALL_ON_ENABLE,
+          optional: pluginOffer(home).optional,
           ...(claudeChannel ? { claudeChannel: true } : {}),
           ...(types === undefined ? {} : { types }),
         });

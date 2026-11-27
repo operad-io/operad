@@ -508,3 +508,10 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0810-M68 | packages/cli/src/plugin-description.ts | `terminal` had no description for a home that has not installed it | `plugin descriptions > a plugin installed on enable is described before its package is there, in the package's words` |
+
+## T-0813 — the guide of a plugin config.json does not name
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0813-M1 | packages/cli/src/main.ts | opening the home did not share the optional plugins | `the tools opened in an agent's process answer it once the home was opened` |
+| T-0813-M5 | packages/cli/src/main.ts | `operad mcp` did not pass the optional plugins to the tools server | ``operad mcp` answers it` |
