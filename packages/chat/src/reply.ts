@@ -690,6 +690,7 @@ function contextAsker(ctx: StepContext): StepAsker {
             choices: error.choices,
             ...(error.choiceInfo === undefined ? {} : { choiceInfo: error.choiceInfo }),
             ...(error.questions === undefined ? {} : { questions: error.questions }),
+            ...(error.command === undefined ? {} : { command: error.command }),
             ...(error.resume === undefined || error.resume === null ? {} : { resume: error.resume as JsonValue }),
           };
         }

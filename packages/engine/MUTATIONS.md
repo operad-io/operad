@@ -1536,3 +1536,12 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0814-M4 | packages/engine/src/kernel/decide.ts | the wait after the grace dropped the command | `ctx.ask (memory) > a question's command is on the pending item while it is open and after its grace` |
 | T-0814-M5 | packages/engine/src/plugin/registry.ts | a command was not checked before the question was asked | `command validation > an empty, many-line, escaped or overlong command is refused before anyone is asked` |
 | T-0814-M6 | packages/engine/src/runner/step-worker.ts | a step in a worker thread did not pass the command on | `ctx.ask (file) > a question's command is on the pending item while it is open and after its grace` |
+
+## T-0818 — follow-ups of the question's command
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0818-M2 | packages/engine/src/testing/world.ts | a testing run's wait left out the command | `runFlow > a wait carries the command its question asked the person to run` |
+| T-0818-M3 | packages/engine/src/kernel/decide.ts | an unreadable command in a step's result was kept on the wait | `runFlow > a command a step's result carries that cannot be read is left off the wait` |
+| T-0818-M4 | packages/engine/src/runner/ask.ts | an unreadable command in a logged question was kept | `ctx.ask (memory) > an open question whose stored command cannot be read stays pending without it` |
+| T-0818-M5 | packages/engine/src/plugin/ask-command.ts | a command with a format character was accepted | `command validation > an empty, many-line, escaped, disguised or overlong command is refused before anyone is asked` |
