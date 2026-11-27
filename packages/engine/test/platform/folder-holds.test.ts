@@ -6,10 +6,12 @@ import { join } from "node:path";
 import {
   FOLDER_HOLDS_DIRECTORY,
   holdFolder,
+  readProcessTable,
   releaseFolder,
   spawnPty,
   type Pty,
 } from "../../src/platform/index.ts";
+import { leftJob } from "./left-job.ts";
 
 const started: Pty[] = [];
 const directories: string[] = [];
@@ -26,6 +28,20 @@ function directory(): string {
   const path = realpathSync(mkdtempSync(join(tmpdir(), "operad-holds-")));
   directories.push(path);
   return path;
+}
+
+/** A shell that ends on a line of input and leaves a job running. */
+function shellThatLeaves() {
+  const job = leftJob(join(directory(), "left"));
+  const pty = spawnPty({
+    argv: ["bash", "--norc", "-c", `${job.line} read line`],
+    cwd: tmpdir(),
+    cols: 80,
+    rows: 24,
+    onData: () => undefined,
+  });
+  started.push(pty);
+  return { pty, job };
 }
 
 /**
@@ -64,6 +80,78 @@ describe("a terminal that hangs up", () => {
     await shell.pty.hangUp();
     await shell.gone;
     await shell.pty.exited;
+  });
+});
+
+describe("after the shell exited", () => {
+  test("a hang up stops the job it left in another process group", async () => {
+    const { pty, job } = shellThatLeaves();
+    await job.up;
+    pty.write("\n");
+    await pty.exited;
+    expect(job.ended()).toBe(false);
+    expect(await pty.alive()).toBe(true);
+    await pty.hangUp();
+    await job.gone;
+    expect(await pty.alive()).toBe(false);
+  });
+
+  test("a release stops the job held by the terminal's marker", async () => {
+    const home = directory();
+    const folder = directory();
+    const { pty, job } = shellThatLeaves();
+    const hold = holdFolder({ home, folder, pid: pty.pid, marker: pty.marker });
+    await job.up;
+    pty.write("\n");
+    await pty.exited;
+    expect(await releaseFolder(home, folder)).toBe(1);
+    await job.gone;
+    expect(hold.released()).toBe(true);
+    hold.drop();
+  });
+
+  test("a process that left the terminal to be a daemon is not stopped", async () => {
+    const job = leftJob(join(directory(), "daemon"));
+    const start = `require("child_process").spawn("sh",["-c",process.argv[1]],{detached:true,stdio:"ignore"}).unref()`;
+    // `exec` makes the daemon itself the leader of the new session.
+    const pty = spawnPty({
+      argv: [process.execPath, "-e", start, `exec ${job.program}`],
+      cwd: tmpdir(),
+      cols: 80,
+      rows: 24,
+      onData: () => undefined,
+    });
+    started.push(pty);
+    await pty.exited;
+    await job.up;
+    try {
+      await pty.hangUp();
+      expect(job.ended()).toBe(false);
+      expect(await pty.alive()).toBe(false);
+    } finally {
+      process.kill(job.pid(), "SIGKILL");
+    }
+    await job.gone;
+  });
+
+  test("a hang up that cannot read the processes still stops the group, and is tried again", async () => {
+    let fail = true;
+    const pty = spawnPty({
+      argv: ["sh", "-c", "read line"],
+      cwd: tmpdir(),
+      cols: 80,
+      rows: 24,
+      onData: () => undefined,
+      table: async () => {
+        if (fail) throw new Error("no process table");
+        return await readProcessTable();
+      },
+    });
+    started.push(pty);
+    await expect(pty.hangUp()).rejects.toThrow("no process table");
+    await pty.exited;
+    fail = false;
+    await pty.hangUp();
   });
 });
 

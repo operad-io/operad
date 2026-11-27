@@ -83,3 +83,13 @@ exit 1`);
     expect(readFileSync(counter, "utf8").length).toBe(2);
   });
 });
+
+describe("claude's command for a person", () => {
+  test("is the command setting as one shell word, and none without it", async () => {
+    const plugin = createClaudeHarnessPlugin();
+    expect(await plugin.interactiveCommand?.({ command: "/opt/my tools/claude" })).toBe(
+      "'/opt/my tools/claude'",
+    );
+    expect(await plugin.interactiveCommand?.({})).toBeUndefined();
+  });
+});

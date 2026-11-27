@@ -21,6 +21,7 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 - [telegram](packages/telegram/MUTATIONS.md)
 - [tui](packages/tui/MUTATIONS.md)
 - [terminal](packages/terminal/MUTATIONS.md)
+
 ## Outside packages
 
 | id | file | mutation | failing test |

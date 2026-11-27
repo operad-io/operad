@@ -600,7 +600,7 @@ the answer is `403` with the kind `refused` and the reason in `message`.
 
 | Method and path | What it does |
 |---|---|
-| `GET /v1/terminal` | `{ "terminals": [...], "groups": [{ "id", "name", "terminals": ["<id>"] }], "presets": [{ "command": "claude" }] }`. `presets` are command lines a client may offer, one for each enabled harness among `claude`, `codex` and `pi`. Groups are in name order. |
+| `GET /v1/terminal` | `{ "terminals": [...], "groups": [{ "id", "name", "terminals": ["<id>"] }], "presets": [{ "name": "claude", "command": "claude" }] }`. `presets` are command lines a client may offer, one for each enabled harness among `claude`, `codex` and `pi`; `command` is what that harness runs its agent with. Groups are in name order. |
 | `POST /v1/terminal` | Starts a terminal. The body is `{ "folder": "/path", "cols": 80, "rows": 24, "command"?: "bun run dev", "group"?: "<group id>" }`; an empty or absent `command` opens the login shell. The answer is `201` and `{ "terminal": { ... } }`. A folder that is not a registered repository or one of its worktrees is `422`; an unknown `group` is `404`. |
 | `POST /v1/terminal/<id>/input` | Types into it: `{ "data": "ls\r" }`. An ended terminal is `409`. |
 | `POST /v1/terminal/<id>/resize` | `{ "cols": 100, "rows": 30 }`, each from 1 to 1000. An ended terminal is `409`. |
@@ -625,7 +625,8 @@ over the stream.
 | Event | `data` | When |
 |---|---|---|
 | `terminal.change` | `{ "id" }` or `{ "group" }` | A terminal started, resized, ended, changed its `group` or was closed (`id`), or an entry of `groups` was created, renamed or deleted (`group`). Read the list again. |
-| `terminal.screen` | The terminal's fields and `"data"` | First, for each terminal the stream names: the screen and up to 5000 lines above it, as text with escape sequences to write into an empty terminal of `cols` by `rows`. |
+| `terminal.screen` | The terminal's fields, `"data"` and `"answers"` | First, for each terminal the stream names: the screen and up to 5000 lines above it, as text with escape sequences to write into an empty terminal of `cols` by `rows`. |
+| `terminal.answers` | `{ "id" }` | This stream is now the one that answers the program's questions to its terminal. |
 | `terminal.output` | `{ "id", "data" }` | Output that follows the screen, in order. It never ends inside a character or an escape sequence. |
 | `terminal.resize` | `{ "id", "cols", "rows" }` | The size changed at this point of the output. |
 | `terminal.exit` | `{ "id", "exitCode", "signal", "reason" }` | It ended, after its last output. |
@@ -634,9 +635,11 @@ over the stream.
 These events have no `id:` and are not replayed: a client that reconnects gets a
 new `terminal.screen` and replaces what it shows. While no stream names a
 terminal, `serve` answers the questions a program asks its terminal, such as the
-cursor position; while one does, the client's terminal answers, and the client
-sends the answer as input. A client that stops reading is disconnected once 32
-MiB of terminal events wait for it. The 64 KiB line limit above does not apply
+cursor position. While streams do, one of them answers: the one whose
+`terminal.screen` has `"answers": true`, or that later gets `terminal.answers`.
+Its client sends what its terminal answers as input; every other client sends no
+such answer. A client that stops reading is disconnected once 32 MiB of terminal
+events wait for it, not counting `terminal.screen`, which may be of any size. The 64 KiB line limit above does not apply
 to terminal events.
 
 ## Errors

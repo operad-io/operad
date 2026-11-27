@@ -67,6 +67,8 @@ export interface NormalizedPlugin {
   readonly start:
     | ((ctx: SourceContext) => MaybePromise<SourceHandle> | SourceHandle)
     | undefined;
+  readonly startsWithoutRules: boolean;
+  readonly interactiveCommand: InteractiveCommand | undefined;
   readonly check:
     | ((ctx: PluginBaseContext) => MaybePromise<PluginCheckReturn>)
     | undefined;
@@ -870,6 +872,8 @@ export function normalizePlugin(raw: unknown, index: number): NormalizedPlugin {
     efforts: normalizeEfforts(raw.efforts, kind, at),
     capabilities: normalizeCapabilities(raw.capabilities, kind, at),
     signedIn: normalizeSignedIn(raw.signedIn, kind, at),
+    startsWithoutRules: raw.startsWithoutRules === true,
+    interactiveCommand: normalizeInteractiveCommand(raw.interactiveCommand, kind, at),
     requires: normalizeRequires(raw.requires, at),
   };
 }
@@ -1171,6 +1175,30 @@ function normalizeSignedIn(
     const answer = await source(settings);
     if (answer === undefined || answer === true || answer === false) return answer;
     throw new PluginError(`${at}: signedIn: must return true, false or undefined`);
+  };
+}
+
+type InteractiveCommand = (
+  settings: Readonly<Record<string, JsonValue>>,
+  context: { readonly home: string },
+) => MaybePromise<string | undefined>;
+
+/** A harness plugin's `interactiveCommand` hook: a command line, or undefined. */
+function normalizeInteractiveCommand(
+  value: unknown,
+  kind: string,
+  at: string,
+): InteractiveCommand | undefined {
+  if (value === undefined) return undefined;
+  if (kind !== "harness") {
+    throw new PluginError(`${at}: interactiveCommand: only a harness plugin declares interactiveCommand`);
+  }
+  if (typeof value !== "function") throw new PluginError(`${at}: interactiveCommand: must be a function`);
+  const source = value as (...args: Parameters<InteractiveCommand>) => unknown;
+  return async (settings, context) => {
+    const answer = await source(settings, context);
+    if (answer === undefined || (typeof answer === "string" && answer !== "")) return answer;
+    throw new PluginError(`${at}: interactiveCommand: must return a command line or undefined`);
   };
 }
 

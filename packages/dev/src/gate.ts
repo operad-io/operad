@@ -58,6 +58,7 @@ import {
   workBranch,
   type TaskContext,
 } from "./steps.ts";
+import { releaseFolder } from "@operad-io/engine/platform";
 import {
   addedLinesOf,
   incrementOf,
@@ -116,13 +117,16 @@ function mergeBase(
 }
 
 /** Removes whatever is at the gate path and checks a commit out detached. */
-export function recreateGateWorktree(
+export async function recreateGateWorktree(
+  home: string,
   repositoryPath: string,
   path: string,
   sha: string,
   settings: DevSettings,
-): string | undefined {
+): Promise<string | undefined> {
   if (existsSync(path)) {
+    // Whatever keeps a process in it stops first.
+    await releaseFolder(home, path);
     if (isRegistered(repositoryPath, path)) {
       const removed = git(repositoryPath, [
         "worktree",
@@ -255,7 +259,8 @@ export async function runVerify(
         : `no branch "${workBranch(context.workName)}" or "${context.settings.remote}/${workBranch(context.workName)}" to verify`,
     );
   }
-  const prepared = recreateGateWorktree(
+  const prepared = await recreateGateWorktree(
+    ctx.home,
     context.repository.path,
     path,
     sha,
@@ -2164,7 +2169,8 @@ export async function runReview(
       }
     }
   }
-  const preparedWorktree = recreateGateWorktree(
+  const preparedWorktree = await recreateGateWorktree(
+    ctx.home,
     context.repository.path,
     path,
     sha,

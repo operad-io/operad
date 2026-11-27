@@ -80,6 +80,10 @@ A source reads `capabilities.backgroundModel` through `ctx.harnessCapabilities`,
 
 A chat reads `capabilities.accessLevels` the same way. `claude` and `pi` list `plan`, `ask`, `edits` and `full`; `codex` and `radian` list none, so a chat at any level refuses the reply at its start with a message naming the level.
 
+## A command for a person
+
+`interactiveCommand(settings, { home })` returns the shell command line a person runs the agent with by hand, or `undefined` when the agent's name will do. A [terminal](../user/terminal.md) offers it. `claude` returns its `command` setting, `codex` its setting without `app-server`, and `pi` its setting or the pi operad installed when `PATH` has none. `shellWord(value)` from `@operad-io/harness-process` writes one word of such a line.
+
 ## Skills
 
 A step may give skill directories in its `skills` param. A harness that declares `capabilities.loadsSkills: true` (`claude`, `pi`) loads them itself, and the prompt stays exactly what the step gives. For any other harness, `promptWithSkills(prompt, paths, capabilities)` of `@operad-io/harness-process` appends a short list: each skill's name, the description from its `SKILL.md` frontmatter and the path of that file, with one sentence to read the file before doing what it describes. It carries no skill body.

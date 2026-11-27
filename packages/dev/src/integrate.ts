@@ -663,7 +663,7 @@ export async function runIntegrate(
       if (!fetched.ok) return undefined;
       const base = commitOf(repository, mainRef);
       if (base === undefined) return undefined;
-      if (recreateGateWorktree(repository, gate, base, settings) !== undefined) {
+      if ((await recreateGateWorktree(ctx.home, repository, gate, base, settings)) !== undefined) {
         return undefined;
       }
       const members: { task: string; sha: string }[] = [];
@@ -955,7 +955,7 @@ export async function runIntegrate(
         );
       }
 
-      const prepared = recreateGateWorktree(repository, gate, base, settings);
+      const prepared = await recreateGateWorktree(ctx.home, repository, gate, base, settings);
       if (prepared !== undefined) return fail(prepared);
 
       const candidate = mergeCandidate(
