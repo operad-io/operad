@@ -323,6 +323,17 @@ describe("pending items go to Telegram", () => {
     await w.close();
   });
 
+  test("a question's command is a paragraph of its own under the prompt", async () => {
+    const { w, api, chat, client, sender } = await setup();
+    const command = "'/home/a b/.bin/tool' auth login some-provider";
+    client.items = [
+      item({ runId: "r1", waitId: "w1", flow: "chat", prompt: "Log in?", command, choices: ["ok"], object: `chat:${chat}` }),
+    ];
+    await sender.sync();
+    expect(api.sent[0]?.text).toBe(`Log in?\n\n${command}`);
+    await w.close();
+  });
+
   test("an item answered elsewhere loses its buttons and says which action answered it", async () => {
     const { w, api, client, sender, ctx } = await setup({ pending: ["dev"], bind: false });
     client.items = [item({ runId: "d1", object: "task:t1", actions: [ACT_MERGE] })];

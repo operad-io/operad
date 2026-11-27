@@ -178,8 +178,10 @@ describe("pi/login", () => {
       // `pi` as found on this machine's PATH, or the plain name when it has none.
       expect(command).toBe(chatgptLoginCommand("pi", { home: env.root, cwd: env.root }));
       expect(pending[0]?.prompt).toBe(
-        `Choose a provider to log in with an API key. For a ChatGPT plan, run \`${command}\` instead; operad picks it up once it is done.`,
+        "Choose a provider to log in with an API key. For a ChatGPT plan, run the command below instead; operad picks it up once it is done.",
       );
+      // The command is said once, in its own field (ADR 0008 D9).
+      expect(pending[0]?.prompt).not.toContain(command);
 
       await timer.until(1);
       timer.fire();
@@ -215,7 +217,7 @@ describe("pi/login", () => {
       await env.opened(1);
       const item = (await listPending(env.log, env.registry))[0];
       expect(item?.command).toBe(`${join(bin, "pi")} auth login openai-codex`);
-      expect(item?.prompt).toContain(`\`${join(bin, "pi")} auth login openai-codex\``);
+      expect(item?.prompt).not.toContain("auth login");
       await timer.until(1);
       timer.fire();
       expect(await run).toBe("ended");

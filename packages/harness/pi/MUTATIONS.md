@@ -358,3 +358,10 @@ _The second "## T-0766" section above repeats the rows of the first; the rows of
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0817-M32 | packages/harness/pi/src/index.ts | a person's command ignored the pi operad installed | `pi's command for a person > is the pi operad installed when PATH has none, the setting's otherwise, and none for a pi on PATH` |
+
+## T-0820 — the login question says its command once
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0820-M1 | packages/harness/pi/src/login.ts | the prompt said the command inline again | `pi/login > the first question offers API-key routes only and tells where a ChatGPT plan logs in` |
+| T-0820-M2 | packages/harness/pi/src/login.ts | the provider question carried no command | `pi/login > the first question offers API-key routes only and tells where a ChatGPT plan logs in` |

@@ -440,6 +440,8 @@ export class PendingSender implements PendingResponder {
     const title = item.row?.title;
     if (title !== undefined && title.length > 0 && !item.prompt.includes(title)) lines.push(title);
     lines.push(item.prompt);
+    // A paragraph of its own, so it can be copied whole (ADR 0008 D9).
+    if (item.command !== undefined) lines.push(item.command);
     for (const entry of ordered) {
       if (entry.info?.hint !== undefined) lines.push(entry.info.hint);
     }

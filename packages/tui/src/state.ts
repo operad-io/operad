@@ -80,6 +80,8 @@ export interface TuiAnswer {
   readonly runId: string;
   readonly waitId: string;
   readonly prompt: string;
+  /** A command line the person runs themselves (ADR 0008 D9). */
+  readonly command?: string | undefined;
   readonly choices: readonly string[];
   /** What each choice says about itself; see `ChoiceInfo`. */
   readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
@@ -843,6 +845,7 @@ function answerOfPending(item: PendingItem): TuiAnswer | undefined {
     runId: item.runId,
     waitId: item.waitId,
     prompt: item.prompt,
+    ...(item.command === undefined ? {} : { command: item.command }),
     choices: item.choices,
     ...(item.choiceInfo === undefined ? {} : { choiceInfo: item.choiceInfo }),
   };

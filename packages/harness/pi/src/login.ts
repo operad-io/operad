@@ -236,7 +236,7 @@ async function chooseProvider(
     choiceInfo[route.provider] = { label: routeLabel(provider) };
   }
   const answer = await ctx.ask({
-    prompt: `Choose a provider to log in with an API key. For a ChatGPT plan, run \`${command}\` instead; operad picks it up once it is done.`,
+    prompt: "Choose a provider to log in with an API key. For a ChatGPT plan, run the command below instead; operad picks it up once it is done.",
     command,
     choices,
     choiceInfo,

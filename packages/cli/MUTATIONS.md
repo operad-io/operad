@@ -559,3 +559,10 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 | T-0819-M2 | packages/cli/src/main.ts | `operad history` left out who started the run | `the run's history says who started it` |
 | T-0819-M3 | packages/cli/src/main.ts | the run process failed a run of a flow `serve` holds | `a run of a flow serve holds > is not failed while the file on disk does not load` |
 | T-0819-M4 | packages/cli/src/main.ts | `serve` did not tell the run process it holds the flow | `a run serve starts from the flow it holds waits for a file that loads` |
+
+## T-0820 — the login question says its command once
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0820-M7 | packages/cli/src/main.ts | `operad pending` left the command out | `operad pending shows a question's command > alone on its own line, and as the item's command in --json` |
+| T-0820-M8 | packages/cli/src/login-command.ts | `operad bot login` printed the prompt without the command | `operad bot login > waits for the question serve asks and prints its command on its own line` |
