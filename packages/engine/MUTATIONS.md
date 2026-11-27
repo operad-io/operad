@@ -1499,3 +1499,10 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0809-M4 | packages/engine/src/http/server.ts | a failed bind passed on the runtime's error without the address | `a port taken on an address this machine has fails and names the address` |
 | T-0809-M5 | packages/engine/src/http/address.ts | loopback counted as present only when an interface listed it | `an address that is not on this machine is skipped with a warning` |
 | T-0809-M6 | packages/engine/src/http/address.ts | addresses were compared as written, so another spelling of an IPv6 address counted as missing | `an address that is not on this machine is skipped with a warning` |
+| T-0815-M1 | packages/engine/src/views/flows.ts | the list left out where each step goes next | `flows --json gives a home flow and a plugin flow with their steps` |
+| T-0815-M2 | packages/engine/src/plugin/registry.ts | a home flow's path was only its file name | `flows --json gives a home flow and a plugin flow with their steps`, `serve lists the flows over HTTP and runs one a client starts to its end` |
+| T-0815-M3 | packages/engine/src/views/flows.ts | a wait that checks a condition named no plugin step | `flows --json gives a home flow and a plugin flow with their steps` |
+| T-0815-M4 | packages/engine/src/views/flows.ts | the list did not say why a flow cannot start | `a flow that cannot start says why` |
+| T-0815-M5 | packages/engine/src/http/server.ts | `GET /v1/flows` was not routed | `serve lists the flows over HTTP and runs one a client starts to its end` |
+| T-0815-M15 | packages/engine/src/trigger/kernel.ts | a start with no event answered started for a flow already running | `a flow already running is not started twice` |
+| T-0815-M17 | packages/engine/src/http/server.ts | an HTTP start did not carry the client's name as the actor | `serve lists the flows over HTTP and runs one a client starts to its end` |
