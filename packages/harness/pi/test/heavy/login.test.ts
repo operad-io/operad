@@ -14,7 +14,9 @@ import {
   Runner,
   defineFlow,
   listPending,
+  loadPluginRegistry,
   openLog,
+  openPluginStore,
   recordAnswer,
   type AskTimer,
   type Fact,
@@ -27,6 +29,7 @@ import { cleanupTempRoots, tempRoot } from "../../../process/test/support.ts";
 afterAll(cleanupTempRoots);
 
 const FAKE = fileURLToPath(new URL("../fake-login-worker.ts", import.meta.url));
+const EXITING_PLUGIN = fileURLToPath(new URL("../fixtures/exiting-login-plugin.ts", import.meta.url));
 const ACTOR = { via: "cli", id: "me" } as const;
 const OBJECT = "bot:default";
 
@@ -280,6 +283,51 @@ describe("pi/login", () => {
       expect(JSON.stringify(await facts(env.log, env.runId))).not.toContain("sk-not-a-real-key");
     } finally {
       await env.log.close();
+    }
+  }, 30_000);
+
+  test("a login program that ends while the key question is open closes it and gives its reason", async () => {
+    const root = await tempRoot();
+    // A plugin loaded from a file, with a file store, runs its step in a worker.
+    writeFileSync(
+      join(root, "config.json"),
+      JSON.stringify({ plugins: { pi: { module: EXITING_PLUGIN, enabled: true } } }),
+    );
+    const registry = await loadPluginRegistry({
+      home: root,
+      cwd: root,
+      store: openPluginStore({ root: join(root, "store") }),
+    });
+    const exit = Promise.withResolvers<Response>();
+    const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => exit.promise });
+    writeFileSync(join(root, "exit-url"), server.url.href);
+    const log = openLog({ path: join(root, "log", "log.sqlite") });
+    try {
+      const info = await log.startRun(flow.name, OBJECT);
+      // The question's grace timer is never fired: only the child's end can close it.
+      const askTimer = new FakeTimer().timer;
+      const run = new Runner({ log, flow, runId: info.runId, registry, params: null, askTimer }).run();
+      const opened = (n: number): Promise<void> =>
+        waitForLog(log, async () => count(await facts(log, info.runId), "ask_opened") >= n);
+      await opened(1);
+      const first = (await listPending(log, registry))[0];
+      if (first?.waitId === undefined) throw new Error("no wait");
+      await recordAnswer({ log, runId: info.runId, waitId: first.waitId, choice: "openai", actor: ACTOR });
+      await opened(2);
+      expect((await listPending(log, registry))[0]?.questions?.[0]?.secret).toBe(true);
+
+      exit.resolve(new Response("pi lost its connection"));
+      expect(await run).toBe("ended");
+      expect(await listPending(log, registry)).toEqual([]);
+      const list = await facts(log, info.runId);
+      expect(count(list, "ask_timed_out")).toBe(0);
+      expect(list.find((fact) => fact.kind === "step_result")?.payload).toMatchObject({
+        result: "failed",
+        data: { message: "the login program ended before its answer: pi lost its connection" },
+      });
+    } finally {
+      await server.stop(true);
+      await log.close();
     }
   }, 30_000);
 

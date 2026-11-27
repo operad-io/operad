@@ -67,6 +67,28 @@ export default definePlugin({
       },
     },
     {
+      name: "ask-recheck",
+      results: ["answered", "waiting", "failed"],
+      async run(ctx) {
+        let checks = 0;
+        try {
+          const answer = await ctx.ask({
+            prompt: "Still needed?",
+            choices: ["yes"],
+            // Needed the first time, settled the second, broken after that.
+            recheck: () => {
+              checks += 1;
+              if (checks > 2) throw new Error("the check broke");
+              return checks === 1 ? { ask: true } : { ask: false, note: "no longer needed" };
+            },
+          });
+          return { result: "answered", data: { choice: answer.choice ?? null } };
+        } catch (error) {
+          return { result: "failed", data: { error: messageOf(error) } };
+        }
+      },
+    },
+    {
       name: "ask-form",
       results: ["answered", "waiting", "failed"],
       async run(ctx) {
