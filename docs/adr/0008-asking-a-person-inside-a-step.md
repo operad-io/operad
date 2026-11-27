@@ -114,9 +114,12 @@ random name, so whoever sees the claim finds the text, and a second answer that
 loses the claim removes its own file and no other. The step removes the file as
 it reads it. The file of a refused answer is removed at once, and a step that
 stops waiting removes whatever is left for its question. A file a dead process
-left is removed once it is ten minutes old, when `serve` starts or the next
-secret answer is written. A caller that cannot name the home cannot answer a
-secret question.
+left is removed once it is ten minutes old: when `serve` starts, once a minute
+while it runs, or when the next secret answer is written. A step that finds the
+text of a claimed answer gone (it runs again after it read it, or the file was
+removed as stale) fails with an error that says so; it is never given the
+question as skipped. A caller that cannot name the home cannot answer a secret
+question.
 
 An address is the plugin's to validate, not the kernel's: the kernel checks the
 scheme and length, and the plugin checks the host and path of a login address
