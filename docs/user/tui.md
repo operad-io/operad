@@ -55,10 +55,15 @@ It finds or starts the server like this:
 
 - `--url` and `--token` win over the home when they are given. With `--url`
   nothing is ever started.
-- Without `--url`, the URL is `http://<address>:<port>` for the first entry of
+- Without `--url`, the URL is `http://<address>:<port>` for an entry of
   `http.listen` and `http.port` in `config.json`; with no `http` section it is
-  `http://127.0.0.1:8765`.
-- It asks that address for `/v1/types`. If a `serve` answers, it goes on.
+  `http://127.0.0.1:8765`. An entry this machine does not have now is passed
+  over, because `serve` skips it; with none left it starts nothing, names the
+  addresses and asks for another `http.listen` or `--url`.
+- It asks each of the other addresses for `/v1/types`, in order, and uses the
+  first where a `serve` answers, so an address that came back after `serve`
+  started does not hide it. With `--no-start` it asks none and takes the first
+  address this machine has.
 - If nothing answers and no `serve` holds this home, it starts `operad serve`
   for this `OPERAD_HOME`, prints `starting operad serve (log: <path>)`, waits up
   to 15 seconds (probe time counts) for it to answer, and opens the screen. The `serve` runs with
@@ -75,8 +80,8 @@ It finds or starts the server like this:
 - If a `serve` already holds this home but nothing answers at the address
   (`http.enabled` is false, or `http.port`/`http.listen` differ), it starts
   nothing and says so, naming `http.enabled` and `http.port`.
-- If something answers at the address but it is not operad, it fails naming the
-  port.
+- If no address answers as operad and something else answers at one, it fails
+  naming that address and the port.
 - With `http.port` 0 or an empty `http.listen` it starts nothing and says to set
   `http.port` (or `http.listen`) or pass `--url`.
 - With `"enabled": false` in `http` it starts nothing and names `http.enabled`.
@@ -90,12 +95,12 @@ To use the terminal client from another computer over a Tailscale network, see
 
 | Input | Type | Default | Allowed values |
 |---|---|---|---|
-| `--url` | string | `http://<first http.listen address>:<http.port>`, which is `http://127.0.0.1:8765` with no `http` section | An `http` or `https` URL without credentials, a query or a fragment. |
+| `--url` | string | `http://<address>:<http.port>` for the first `http.listen` address this machine has where `serve` answers, which is `http://127.0.0.1:8765` with no `http` section | An `http` or `https` URL without credentials, a query or a fragment. |
 | `--no-start` | flag | off | Never start `operad serve`, even when none answers. |
 | `--theme` | string | `theme` in `$OPERAD_HOME/tui.json`, else `auto` | `auto`, `light`, `dark`, `terminal`, a family or a shipped theme (see Themes), or the name of a theme file of your own. Beats `tui.json` for this session. |
 | `--token` | string | The token in `$OPERAD_HOME/secrets/http.json` | The bearer token of the running `serve`. |
 | `OPERAD_HOME` | environment variable | `~/.operad` | The directory holding `config.json`, `secrets/http.json`, `serve.lock` and the `serve.log` a started `serve` writes. |
-| `http.listen` | array of strings in `config.json` | `["127.0.0.1"]` | IP literals `serve` may listen on; the first one is the default TUI address. |
+| `http.listen` | array of strings in `config.json` | `["127.0.0.1"]` | IP literals `serve` may listen on; the default TUI address is the first one this machine has where `serve` answers. |
 | `http.port` | integer in `config.json` | `8765` | `0` to `65535`; the TUI needs the port `serve` actually uses, so `0` needs `--url`. |
 
 ## The tui.json file

@@ -459,6 +459,19 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 | T-0809-M11 | packages/cli/src/main.ts | the real doctor environment gave no listen addresses, so no warning was printed | `a real home with a missing address listed first asks serve on the next one and warns` |
 | T-0809-M12 | packages/cli/src/main.ts | the listen addresses were checked with the HTTP interface turned off | `a real home with a missing address listed first asks serve on the next one and warns` |
 
+## T-0811 — pair and doctor and the addresses serve skips
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0811-M5 | packages/cli/src/main.ts | pair took the first non-loopback address, present or not | `an address this machine lacks is passed over for the next one a phone can reach` |
+| T-0811-M6 | packages/cli/src/main.ts | pair did not validate the listen entries | `an entry serve refuses is reported as refused, not as missing` |
+| T-0811-M7 | packages/cli/src/doctor.ts | no line for an address serve does not answer on | `an address serve does not answer on is warned about, though this machine has it` |
+| T-0811-M8 | packages/cli/src/main.ts | the real doctor did not report the silent addresses | `a real home names an address this machine has where serve does not listen` |
+| T-0811-M9 | packages/cli/src/main.ts | doctor split the listen entries without validating them | `a real home with an entry serve refuses reports the refusal, not a missing address` |
+| T-0811-M10 | packages/cli/src/doctor.ts | a refused entry was reported as a check that could not be made | `a real home with an entry serve refuses reports the refusal, not a missing address` |
+| T-0811-M11 | packages/cli/src/main.ts | doctor took serve as answering only when the first address answered | `a real home names an address this machine has where serve does not listen` |
+| T-0811-M13 | packages/cli/src/main.ts | doctor reported silent addresses with the HTTP interface turned off | `a real home with the interface off names no address where serve does not answer` |
+
 ## T-0810 — the terminal plugin behind serve
 
 | id | file | mutation | failing test |

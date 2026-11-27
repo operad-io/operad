@@ -7,8 +7,11 @@
 import {
   defaultOperadHome,
   ensureHttpToken,
+  noListenAddressMessage,
   readConfig,
+  splitListenAddresses,
   validateListenAddresses,
+  type NetworkInterfaceList,
 } from "@operad-io/engine";
 import { normalizeBaseUrl, TuiError } from "./client.ts";
 
@@ -25,6 +28,8 @@ export interface TuiDiscoverOptions {
   readonly home?: string | undefined;
   readonly url?: string | undefined;
   readonly token?: string | undefined;
+  /** The machine's network interfaces; default `os.networkInterfaces`. */
+  readonly interfaces?: NetworkInterfaceList | undefined;
 }
 
 /** The address and bearer token a client needs. */
@@ -33,13 +38,16 @@ export interface TuiServerLocation {
   readonly token: string;
 }
 
-/** The base URL `http.listen` and `http.port` name. */
-export function urlFromConfig(
+/**
+ * The base URLs `http.listen` and `http.port` name, one for each address this
+ * machine has now, in the configured order; at least one.
+ */
+export function urlsFromConfig(
   listen: readonly string[],
   port: number,
-): string {
-  const address = listen[0];
-  if (address === undefined) {
+  interfaces?: NetworkInterfaceList,
+): readonly [string, ...string[]] {
+  if (listen.length === 0) {
     throw new TuiDiscoveryError(
       "http.listen needs at least one address; set http.listen in config.json or pass --url",
     );
@@ -50,8 +58,18 @@ export function urlFromConfig(
       'http.port is 0, so no address can be reached; set http.port in config.json or pass --url',
     );
   }
-  const host = address.includes(":") ? `[${address}]` : address;
-  return `http://${host}:${port}`;
+  // serve skips an address the machine lacks, so it does not answer there.
+  const { present, missing } = splitListenAddresses(listen, interfaces);
+  const [first, ...rest] = present.map((address) => {
+    const host = address.includes(":") ? `[${address}]` : address;
+    return `http://${host}:${port}`;
+  });
+  if (first === undefined) {
+    throw new TuiDiscoveryError(
+      `${noListenAddressMessage(missing)}; set http.listen in config.json or pass --url`,
+    );
+  }
+  return [first, ...rest];
 }
 
 /**
@@ -71,7 +89,7 @@ export async function discoverServer(
     url = normalizeBaseUrl(options.url);
   } else {
     const config = await readConfig(home);
-    url = urlFromConfig(config.http.listen, config.http.port);
+    [url] = urlsFromConfig(config.http.listen, config.http.port, options.interfaces);
   }
 
   let token: string;

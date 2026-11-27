@@ -12,7 +12,7 @@ The app and the terminal client run on a different device or in a different proc
 
 ## How it works
 
-1. `operad serve` binds the addresses in [`http.listen`](#the-http-section) on `http.port` when `http.enabled` is true, and prints `http <url>` for each. The first start creates the bearer token in `secrets/http.json`.
+1. `operad serve` binds the addresses in [`http.listen`](#the-http-section) on `http.port` when `http.enabled` is true, and prints `http <url>` for each. An address the machine does not have then is skipped with a warning, and `serve` does not take it up until it is restarted or reloads; with none of them it cannot open the interface. The first start creates the bearer token in `secrets/http.json`.
 2. A client sends `Authorization: Bearer <token>` with every request, and may name itself in `X-Operad-Client`. A wrong or missing token gets `401`.
 3. It learns the shape of the home from `GET /v1/types`, then lists rows with `GET /v1/objects?type=…`. Each row carries a state and optional [marks](#row-marks) the client renders.
 4. It opens one object with `GET /v1/objects/<id>`, which returns the row, the section directory, the actions available now and a [link](#links). Each section is read with `GET /v1/objects/<id>/sections/<section>`; see [Reading a section](#reading-a-section).

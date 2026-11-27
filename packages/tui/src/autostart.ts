@@ -19,9 +19,10 @@ import {
   lockHeld,
   readConfig,
   serveLockPath,
+  type NetworkInterfaceList,
 } from "@operad-io/engine";
 import { defaultFetch, TuiError, type FetchLike } from "./client.ts";
-import { urlFromConfig } from "./discover.ts";
+import { urlsFromConfig } from "./discover.ts";
 
 /** How long the first probe waits for an answer. */
 export const PROBE_TIMEOUT_MS = 1_500;
@@ -138,6 +139,8 @@ export interface EnsureServerOptions {
   readonly now?: (() => number) | undefined;
   /** Tests inject the home lock check. */
   readonly lockHeld?: ((path: string) => boolean) | undefined;
+  /** The machine's network interfaces; default `os.networkInterfaces`. */
+  readonly interfaces?: NetworkInterfaceList | undefined;
 }
 
 /** True when a serve's log says it could not listen because the port is taken. */
@@ -225,22 +228,37 @@ function tailOf(log: string): string {
 }
 
 /**
- * Makes sure a serve answers at the address `config.json` names, starting one
- * when none runs and none holds the home. Returns the URL.
+ * Makes sure a serve answers at an address `config.json` names, starting one
+ * when none runs and none holds the home. Returns the URL that answered. Every
+ * address this machine has is asked: a running serve does not listen on one
+ * that was missing when it started.
  */
 export async function ensureServer(options: EnsureServerOptions): Promise<string> {
   const { home } = options;
   const config = await readConfig(home);
-  const url = urlFromConfig(config.http.listen, config.http.port);
+  const urls = urlsFromConfig(config.http.listen, config.http.port, options.interfaces);
+  // The one an error names.
+  const [url] = urls;
   const fetchImpl = options.fetch ?? defaultFetch;
   const wait =
     options.wait ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
 
-  const first = await probeServer(url, fetchImpl, options.probeTimeoutMs);
-  if (first === "operad") return url;
-  if (first === "other") {
+  /** The first address where operad answers, else one where something else does. */
+  const probeAll = async (): Promise<{ readonly found?: string; readonly other?: string }> => {
+    let other: string | undefined;
+    for (const candidate of urls) {
+      const probe = await probeServer(candidate, fetchImpl, options.probeTimeoutMs);
+      if (probe === "operad") return { found: candidate };
+      if (probe === "other") other ??= candidate;
+    }
+    return other === undefined ? {} : { other };
+  };
+
+  const first = await probeAll();
+  if (first.found !== undefined) return first.found;
+  if (first.other !== undefined) {
     throw new TuiStartError(
-      `something answers at ${url} (port ${config.http.port}) but it is not operad; change http.port in config.json or pass --url`,
+      `something answers at ${first.other} (port ${config.http.port}) but it is not operad; change http.port in config.json or pass --url`,
     );
   }
   if (!config.http.enabled) {
@@ -292,9 +310,8 @@ export async function ensureServer(options: EnsureServerOptions): Promise<string
       }
       adopted = true;
     }
-    if ((await probeServer(url, fetchImpl, options.probeTimeoutMs)) === "operad") {
-      return url;
-    }
+    const { found } = await probeAll();
+    if (found !== undefined) return found;
     if (now() >= deadline) break;
     await wait(step);
   }

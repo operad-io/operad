@@ -1563,9 +1563,10 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
     },
   };
   // With no --url, make sure a serve answers (starting one) before the screen.
+  let answered: string | undefined;
   if (options.url === undefined && options.noStart !== true) {
     const home = options.home ?? defaultOperadHome();
-    await (options.hooks?.ensure ?? ensureServer)({
+    answered = await (options.hooks?.ensure ?? ensureServer)({
       home,
       ...(options.hooks?.fetch === undefined ? {} : { fetch: options.hooks.fetch }),
       ...(options.serveEntry === undefined
@@ -1576,7 +1577,7 @@ export async function runTui(options: TuiRunOptions = {}): Promise<number> {
   }
   const location = await discoverServer({
     home: options.home,
-    url: options.url,
+    url: options.url ?? answered,
     token: options.token,
   });
   const client = new TuiClient(location);

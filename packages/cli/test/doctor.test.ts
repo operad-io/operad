@@ -66,6 +66,19 @@ describe("operad doctor", () => {
     );
   });
 
+  test("an address serve does not answer on is warned about, though this machine has it", async () => {
+    const report = await runDoctor(
+      healthy({
+        serve: async () => ({ answering: true, silent: ["100.71.164.8"] }),
+        listenAddresses: async () => ({ present: ["127.0.0.1", "100.71.164.8"], missing: [] }),
+      }),
+    );
+    expect(report.ok).toBe(true);
+    expect(formatDoctor(report)).toContain(
+      "ok       100.71.164.8 is on this machine but serve does not answer there; restart serve if the address came back after serve started\n",
+    );
+  });
+
   test("git not installed is an ok line with a note, and an installed git adds no line", async () => {
     const without = await runDoctor(healthy({ gitInstalled: () => false }));
     expect(without.ok).toBe(true);
@@ -242,6 +255,63 @@ describe("operad doctor", () => {
       if (testHost !== undefined) process.env.OPERAD_CHECK_HOST = testHost;
       lock.release();
       await server.stop(true);
+    }
+  });
+
+  /** Runs the real doctor on a home whose serve lock is held, with a server on `127.0.0.1` only. */
+  async function doctorOn(listen: readonly string[], enabled = true) {
+    const home = await tempRoot("doctor-bound-");
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() });
+    const lock = acquireLock(serveLockPath(home));
+    const testHost = process.env.OPERAD_CHECK_HOST;
+    delete process.env.OPERAD_CHECK_HOST;
+    try {
+      writeFileSync(
+        join(home, "config.json"),
+        JSON.stringify({ plugins: [], http: { enabled, port: server.port, listen } }),
+      );
+      const out = capture();
+      await main(["doctor", "--json"], { io: out.io, home });
+      return (JSON.parse(out.text()) as {
+        checks: { id: string; ok: boolean; message: string; next?: string }[];
+      }).checks;
+    } finally {
+      if (testHost !== undefined) process.env.OPERAD_CHECK_HOST = testHost;
+      lock.release();
+      await server.stop(true);
+    }
+  }
+
+  test("a real home names an address this machine has where serve does not listen", async () => {
+    // Loopback is always there; the server listens on the IPv4 one only. It is listed first.
+    const checks = await doctorOn(["::1", "127.0.0.1"]);
+    expect(checks).toContainEqual({ id: "serve", ok: true, message: "serve is answering" });
+    expect(checks.filter((check) => check.id.startsWith("listen"))).toEqual([
+      {
+        id: "listen:::1",
+        ok: true,
+        message:
+          "::1 is on this machine but serve does not answer there; restart serve if the address came back after serve started",
+      },
+    ]);
+  });
+
+  test("a real home with the interface off names no address where serve does not answer", async () => {
+    // A serve still running from before answers on one address and not on the other.
+    const checks = await doctorOn(["::1", "127.0.0.1"], false);
+    expect(checks).toContainEqual({ id: "serve", ok: true, message: "serve is answering" });
+    expect(checks.filter((check) => check.id.startsWith("listen"))).toEqual([]);
+  });
+
+  test("a real home with an entry serve refuses reports the refusal, not a missing address", async () => {
+    for (const [entry, reason] of [
+      ["nonsense", 'http.listen: "nonsense" is not an IP address'],
+      ["0.0.0.0", 'http.listen: "0.0.0.0" is a wildcard address; name each address to listen on'],
+    ] as const) {
+      const checks = await doctorOn(["127.0.0.1", entry]);
+      expect(checks.filter((check) => check.id.startsWith("listen"))).toEqual([
+        { id: "listen", ok: false, message: reason, next: "operad doctor" },
+      ]);
     }
   });
 
