@@ -124,6 +124,34 @@ describe("the list of loaded flows", () => {
 });
 
 describe("starting a flow of the home by hand", () => {
+  test("a run of a flow whose file no longer loads fails, or is handed to its own process to fail", async () => {
+    const home = await flowsHome();
+    // The runs are made as a start made them while the file still loaded.
+    for (const [flow, handed] of [["home:broken", true], ["home:gone", false]] as const) {
+      const runId = await withHome(home, async (context) =>
+        (await context.log.startRun(flow, `flow:${flow}`)).runId,
+      );
+
+      const spawned: string[] = [];
+      await withHome(home, (context) =>
+        serveOnce({
+          log: context.log,
+          registry: context.registry,
+          lockRoot: context.storeRoot,
+          home,
+          spawnRun: (id) => {
+            spawned.push(id);
+          },
+        }),
+      );
+      expect(spawned).toEqual(handed ? [runId] : []);
+      if (handed) expect((await operad(home, "run-internal", runId)).code).toBe(0);
+
+      expect((await operad(home, "running")).out).toBe("nothing is running\n");
+      expect((await operad(home, "history", runId)).out).toContain(`flow "${flow}" is not loaded`);
+    }
+  });
+
   test("the run takes the params, reaches its end and records who started it", async () => {
     const home = await flowsHome();
     const started = await operad(home, "start", "home:echo", "--params", '{"word":"hello"}');

@@ -6,6 +6,7 @@ import { openConfigLog, readConfig, readHttpToken, type LoadedFlow } from "@oper
 import { waitForChange } from "@operad-io/engine/platform";
 import { freePort, makeHome } from "@operad-io/engine/testing";
 import { cleanupTempRoots } from "../../../engine/test/plugin/support.ts";
+import { operad } from "@operad-io/test-support";
 import { testEnv } from "../env.ts";
 
 afterAll(cleanupTempRoots);
@@ -45,6 +46,18 @@ async function waitForEnded(home: string, runId: string): Promise<void> {
   }
 }
 
+/** A serve child; `env` adds to the test environment. */
+function startServe(home: string, env: Record<string, string> = {}) {
+  return Bun.spawn({
+    cmd: [process.execPath, CLI_ENTRY, "serve"],
+    cwd: home,
+    env: { ...testEnv(env), OPERAD_HOME: home, OPERAD_SERVE_INTERVAL_MS: "100" },
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "inherit",
+  });
+}
+
 /** Resolves with the address once the serve prints it. */
 async function address(child: Bun.Subprocess<"ignore", "pipe", "inherit">): Promise<string> {
   const reader = child.stdout.getReader();
@@ -69,14 +82,7 @@ test("serve lists the flows over HTTP and runs one a client starts to its end", 
   });
   mkdirSync(join(home, "flows"), { recursive: true });
   writeFileSync(join(home, "flows", "echo.flow.ts"), FLOW);
-  const child = Bun.spawn({
-    cmd: [process.execPath, CLI_ENTRY, "serve"],
-    cwd: home,
-    env: { ...testEnv({}), OPERAD_HOME: home, OPERAD_SERVE_INTERVAL_MS: "100" },
-    stdin: "ignore",
-    stdout: "pipe",
-    stderr: "inherit",
-  });
+  const child = startServe(home);
   try {
     const base = await address(child);
     const token = (await readHttpToken(home))?.token ?? "";
@@ -136,6 +142,31 @@ test("serve lists the flows over HTTP and runs one a client starts to its end", 
     } finally {
       await log.close();
     }
+  } finally {
+    child.kill("SIGTERM");
+    await child.exited;
+  }
+});
+
+test("serve runs a flow added after it read the home to its end", async () => {
+  const { home } = await makeHome({
+    plugins: [stepsPlugin],
+    extra: { http: { enabled: true, port: await freePort(), listen: ["127.0.0.1"] } },
+  });
+  mkdirSync(join(home, "flows"), { recursive: true });
+  // So long a quiet time that this serve never reloads: it keeps what it read.
+  const child = startServe(home, { OPERAD_RELOAD_QUIET_MS: "600000" });
+  try {
+    await address(child);
+    writeFileSync(join(home, "flows", "late.flow.ts"), FLOW);
+    const started = await operad(home, ["start", "home:late"]);
+    expect(started.code).toBe(0);
+    const runId = /^started (\S+)/.exec(started.out)?.[1] ?? "";
+    await waitForEnded(home, runId);
+
+    const history = await operad(home, ["history", runId]);
+    expect(history.out).toContain("run done");
+    expect(history.out).not.toContain("is not loaded");
   } finally {
     child.kill("SIGTERM");
     await child.exited;

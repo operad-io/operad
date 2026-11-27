@@ -2340,8 +2340,9 @@ async function commandRunInternal(
   const run = await context.log.run(runId);
   if (run === undefined) throw new Error(`no run "${runId}"`);
   const found = context.registry.flow(run.flow);
-  if (found === undefined) {
-    throw new StateError(`run "${runId}": flow "${run.flow}" is not loaded`);
+  const missing = `flow "${run.flow}" is not loaded`;
+  if (found === undefined && !run.flow.startsWith(HOME_FLOW_PREFIX)) {
+    throw new StateError(`run "${runId}": ${missing}`);
   }
   const problem = context.registry.startProblem(run.flow);
   if (problem !== undefined) throw new StateError(`run "${runId}": ${problem}`);
@@ -2364,6 +2365,13 @@ async function commandRunInternal(
   }
   const startProblems = [...context.problems];
   const kernel = kernelFor(context, io, rules);
+  // serve leaves a flow of the home it has not read to this process, which read
+  // the file now: when it does not load here either, the run fails.
+  if (found === undefined) {
+    io.error(`run ${runId}: ${missing}\n`);
+    await kernel.failRun(runId, missing);
+    return;
+  }
   // A start that died after creating its run left no start files; restore
   // them so this runner starts from the input and event that were recorded.
   kernel.adoptStart(run);
