@@ -55,6 +55,7 @@ import type {
 } from "../plugin/types.ts";
 import { ROW_BADGE_MAX, ROW_MARKS } from "../plugin/types.ts";
 import {
+  handStarts,
   historyEntry,
   localMinute,
   runHistoryLines,
@@ -2789,11 +2790,14 @@ export class Views {
       for (const action of actions) lines.push(`- ${action}`);
       lines.push("");
     }
+    const starts =
+      this.log === undefined ? undefined : await handStarts(this.log, runs);
     for (const run of runs) {
       if (this.log === undefined) break;
       lines.push(`## ${run.flow} run · started ${localMinute(run.startedAt)}`);
       try {
-        const facts: HistoryFact[] = [];
+        const start = starts?.get(run.runId);
+        const facts: HistoryFact[] = start === undefined ? [] : [start];
         for await (const fact of this.log.read(run.runId)) facts.push(fact);
         for (const line of runHistoryLines(facts, { now: this.clock(), full })) {
           lines.push(line.startsWith("**") ? line : `- ${line}`);

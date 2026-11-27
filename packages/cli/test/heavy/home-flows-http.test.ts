@@ -1,5 +1,5 @@
 import { afterAll, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { openConfigLog, readConfig, readHttpToken, type LoadedFlow } from "@operad-io/engine";
@@ -142,6 +142,50 @@ test("serve lists the flows over HTTP and runs one a client starts to its end", 
     } finally {
       await log.close();
     }
+  } finally {
+    child.kill("SIGTERM");
+    await child.exited;
+  }
+});
+
+test("a run serve starts from the flow it holds waits for a file that loads", async () => {
+  const { home, storeRoot } = await makeHome({
+    plugins: [stepsPlugin],
+    extra: { http: { enabled: true, port: await freePort(), listen: ["127.0.0.1"] } },
+  });
+  mkdirSync(join(home, "flows"), { recursive: true });
+  const file = join(home, "flows", "echo.flow.ts");
+  writeFileSync(file, FLOW);
+  // This serve never reloads, so it goes on holding the flow it read.
+  const child = startServe(home, { OPERAD_RELOAD_QUIET_MS: "600000" });
+  try {
+    const base = await address(child);
+    const token = (await readHttpToken(home))?.token ?? "";
+    writeFileSync(file, "export default ;");
+    const response = await fetch(`${base}/v1/flows/start`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${token}` },
+      body: JSON.stringify({ flow: "home:echo" }),
+    });
+    const runId = String(((await response.json()) as Record<string, unknown>).runId);
+
+    // The run's process said it could not load the flow, and left the run.
+    const output = join(storeRoot, "logs", "runs", `${runId}.out`);
+    const said = (): string => {
+      try {
+        return readFileSync(output, "utf8");
+      } catch {
+        return "";
+      }
+    };
+    while (!said().includes('flow "home:echo" is not loaded')) {
+      await waitForChange(dirname(output), basename(output), 100);
+    }
+    writeFileSync(file, FLOW);
+    await waitForEnded(home, runId);
+
+    const history = await operad(home, ["history", runId]);
+    expect(history.out).toContain("run done");
   } finally {
     child.kill("SIGTERM");
     await child.exited;

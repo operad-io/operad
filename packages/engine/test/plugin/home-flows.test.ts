@@ -138,3 +138,37 @@ test("a home with no flows directory is not written to", async () => {
   await loadPluginRegistry({ home, storeRoot: join(root, "store"), onLog: () => undefined });
   expect(() => lstatSync(join(home, "node_modules"))).toThrow();
 });
+
+test("one flow added after the read is read on its own, into a home that had none", async () => {
+  const root = await tempRoot();
+  const home = join(root, "home");
+  const registry = await loadPluginRegistry({
+    home,
+    storeRoot: join(root, "store"),
+    onLog: () => undefined,
+  });
+  await mkdir(join(home, "flows"), { recursive: true });
+  const file = join(home, "flows", "late.flow.ts");
+  await writeFile(
+    file,
+    `import { defineFlow } from "@operad-io/engine";
+export default defineFlow({ name: "any", entry: "end_done", steps: [{ id: "end_done", kind: "end", params: { status: "done" }, replay: "safe" }] });
+`,
+  );
+  await registry.readHomeFlow("home:late");
+  expect(registry.flow("home:late")?.flow.name).toBe("home:late");
+  expect(registry.homeFlowFile("home:late")).toBe(file);
+});
+
+test("a file read half written adds nothing and is read once it is whole", async () => {
+  const { home, storeRoot } = await homeWith({ "a.flow.ts": "export default ;" });
+  const registry = await loadPluginRegistry({ home, storeRoot, onLog: () => undefined });
+  await registry.readHomeFlow("home:a");
+  expect(registry.flow("home:a")).toBeUndefined();
+  expect(registry.homeFlowProblems().map((item) => item.file)).toEqual(["a.flow.ts"]);
+
+  await writeFile(join(home, "flows", "a.flow.ts"), flowSource("home-steps/touch"));
+  await registry.readHomeFlow("home:a");
+  expect(registry.flow("home:a")?.flow.entry).toBe("one");
+  expect(registry.homeFlowProblems()).toEqual([]);
+});

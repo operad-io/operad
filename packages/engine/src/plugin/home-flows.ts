@@ -82,6 +82,15 @@ export function homeFlowPath(home: string, name: string): string | undefined {
   return NAME.test(short) ? join(homeFlowsDirectory(home), `${short}${SUFFIX}`) : undefined;
 }
 
+/** Reads one flow file as the flow `name`; the error names the file. */
+export async function loadHomeFlow(
+  path: string,
+  name: string,
+  registry: StepTypeRegistry,
+): Promise<FlowDefinition> {
+  return { ...(await loadFlow(path, registry)), name };
+}
+
 /** Reads every flow file of the home. A missing directory holds no flows. */
 export async function loadHomeFlows(
   home: string,
@@ -117,8 +126,7 @@ export async function loadHomeFlows(
       continue;
     }
     try {
-      const loaded = await loadFlow(path, registry);
-      flows.push({ file, flow: { ...loaded, name } });
+      flows.push({ file, flow: await loadHomeFlow(path, name, registry) });
     } catch (error) {
       const message = messageOf(error);
       refused.push({
