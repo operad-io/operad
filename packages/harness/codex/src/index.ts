@@ -58,6 +58,7 @@ import {
   type AgentWorkerResult,
   type CallAnswer,
   type Clock,
+  shellWord,
 } from "@operad-io/harness-process";
 import { decideAccess, type JudgedCall } from "./access.ts";
 import {
@@ -318,6 +319,12 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
       Bun.which("codex", { PATH: process.env.PATH ?? "" }) !== null
         ? undefined
         : "codex is not on PATH; install Codex, then run `codex login`",
+    // The setting starts the server operad talks to; by hand, codex runs without that word.
+    interactiveCommand: (settings: Readonly<Record<string, unknown>>) => {
+      if (settings.command === undefined) return undefined;
+      const words = commandOf(settings.command);
+      return (words.at(-1) === "app-server" ? words.slice(0, -1) : words).map(shellWord).join(" ") || undefined;
+    },
     settings: PLUGIN_SETTINGS,
     steps: [
       {

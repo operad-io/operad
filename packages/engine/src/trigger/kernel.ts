@@ -246,7 +246,7 @@ export class Kernel {
         undefined,
         request.access,
       );
-      return { kind: "started", runId: realized.runId, duplicate: false };
+      return { kind: realized.kind, runId: realized.runId, duplicate: false };
     }
 
     if (
@@ -810,12 +810,16 @@ export class Kernel {
     return result;
   }
 
-  /** Starts every loaded source; a broken one is logged and skipped. */
-  async startSources(): Promise<void> {
+  /**
+   * Starts every loaded source; a broken one is logged and skipped. With
+   * `rulesLoaded` false, only those that say they need no rules start.
+   */
+  async startSources(options: { readonly rulesLoaded?: boolean | undefined } = {}): Promise<void> {
     if (this.client === undefined) {
       throw new Error("the kernel has no client API to give its sources");
     }
     const running = await this.registry.startSources({
+      ...(options.rulesLoaded === undefined ? {} : { rulesLoaded: options.rulesLoaded }),
       rules: this.rules,
       clock: this.clock,
       client: this.client,

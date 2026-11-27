@@ -7,8 +7,9 @@ import { FlowError, validateFlow } from "../flow/validate.ts";
 import type { JsonValue } from "../log/types.ts";
 import { validateActionArgs } from "./action-schema.ts";
 import { readDeclaredFlows, writeDeclaredFlow } from "./declared-flows.ts";
-import { HOME_FLOW_OWNER, loadHomeFlows } from "./home-flows.ts";
+import { HOME_FLOW_OWNER, homeFlowPath, homeFlowsDirectory, loadHomeFlows } from "./home-flows.ts";
 import type { HomeFlowRefusal } from "./home-flows.ts";
+import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { AccessError, AskTimeoutError, messageOf, PluginError, StepNotLoadedError } from "./errors.ts";
 import { defaultOperadHome } from "./home.ts";
@@ -306,6 +307,7 @@ export class PluginRegistry {
   >();
   /** The flows of `<home>/flows`, by name, and the files refused. */
   private homeFlowMap: ReadonlyMap<string, FlowDefinition> = new Map();
+  private homeFlowFiles: ReadonlyMap<string, string> = new Map();
   private homeFlowRefusals: readonly HomeFlowRefusal[] = [];
   private readonly refusalList: PluginRefusal[] = [];
   private readonly settingsByPlugin: ReadonlyMap<
@@ -761,14 +763,28 @@ export class PluginRegistry {
    */
   async loadHomeFlows(): Promise<readonly HomeFlowRefusal[]> {
     this.homeFlowMap = new Map();
+    this.homeFlowFiles = new Map();
     const found = await loadHomeFlows(
       this.home,
       this.stepTypes(),
       (name) => this.flow(name) !== undefined,
     );
     this.homeFlowMap = new Map(found.flows.map((item) => [item.flow.name, item.flow]));
+    const directory = homeFlowsDirectory(this.home);
+    this.homeFlowFiles = new Map(found.flows.map((item) => [item.flow.name, join(directory, item.file)]));
     this.homeFlowRefusals = found.refused;
     return found.refused;
+  }
+
+  /** The file a flow of the home was read from; undefined for any other flow. */
+  homeFlowFile(name: string): string | undefined {
+    return this.homeFlowFiles.get(name);
+  }
+
+  /** Whether this names a flow of the home whose file is there now, read or not. */
+  hasHomeFlowFile(name: string): boolean {
+    const path = homeFlowPath(this.home, name);
+    return path !== undefined && existsSync(path);
   }
 
   /** The flow files of the home the last read refused. */
@@ -1385,6 +1401,20 @@ export class PluginRegistry {
     if (this.agentMissing(found) !== undefined) return undefined;
     try {
       return await found.signedIn(this.settingsFor(plugin));
+    } catch {
+      return undefined;
+    }
+  }
+
+  /**
+   * The command line a person runs a loaded harness's agent with; undefined
+   * when it is not a harness, declares none, or cannot tell.
+   */
+  async interactiveCommandFor(plugin: string): Promise<string | undefined> {
+    const found = this.byName.get(plugin);
+    if (found === undefined || found.kind !== "harness") return undefined;
+    try {
+      return await found.interactiveCommand?.(this.settingsFor(plugin), { home: this.home });
     } catch {
       return undefined;
     }
@@ -2095,10 +2125,13 @@ export class PluginRegistry {
     readonly emit: (event: TriggerEvent) => MaybePromise<void>;
     readonly client: ClientApi;
     readonly signal?: AbortSignal | undefined;
+    /** False when the rules could not be loaded: only `startsWithoutRules` plugins start. */
+    readonly rulesLoaded?: boolean | undefined;
   }): Promise<readonly { readonly plugin: string; readonly handle: SourceHandle }[]> {
     const running: { plugin: string; handle: SourceHandle }[] = [];
     for (const plugin of this.plugins) {
       if (plugin.start === undefined) continue;
+      if (options.rulesLoaded === false && plugin.startsWithoutRules !== true) continue;
       const emit = async (event: SourceEvent): Promise<void> => {
         const trigger: TriggerEvent = {
           source: event.source ?? plugin.name,
@@ -2135,6 +2168,7 @@ export class PluginRegistry {
         emit,
         client: options.client,
         repositories: () => this.registeredRepositories(),
+        harnessCommand: (name) => this.interactiveCommandFor(name),
         ...(this.onCancelRun === undefined ? {} : { runs: this.runControl() }),
       };
       try {

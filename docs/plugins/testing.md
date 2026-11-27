@@ -61,7 +61,7 @@ Prefer the path: a step that keeps state in a module variable, or returns a valu
 | `flow` | string | The flow's name |
 | `status` | `"ended"`, `"waiting_person"` or `"blocked"` | `blocked` means nothing more can happen until something outside the world changes (a clock passes a time, an answer arrives) |
 | `end` | `"done"`, `"failed"`, `"cancelled"` or `undefined` | How it ended |
-| `wait` | `{ id, prompt, choices } \| undefined` | The open person wait |
+| `wait` | `{ id, prompt, choices, choiceInfo?, command? } \| undefined` | The open person wait; `command` is the line the question asks the person to run, when it carried one |
 | `facts` | list | Everything the run recorded, in order |
 | `history` | list of strings | One line per step, as `operad history` prints it |
 | `store` | `PluginStore` | The plugin's objects |

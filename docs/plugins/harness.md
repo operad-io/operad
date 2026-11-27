@@ -84,6 +84,10 @@ A chat reads `capabilities.accessLevels` the same way. `claude` and `pi` list `p
 
 A harness may declare `agentMissing(settings, context)`. While it returns a sentence saying how to set the agent up, the plugin stays loaded but the harness is not set up: it is not among `ctx.harnesses`, its `signedIn`, model list and `check` are not asked, and the check reports the one missing item `agent` with that sentence. Return `undefined` when the agent is there, or when a setting names its command, so that `check` reports a wrong one. It is asked often, so it only looks and starts nothing.
 
+## A command for a person
+
+`interactiveCommand(settings, { home })` returns the shell command line a person runs the agent with by hand, or `undefined` when the agent's name will do. A [terminal](../user/terminal.md) offers it. `claude` returns its `command` setting, `codex` its setting without `app-server`, and `pi` its setting or the pi operad installed when `PATH` has none. `shellWord(value)` from `@operad-io/harness-process` writes one word of such a line.
+
 ## Skills
 
 A step may give skill directories in its `skills` param. A harness that declares `capabilities.loadsSkills: true` (`claude`, `pi`) loads them itself, and the prompt stays exactly what the step gives. For any other harness, `promptWithSkills(prompt, paths, capabilities)` of `@operad-io/harness-process` appends a short list: each skill's name, the description from its `SKILL.md` frontmatter and the path of that file, with one sentence to read the file before doing what it describes. It carries no skill body.

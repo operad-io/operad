@@ -1537,6 +1537,42 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0814-M5 | packages/engine/src/plugin/registry.ts | a command was not checked before the question was asked | `command validation > an empty, many-line, escaped or overlong command is refused before anyone is asked` |
 | T-0814-M6 | packages/engine/src/runner/step-worker.ts | a step in a worker thread did not pass the command on | `ctx.ask (file) > a question's command is on the pending item while it is open and after its grace` |
 
+## T-0818 — follow-ups of the question's command
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0818-M2 | packages/engine/src/testing/world.ts | a testing run's wait left out the command | `runFlow > a wait carries the command its question asked the person to run` |
+| T-0818-M3 | packages/engine/src/kernel/decide.ts | an unreadable command in a step's result was kept on the wait | `runFlow > a command a step's result carries that cannot be read is left off the wait` |
+| T-0818-M4 | packages/engine/src/runner/ask.ts | an unreadable command in a logged question was kept | `ctx.ask (memory) > an open question whose stored command cannot be read stays pending without it` |
+| T-0818-M5 | packages/engine/src/plugin/ask-command.ts | a command with a format character was accepted | `command validation > an empty, many-line, escaped, disguised or overlong command is refused before anyone is asked` |
+| T-0815-M1 | packages/engine/src/views/flows.ts | the list left out where each step goes next | `flows --json gives a home flow and a plugin flow with their steps` |
+| T-0815-M2 | packages/engine/src/plugin/registry.ts | a home flow's path was only its file name | `flows --json gives a home flow and a plugin flow with their steps`, `serve lists the flows over HTTP and runs one a client starts to its end` |
+| T-0815-M3 | packages/engine/src/views/flows.ts | a wait that checks a condition named no plugin step | `flows --json gives a home flow and a plugin flow with their steps` |
+| T-0815-M4 | packages/engine/src/views/flows.ts | the list did not say why a flow cannot start | `a flow that cannot start says why` |
+| T-0815-M5 | packages/engine/src/http/server.ts | `GET /v1/flows` was not routed | `serve lists the flows over HTTP and runs one a client starts to its end` |
+| T-0815-M15 | packages/engine/src/trigger/kernel.ts | a start with no event answered started for a flow already running | `a flow already running is not started twice` |
+| T-0815-M17 | packages/engine/src/http/server.ts | an HTTP start did not carry the client's name as the actor | `serve lists the flows over HTTP and runs one a client starts to its end` |
+| T-0815-M19 | packages/engine/src/loop/serve.ts | serve failed a run of a home flow it had not read, as before | `serve runs a flow added after it read the home to its end`, `a run of a flow whose file no longer loads fails, or is handed to its own process to fail` |
+| T-0815-M20 | packages/engine/src/plugin/registry.ts | a home flow with no file counted as having one | `a run of a flow whose file no longer loads fails, or is handed to its own process to fail` |
+
+| T-0815-M22 | packages/engine/src/http/server.ts | `flows` was not a built-in endpoint, so a plugin of that name answered under `/v1/flows` | `never answer a built-in endpoint` |
+
+## T-0817 — what the reviews of the terminal tasks found
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0817-M4 | packages/engine/src/platform/pty.ts | a hang up looked only below the shell, not for what carries the marker | `after the shell exited > a hang up stops the job it left in another process group` |
+| T-0817-M5 | packages/engine/src/platform/folder-holds.ts | a release ignored a hold's marker | `after the shell exited > a release stops the job held by the terminal's marker` |
+| T-0817-M6 | packages/engine/src/platform/process-tree.ts | daemons were stopped with the rest | `after the shell exited > a process that left the terminal to be a daemon is not stopped` |
+| T-0817-M7 | packages/engine/src/platform/pty.ts | a hang up that could not list the processes left the group running | `after the shell exited > a hang up that cannot read the processes still stops the group, and is tried again` |
+| T-0817-M8 | packages/engine/src/platform/pty.ts | a rejected hang up was kept | `after the shell exited > a hang up that cannot read the processes still stops the group, and is tried again` |
+| T-0817-M16 | packages/engine/src/http/server.ts | a snapshot event counted toward the byte limit | `what a reader is given on joining > is held whatever its size, and does not count toward the byte limit` |
+| T-0817-M23 | packages/engine/src/plugin/registry.ts | a source was given no way to ask for a harness's command | `serve without trigger rules > starts only the plugins that say they need none, which can ask for a harness's command` |
+| T-0817-M24 | packages/engine/src/plugin/registry.ts | every plugin started without trigger rules | `serve without trigger rules > starts only the plugins that say they need none, which can ask for a harness's command` |
+| T-0817-M25 | packages/engine/src/plugin/validate.ts | a plugin of any kind could declare `interactiveCommand` | `a harness plugin's interactiveCommand > only a harness plugin declares one` |
+| T-0817-M28 | packages/engine/src/http/address.ts | `Via` was not a forwarding header | `a request from this machine > is not one from another address, to another name, or through a proxy` |
+| T-0817-M29 | packages/engine/src/http/address.ts | `X-Forwarded-*` and `CF-*` were not forwarding headers | `a request from this machine > is not one from another address, to another name, or through a proxy` |
+
 ## T-0816 — every shipped plugin on in a new home
 
 | id | file | mutation | failing test |

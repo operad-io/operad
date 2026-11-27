@@ -10,6 +10,8 @@ export * from "./escape.ts";
 export * from "./folders.ts";
 export * from "./host.ts";
 export * from "./http.ts";
+export * from "./queue.ts";
+export * from "./replay.ts";
 export * from "./session.ts";
 
 /** What a test replaces. */
@@ -37,12 +39,14 @@ export function createTerminalPlugin(options: TerminalPluginOptions = {}) {
     name: "terminal",
     kind: "domain",
     version: pkg.version,
+    startsWithoutRules: true,
     start(ctx) {
       const host = new TerminalHost({
         home: ctx.home,
         store: ctx.store,
         repositories: ctx.repositories ?? (async () => []),
         harnesses: ctx.harnesses ?? [],
+        harnessCommand: ctx.harnessCommand ?? (async () => undefined),
         shell: options.shell ?? loginShell(),
         env: options.env ?? {},
         now: ctx.clock,

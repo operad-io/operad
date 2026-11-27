@@ -64,6 +64,8 @@ export interface FlowWait {
   readonly prompt: string;
   readonly choices: readonly string[];
   readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
+  /** The command the person runs, when the question carried one. */
+  readonly command?: string | undefined;
 }
 
 /** One run, as it stood when `runFlow`, `answer` or `resume` returned. */

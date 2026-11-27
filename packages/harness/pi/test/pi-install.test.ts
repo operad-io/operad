@@ -344,3 +344,25 @@ describe("pi check", () => {
     }
   });
 });
+
+describe("pi's command for a person", () => {
+  test("is the pi operad installed when PATH has none, the setting's otherwise, and none for a pi on PATH", async () => {
+    const root = await fresh();
+    const { home } = installHomePi(root);
+    const plugin = createPiHarnessPlugin();
+    const path = process.env.PATH;
+    try {
+      process.env.PATH = join(root, "empty");
+      expect(await plugin.interactiveCommand?.({}, { home })).toBe(join(home, "plugins", "node_modules", ".bin", "pi"));
+      expect(await plugin.interactiveCommand?.({ command: "/opt/my tools/pi" }, { home })).toBe("'/opt/my tools/pi'");
+      const onPath = join(root, "bin");
+      mkdirSync(onPath);
+      writeFileSync(join(onPath, "pi"), "#!/bin/sh\n", { mode: 0o755 });
+      process.env.PATH = onPath;
+      // PATH has a `pi`, but not a package operad can use: the person's shell finds it by name.
+      expect(await plugin.interactiveCommand?.({}, { home })).toBeUndefined();
+    } finally {
+      process.env.PATH = path;
+    }
+  });
+});

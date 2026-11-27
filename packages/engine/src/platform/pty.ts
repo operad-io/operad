@@ -11,8 +11,11 @@
  * as long as the group has a member, so the group is signaled only while it has
  * one, and it is stopped as soon as the leader exits. A process that moved to
  * another group (a job of an interactive shell) is not part of that stop;
- * `hangUp` stops those too.
+ * `hangUp` stops those too, also after the leader exited, by the marker each
+ * process inherits in its environment.
  */
+
+import { randomUUID } from "node:crypto";
 
 import {
   createGroupStop,
@@ -23,8 +26,8 @@ import {
   type Clock,
   type Exit,
 } from "./process-group.ts";
-import { processTree, signalRows } from "./process-tree.ts";
-import { markerEnv, readProcessTable, trackRoot } from "./step-reap.ts";
+import { markedRows, mergeRows, processTree, PTY_MARKER_ENV, signalRows } from "./process-tree.ts";
+import { markerEnv, readProcessTable, trackRoot, type ProcessTable } from "./step-reap.ts";
 
 export interface PtyOptions {
   /** The program and its arguments; no shell reads them. */
@@ -37,6 +40,8 @@ export interface PtyOptions {
   /** Receives the output bytes as they come. */
   readonly onData: (bytes: Uint8Array) => void;
   readonly clock?: Clock | undefined;
+  /** Replaces the process table in a test. */
+  readonly table?: ProcessTable | undefined;
 }
 
 export interface Pty {
@@ -57,9 +62,15 @@ export interface Pty {
   /**
    * Closes the terminal on everything the child started, whatever group it
    * moved to: SIGHUP to each, the group stop of `kill`, and after one more
-   * grace SIGKILL to what is left.
+   * grace SIGKILL to what is left. It works after the child exited too. When it
+   * rejects, because the processes could not be read, the group was still
+   * stopped and the next call tries again.
    */
   hangUp(): Promise<void>;
+  /** The value every process of this terminal inherits as `OPERAD_PTY`. */
+  readonly marker: string;
+  /** Whether a process this terminal started still runs. */
+  alive(): Promise<boolean>;
 }
 
 /** The part of `Bun.Terminal` used here; the pinned Bun types predate it. */
@@ -105,10 +116,12 @@ export function spawnPty(options: PtyOptions): Pty {
     endOutput = resolve;
   });
 
+  const table = options.table ?? readProcessTable;
+  const marker = randomUUID();
   const runtime = Bun as unknown as TerminalRuntime;
   const child = runtime.spawn([...options.argv], {
     cwd: options.cwd,
-    env: { ...process.env, ...markerEnv(), ...options.env },
+    env: { ...process.env, ...markerEnv(), ...options.env, [PTY_MARKER_ENV]: marker },
     terminal: {
       cols: options.cols,
       rows: options.rows,
@@ -151,22 +164,36 @@ export function spawnPty(options: PtyOptions): Pty {
     return { code, signal: child.signalCode };
   })();
 
-  let hangingUp: Promise<void> | undefined;
-  const hangUp = async (): Promise<void> => {
+  /** What the terminal started that still runs. */
+  const running = async () => {
     // Read before any signal: a child whose parent ended cannot be found.
-    const rows = await readProcessTable();
+    const rows = await table();
     // A leader that was reaped may have given its pid to another process.
-    const tree = leaderExited ? [] : processTree(rows, child.pid);
-    signalRows(tree, "SIGHUP");
+    const below = leaderExited ? [] : processTree(rows, child.pid);
+    return mergeRows(below, await markedRows(rows, marker));
+  };
+
+  const hangUp = async (): Promise<void> => {
+    let found: Awaited<ReturnType<typeof running>>;
+    try {
+      found = await running();
+    } catch (error) {
+      // The group needs no table.
+      await stop();
+      throw error;
+    }
+    signalRows(found, "SIGHUP");
     await stop();
     const survivors = async () => {
-      const live = new Set((await readProcessTable()).map((row) => `${row.pid}@${row.startSec}`));
-      return tree.filter((row) => live.has(`${row.pid}@${row.startSec}`));
+      const live = new Set((await table()).map((row) => `${row.pid}@${row.startSec}`));
+      return found.filter((row) => live.has(`${row.pid}@${row.startSec}`));
     };
     if ((await survivors()).length === 0) return;
     await clock.sleep(KILL_GRACE_MS);
     signalRows(await survivors(), "SIGKILL");
   };
+
+  let hangingUp: Promise<void> | undefined;
 
   return {
     pid: child.pid,
@@ -178,6 +205,12 @@ export function spawnPty(options: PtyOptions): Pty {
       if (!device.closed) device.resize(cols, rows);
     },
     kill: stop,
-    hangUp: () => (hangingUp ??= hangUp()),
+    hangUp: () =>
+      (hangingUp ??= hangUp().catch((error: unknown) => {
+        hangingUp = undefined;
+        throw error;
+      })),
+    marker,
+    alive: async () => (await running()).length > 0,
   };
 }

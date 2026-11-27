@@ -44,6 +44,7 @@ import {
   WALL_TIME_SETTING,
   type Clock,
   type KeptRunOptions,
+  shellWord,
 } from "@operad-io/harness-process";
 import { CLAUDE_FLOOR, DEFAULT_CLAUDE_COMMAND, claudeSignedIn, inspectClaude, sdkVersion } from "./claude-install.ts";
 import { DEFAULT_BASH_TIMEOUT_SECS, CLAUDE_CONTEXT_WINDOWS, EFFORT_LEVELS } from "./protocol.ts";
@@ -224,6 +225,8 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
       Bun.which(DEFAULT_CLAUDE_COMMAND, { PATH: process.env.PATH ?? "" }) !== null
         ? undefined
         : "claude is not on PATH; install Claude Code, then run `claude auth login`",
+    interactiveCommand: (settings) =>
+      typeof settings.command === "string" && settings.command !== "" ? shellWord(settings.command) : undefined,
     settings: PLUGIN_SETTINGS,
     steps: [
       {

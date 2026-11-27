@@ -253,6 +253,7 @@ async function snapshot(world: World, runId: string): Promise<FlowRun> {
             ...(state.wait.choiceInfo === undefined
               ? {}
               : { choiceInfo: state.wait.choiceInfo }),
+            ...(state.wait.command === undefined ? {} : { command: state.wait.command }),
           },
     facts,
     history,

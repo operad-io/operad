@@ -353,6 +353,12 @@ _The second "## T-0766" section above repeats the rows of the first; the rows of
 | T-0814-M1 | packages/harness/pi/src/login.ts | the provider question carried no command | `pi/login > the first question names the bundled pi when pi is not on PATH` |
 | T-0814-M2 | packages/harness/pi/src/login.ts | the sentence did not say that logging in here takes an API key | `pi/login > the first question offers API-key routes only and tells where a ChatGPT plan logs in` |
 
+## T-0817 — what the reviews of the terminal tasks found
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0817-M32 | packages/harness/pi/src/index.ts | a person's command ignored the pi operad installed | `pi's command for a person > is the pi operad installed when PATH has none, the setting's otherwise, and none for a pi on PATH` |
+
 ## T-0816 — every shipped plugin on in a new home
 
 | id | file | mutation | failing test |

@@ -73,6 +73,8 @@ otherwise. An object id in a path is URL-encoded; `<id>` may be the bare id or
 |---|---|
 | `GET /v1/types` | `{ "types": [{ "type": "task", "title": "Task", "plugin": "dev" }] }`: the object types with views, their display names and the name of the plugin each belongs to (a client groups types by it). A plugin that names its list (`dev` names it `Projects`) also sends `"pluginTitle"` on each of its types, and a client titles the plugin's tab with it; without it a client shows the plugin's name. A type that declares filters also carries `"filters"`, in display order (`[{ "name": "active", "states": ["proposed", ...] }, { "name": "all" }, ...]`), and `"defaultFilter"`. A type without filters carries neither. Every type of a plugin that declares `objectsUnderSettings` also carries `"settings": true`: such a plugin gets no tab of its own, and its top-level objects belong under settings. |
 | `GET /v1/keys` | `{ "keys": [{ "key": "m", "action": "dev:merge", "source": "plugin" }] }`: the key bindings in force, the plugins' defaults with the person's `keys.json` overrides applied; `source` is `user` for an override. |
+| `GET /v1/flows` | The loaded flows, the same entries as `operad flows --json`. See [Flows](#flows). |
+| `POST /v1/flows/start` | Starts a flow of the home once, now. The body is `{ "flow": "home:<name>", "params"?: { ... } }`; the answer is `{ "flow", "runId" }`. See [Flows](#flows). |
 | `GET /v1/objects?type=<type>&filter=<name>&cursor=<c>` (also `root` and `parent=<id>`, see [Levels](cli.md#levels)) | `{ "rows": [...], "next": "<c>", "hidden": 3 }`: one page of the list. `rows` carry the plugin's `id`, `title`, `state` and optional `note`, `wait`, `mark` and `badge` (see [Row marks](#row-marks)), plus `waiting` and `running`; an error row also carries `error`. `filter` keeps the rows the named filter shows, and `hidden` counts the rows of the type it left out (the whole type, not only this page). Without `filter` the type's default filter applies when it has filters; a type without filters lists every row and has no `hidden`. `filter=all` lists every row and has no `hidden`. An unknown name is a `400` that names the allowed ones. `next` pages within the filtered list. |
 | `GET /v1/pending` | The same list as `operad pending`, with the actions each item offers. A question carries `waitId`, the id an answer quotes, and may carry `choiceInfo`, keyed by a choice with optional `label`, `hint`, `role` and `note`. A question may carry `command`, one command line the person runs themselves in their own terminal (pi's login for a ChatGPT plan); a client shows it as written and lets the person copy it whole, and `prompt` says it too for a client that does not read the field. A question the agent asked as a form (a chat agent asking one or more questions) also carries `questions`: `[{ "id", "text", "body"?, "header"?, "choices"?: [{ "label", "description"? }], "multiple"?, "freeText"? }]`. Its answers name a question by `id`; `multiple` says more than one label may be picked, and `freeText` says the person may answer in their own words. A question may also carry `body`, Markdown too long for its text. A plan review is a form of one question: its `text` is the plan's title, its `body` is the plan's Markdown, and its `choices` are `Approve` and `Request changes`. A form has no `choices` of its own: when it has exactly one question with choices and does not take more than one label, `choices` carries that question's labels, so a client that cannot draw the form still answers it. A wait that its plugin is about to answer automatically (dev: a passed review of a task in a plan at auto merge) is not listed, so the count does not flicker; it is listed if the automatic answer does not come. An item a plugin raises without a run waiting (`kind` `standing`, no actions, `runId` `<plugin>:<id>`) is in the list too, and goes when the plugin stops reporting it. An item that is about an object also carries `object` (`<type>:<id>`), its `link` and its `row`: the same row `GET /v1/objects?type=…` returns for that object (`id`, `title`, `state`, optional `note`, `mark`, `badge`, `waiting`, `running`), so a client does not read each object. When the row cannot be built (the object is gone, no loaded plugin shows its type, or the plugin's row fails) the item carries the error row the list shows for a bad row, with `state` `error` and an `error` message; the list itself never fails for one object. A candidate has no object and no `row`. `operad pending` prints the row's title under each line that has one. |
 | `GET /v1/running` | The same list as `operad running`. Each item has `runId`, `flow`, `step`, `stepLabel`, `queued`, `startedAt` and `elapsedMs` (the run's age), and: `object`, the object's id as rows and `operad show` name it (for example `operad/T-0048-type-filters`), or `null` for a run with no object; `title`, that object's row title, or `null` when there is no object or the lookup failed (a failed lookup never fails the list); `stepStartedAt` and `stepElapsedMs`, when the current step's current attempt started and how long it has run (`null` before the first step); `mark`, the object's row mark (one of the [row marks](#row-marks)), left out when the row has none or cannot be built. The step time starts again when the step changes and on a new attempt. |
@@ -349,6 +351,48 @@ A change takes effect at the next load, as on the command line: the next `operad
 
 Like `POST /v1/act`, a switch is recorded with the caller as `{ "via": "<client>", "id": "<token label>" }`: as an event in the run log, and as a line in `serve`'s log: `http: plugin "dev" disabled via tui as operad app`. A refusal is logged with its status. The bearer token is required, as on every endpoint.
 
+## Flows
+
+`GET /v1/flows` answers `{ "flows": [...] }`, every loaded flow: those of the plugins, those a plugin made from a repository's settings, and the [flows of the home](home-flows.md).
+
+```json
+{
+  "name": "home:nightly",
+  "plugin": "home",
+  "source": null,
+  "startable": true,
+  "path": "/home/me/.operad/flows/nightly.flow.ts",
+  "entry": "run",
+  "steps": [
+    { "id": "run", "kind": "plugin", "use": "shell/command", "next": { "pass": "end_done", "fail": "end_failed", "interrupted": "end_failed" } },
+    { "id": "end_done", "kind": "end", "status": "done" },
+    { "id": "end_failed", "kind": "end", "status": "failed" }
+  ]
+}
+```
+
+| Field | Meaning |
+|---|---|
+| `name` | The flow's name. A flow of the home is `home:<file name>`. |
+| `plugin` | The plugin the flow belongs to, `home` for a flow of the home. |
+| `source` | Where that plugin was loaded from, or `null`. |
+| `startable`, `problem` | `startable` is `false` when a step the flow needs is not loaded, and `problem` then says why. |
+| `path` | The file of a flow of the home, on the machine `serve` runs on. Other flows have none. |
+| `entry` | The id of the first step. |
+| `steps` | The steps. Each has an `id` and a `kind`: `plugin` (calls a plugin's step), `wait_person` (waits for a person), `wait` (waits for a time or a condition) or `end`. `use` is the plugin step it calls, `<plugin>/<step>`, on a `plugin` step and on a `wait` that checks a condition. `next` maps each result or choice to the id of the step that follows; the id `end` finishes the flow. An `end` step has `status` (`done`, `failed` or `cancelled`) and no `next`. |
+
+The steps have the fields `dev.flowList` gives for a TypeScript flow of a repository (`id`, `kind`, `use`; see [Settings](#settings)), with `next` and `status` added, so a client draws both the same way. A file of the home that did not load is not in the list; `serve` writes its reason to the error output.
+
+A client that offers flows for a routine takes the names from this list and adds the routine with [`POST /v1/commands`](#endpoints), as `routines add --flow <name>`.
+
+`POST /v1/flows/start` starts a flow of the home once, as `operad start home:<name>` does:
+
+```json
+{ "flow": "home:nightly", "params": { "folder": "/tmp" } }
+```
+
+The answer is `{ "flow": "home:nightly", "runId": "<run>" }`, and the run is in `GET /v1/running` while it goes. `params` is an optional JSON object. A refused start answers with the reason and starts nothing: `400` for a body without a `flow` or `params` that are not an object, `404` for a flow that is not loaded, `409` for a flow already running, and `422` for a flow that cannot start or is not of the home.
+
 ## Row marks
 
 A plugin's `row` may return a `mark` and a `badge` besides `id`, `title`, `state`
@@ -600,7 +644,7 @@ the answer is `403` with the kind `refused` and the reason in `message`.
 
 | Method and path | What it does |
 |---|---|
-| `GET /v1/terminal` | `{ "terminals": [...], "groups": [{ "id", "name", "terminals": ["<id>"] }], "presets": [{ "command": "claude" }] }`. `presets` are command lines a client may offer, one for each enabled harness among `claude`, `codex` and `pi` whose agent is on the machine. Groups are in name order. |
+| `GET /v1/terminal` | `{ "terminals": [...], "groups": [{ "id", "name", "terminals": ["<id>"] }], "presets": [{ "name": "claude", "command": "claude" }] }`. `presets` are command lines a client may offer, one for each enabled harness among `claude`, `codex` and `pi` whose agent is on the machine; `command` is what that harness runs its agent with. Groups are in name order. |
 | `POST /v1/terminal` | Starts a terminal. The body is `{ "folder": "/path", "cols": 80, "rows": 24, "command"?: "bun run dev", "group"?: "<group id>" }`; an empty or absent `command` opens the login shell. The answer is `201` and `{ "terminal": { ... } }`. A folder that is not a registered repository or one of its worktrees is `422`; an unknown `group` is `404`. |
 | `POST /v1/terminal/<id>/input` | Types into it: `{ "data": "ls\r" }`. An ended terminal is `409`. |
 | `POST /v1/terminal/<id>/resize` | `{ "cols": 100, "rows": 30 }`, each from 1 to 1000. An ended terminal is `409`. |
@@ -625,7 +669,8 @@ over the stream.
 | Event | `data` | When |
 |---|---|---|
 | `terminal.change` | `{ "id" }` or `{ "group" }` | A terminal started, resized, ended, changed its `group` or was closed (`id`), or an entry of `groups` was created, renamed or deleted (`group`). Read the list again. |
-| `terminal.screen` | The terminal's fields and `"data"` | First, for each terminal the stream names: the screen and up to 5000 lines above it, as text with escape sequences to write into an empty terminal of `cols` by `rows`. |
+| `terminal.screen` | The terminal's fields, `"data"` and `"answers"` | First, for each terminal the stream names: the screen and up to 5000 lines above it, as text with escape sequences to write into an empty terminal of `cols` by `rows`. |
+| `terminal.answers` | `{ "id" }` | This stream is now the one that answers the program's questions to its terminal. |
 | `terminal.output` | `{ "id", "data" }` | Output that follows the screen, in order. It never ends inside a character or an escape sequence. |
 | `terminal.resize` | `{ "id", "cols", "rows" }` | The size changed at this point of the output. |
 | `terminal.exit` | `{ "id", "exitCode", "signal", "reason" }` | It ended, after its last output. |
@@ -634,9 +679,11 @@ over the stream.
 These events have no `id:` and are not replayed: a client that reconnects gets a
 new `terminal.screen` and replaces what it shows. While no stream names a
 terminal, `serve` answers the questions a program asks its terminal, such as the
-cursor position; while one does, the client's terminal answers, and the client
-sends the answer as input. A client that stops reading is disconnected once 32
-MiB of terminal events wait for it. The 64 KiB line limit above does not apply
+cursor position. While streams do, one of them answers: the one whose
+`terminal.screen` has `"answers": true`, or that later gets `terminal.answers`.
+Its client sends what its terminal answers as input; every other client sends no
+such answer. A client that stops reading is disconnected once 32 MiB of terminal
+events wait for it, not counting `terminal.screen`, which may be of any size. The 64 KiB line limit above does not apply
 to terminal events.
 
 ## Errors

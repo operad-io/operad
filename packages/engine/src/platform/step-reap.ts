@@ -198,6 +198,37 @@ async function listWithProc(): Promise<readonly MarkedProcess[]> {
 export const listMarkedProcesses: ProcessLister = () =>
   existsSync("/proc/self/environ") ? listWithProc() : listWithPs();
 
+/**
+ * The pids of the user's live processes whose environment holds `name=value`.
+ * The value must have no space. macOS withholds the environment of Apple's own
+ * binaries, so those are not found there.
+ */
+export async function listEnvCarriers(name: string, value: string): Promise<readonly number[]> {
+  const entry = `${name}=${value}`;
+  const pids: number[] = [];
+  if (existsSync("/proc/self/environ")) {
+    for (const found of await readdir("/proc")) {
+      if (!/^\d+$/.test(found)) continue;
+      try {
+        const environ = await readFile(`/proc/${found}/environ`, "utf8");
+        if (environ.split("\0").includes(entry)) pids.push(Number(found));
+      } catch {
+        // Another user's process, or one that just ended.
+      }
+    }
+  } else {
+    const uid = String(process.getuid?.() ?? "");
+    const who = uid === "" ? ["-x"] : ["-U", uid];
+    const listing = await run("ps", [...who, "-ww", "-E", "-o", "pid=,command="]);
+    for (const line of listing.out.split("\n")) {
+      const match = /^\s*(\d+)\s(.*)$/.exec(line);
+      if (match === null || Number(match[1]) === listing.pid) continue;
+      if (`${match[2] ?? ""} `.includes(` ${entry} `)) pids.push(Number(match[1]));
+    }
+  }
+  return pids.filter((pid) => pid !== process.pid);
+}
+
 /** Sends one signal to one process. False when it could not. */
 function signalProcess(pid: number, signal: NodeJS.Signals): boolean {
   try {
@@ -216,6 +247,8 @@ export interface ProcessRow {
   /** When it started, in whole seconds; with the pid it names one process. */
   readonly startSec: number;
   readonly command: string;
+  /** Whether it leads a session, as a process that left its terminal to be a daemon does. */
+  readonly sessionLeader?: boolean | undefined;
 }
 
 /** Reads the user's process table. */
@@ -260,6 +293,7 @@ export const readProcessTable: ProcessTable = async () => {
       pgid: Number(match[3]),
       startSec: parseStart(match[5] ?? ""),
       command: match[6] ?? "",
+      sessionLeader: (match[4] ?? "").includes("s"),
     });
   }
   return rows;

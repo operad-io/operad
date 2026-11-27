@@ -58,3 +58,22 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0810-M69 | packages/terminal/package.json | the package's description was written about operad, not about what the plugin gives | `plugin descriptions > every shipped plugin's package says in one line what it gives`, `plugin descriptions > a plugin installed on enable is described before its package is there, in the package's words` |
+
+## T-0817 — what the reviews of the terminal tasks found
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0817-M9 | packages/terminal/src/session.ts | an ended terminal dropped its folder hold while processes still ran | `what an ended terminal left running > is stopped when its folder is released` |
+| T-0817-M10 | packages/terminal/src/session.ts | stopping an ended terminal did nothing | `what an ended terminal left running > is stopped when the terminal is closed`, `what an ended terminal left running > is stopped when serve stops` |
+| T-0817-M11 | packages/terminal/src/session.ts | the folder of an ended terminal was not looked at | `what an ended terminal left running > is stopped when its folder is removed by anything else` |
+| T-0817-M12 | packages/terminal/src/queue.ts | the screen was given any amount of output at once | `the order of output through a slow terminal > gives the terminal only so much at a time, and keeps work in its place` |
+| T-0817-M13 | packages/terminal/src/queue.ts | work was left out with the output | `the order of output through a slow terminal > when too much waits, leaves out the oldest whole pieces and no work, saying so once` |
+| T-0817-M14 | packages/terminal/src/queue.ts | the newest piece was left out too | `the order of output through a slow terminal > keeps the newest piece even when it is over the limit alone` |
+| T-0817-M15 | packages/terminal/src/queue.ts | each piece left out was logged | `the order of output through a slow terminal > when too much waits, leaves out the oldest whole pieces and no work, saying so once` |
+| T-0817-M17 | packages/terminal/src/replay.ts | a hidden cursor was not replayed | `a replayed screen > keeps the cursor hidden, and only when it was` |
+| T-0817-M18 | packages/terminal/src/replay.ts | the scrolling lines were not replayed | `a replayed screen > scrolls the same lines, with the cursor where it was` |
+| T-0817-M19 | packages/terminal/src/replay.ts | the cursor's row ignored origin mode | `a replayed screen > keeps the cursor where it was when rows count from the lines that scroll` |
+| T-0817-M20 | packages/terminal/src/session.ts | every reader was told to answer | `several readers > one is told to answer the program, and the next when it leaves` |
+| T-0817-M21 | packages/terminal/src/session.ts | no reader was told to answer when the first left | `several readers > one is told to answer the program, and the next when it leaves` |
+| T-0817-M22 | packages/terminal/src/host.ts | a preset ignored the harness's command | `starting a terminal > offers the loaded agents as command lines` |
+| T-0817-M26 | packages/terminal/src/index.ts | the plugin did not say it starts without trigger rules | `serve without trigger rules > still serves terminals` |
