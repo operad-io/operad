@@ -4,7 +4,7 @@
  * screen and then the output that follows it.
  */
 
-import { statSync } from "node:fs";
+import { closeSync, openSync, statSync } from "node:fs";
 import type { PluginStreamEvent } from "@operad-io/engine";
 import { holdFolder, spawnPty, type Clock, type FolderHold, type Pty } from "@operad-io/engine/platform";
 import { SerializeAddon } from "@xterm/addon-serialize";
@@ -57,6 +57,18 @@ export interface SessionOptions {
   readonly onLog: (message: string) => void;
 }
 
+/**
+ * Keeps a folder open, so that while it is open no folder made in its place can
+ * get its inode number, even after it is removed.
+ */
+function keepOpen(folder: string): number | undefined {
+  try {
+    return openSync(folder, "r");
+  } catch {
+    return undefined;
+  }
+}
+
 /** The identity of a folder: a removed folder, even one made again, differs. */
 function folderIdentity(folder: string): string | undefined {
   try {
@@ -76,6 +88,7 @@ export class Session {
   private readonly pty: Pty;
   private readonly hold: FolderHold;
   private readonly folderAtStart: string | undefined;
+  private folderHandle: number | undefined;
   private readonly screen: InstanceType<typeof headless.Terminal>;
   private readonly serializer = new SerializeAddon();
   private readonly decoder = new TextDecoder();
@@ -132,6 +145,7 @@ export class Session {
     this.screen.onData((reply) => {
       if (this.readers.size === 0) this.pty.write(reply);
     });
+    this.folderHandle = keepOpen(options.folder);
     this.ended = this.pty.exited.then((exit) => this.finish(exit.code, exit.signal));
   }
 
@@ -252,6 +266,8 @@ export class Session {
   private finish(code: number | null, signal: string | null): Promise<void> {
     const released = this.hold.released();
     this.hold.drop();
+    if (this.folderHandle !== undefined) closeSync(this.folderHandle);
+    this.folderHandle = undefined;
     this.feed(this.held + this.decoder.decode());
     this.held = "";
     return new Promise((resolve) => {
