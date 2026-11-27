@@ -2207,7 +2207,7 @@ async function commandServe(
   const releaseStop = listenForStop(supervised, stop);
 
   let rules: readonly TriggerRule[] = [];
-  let sourcesAllowed = true;
+  let rulesLoaded = true;
   serveStage("loading the trigger rules");
   try {
     rules = await loadTriggerRules({
@@ -2219,7 +2219,7 @@ async function commandServe(
       },
     });
   } catch (error) {
-    sourcesAllowed = false;
+    rulesLoaded = false;
     const message = messageOf(error);
     context.problems.push(message);
     io.error(`operad: ${message}\n`);
@@ -2272,9 +2272,7 @@ async function commandServe(
         : await startHttp();
     }
     serveStage("starting the sources");
-    if (sourcesAllowed) {
-      await kernel.startSources();
-    }
+    await kernel.startSources({ rulesLoaded });
 
     serveStage("serving");
     io.write(`serving ${context.home}\n`);

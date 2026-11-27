@@ -2,12 +2,21 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createChatPlugin } from "@operad-io/chat";
-import { addPlan, addRepository, addTask, confirmPlan, createDevPlugin } from "@operad-io/dev";
+import {
+  addPlan,
+  addRepository,
+  addTask,
+  confirmPlan,
+  createDevPlugin,
+  recreateGateWorktree,
+  type DevSettings,
+} from "@operad-io/dev";
 import { PluginRegistry, SqlitePluginStore } from "@operad-io/engine";
 import { releaseFolder } from "@operad-io/engine/platform";
 import { createShellPlugin } from "@operad-io/shell";
 import { FOLDER_REMOVED_REASON } from "../src/index.ts";
-import { addWorktree, closeAll, git, lingering, makeWorld, serve } from "./support.ts";
+import { leftJob } from "../../engine/test/platform/left-job.ts";
+import { addWorktree, closeAll, git, lingering, makeWorld, serve, type Served, type World } from "./support.ts";
 
 afterEach(closeAll);
 
@@ -24,6 +33,56 @@ function manualRepeat() {
     run: () => check(),
   };
 }
+
+/** A terminal whose command ended and left a job running in another process group. */
+async function endedWithJob(served: Served, world: World, folder: string, name: string) {
+  const job = leftJob(join(world.root, `left-${name}`));
+  const terminal = await served.start({ command: `${job.line} read line`, folder });
+  await job.up;
+  await served.input(terminal.id, "\r");
+  expect(await served.ended(terminal.id)).toMatchObject({ exitCode: 0, reason: null });
+  expect(job.ended()).toBe(false);
+  return { job, terminal };
+}
+
+describe("what an ended terminal left running", () => {
+  test("is stopped when the terminal is closed", async () => {
+    const world = await makeWorld();
+    const served = await serve(world);
+    const { job, terminal } = await endedWithJob(served, world, world.repository, "close");
+    expect((await served.request("POST", `/v1/terminal/${terminal.id}/close`, {})).status).toBe(200);
+    await job.gone;
+  });
+
+  test("is stopped when serve stops", async () => {
+    const world = await makeWorld();
+    const served = await serve(world);
+    const { job } = await endedWithJob(served, world, world.repository, "stop");
+    await served.stop();
+    await job.gone;
+  });
+
+  test("is stopped when its folder is released", async () => {
+    const world = await makeWorld();
+    const worktree = addWorktree(world, "TK4");
+    const served = await serve(world, { plugin: { repeat: manualRepeat().repeat } });
+    const { job } = await endedWithJob(served, world, worktree, "release");
+    expect(await releaseFolder(world.home, worktree)).toBe(1);
+    await job.gone;
+  });
+
+  test("is stopped when its folder is removed by anything else", async () => {
+    const world = await makeWorld();
+    const worktree = addWorktree(world, "TK5");
+    const checks = manualRepeat();
+    const served = await serve(world, { plugin: { repeat: checks.repeat } });
+    const { job } = await endedWithJob(served, world, worktree, "removed");
+    checks.run();
+    git(world.repository, "worktree", "remove", "--force", worktree);
+    checks.run();
+    await job.gone;
+  });
+});
 
 describe("a removed folder", () => {
   test("releasing a worktree stops its terminals, and they say why", async () => {
@@ -71,6 +130,19 @@ describe("a removed folder", () => {
     expect((await served.list()).terminals.find((t) => t.id === inMain.id)?.state).toBe("running");
   });
 
+  test("dev making a checking worktree again stops its terminals first", async () => {
+    const world = await makeWorld();
+    const gate = addWorktree(world, "TK6-gate");
+    const served = await serve(world, { plugin: { repeat: manualRepeat().repeat } });
+    const job = lingering(world, "in-gate");
+    const terminal = await served.start({ command: job.command, folder: gate });
+    await job.up;
+    const settings = { worktreeRoot: ".operad-worktrees" } as DevSettings;
+    expect(await recreateGateWorktree(world.home, world.repository, gate, "HEAD", settings)).toBeUndefined();
+    await job.gone;
+    expect(await served.ended(terminal.id)).toMatchObject({ reason: FOLDER_REMOVED_REASON });
+  });
+
   test("a folder removed and made again is not the folder the terminal started in", async () => {
     const world = await makeWorld();
     const worktree = addWorktree(world, "TK3");
@@ -83,19 +155,26 @@ describe("a removed folder", () => {
     expect(await served.ended(terminal.id)).toMatchObject({ reason: FOLDER_REMOVED_REASON });
   });
 
-  test("dev's cleanup stops a task worktree's terminals before it removes the worktree", async () => {
+  test.each([
+    ["names $OPERAD_WORKTREE", 'git worktree remove --force "$OPERAD_WORKTREE"', ': "$OPERAD_WORKTREE"'],
+    [
+      "runs git worktree remove",
+      'for d in .operad-worktrees/*; do case "$d" in *-gate) ;; *) git worktree remove --force "$d" ;; esac; done',
+      ": git worktree remove",
+    ],
+  ])("dev's cleanup stops both worktrees' terminals before a hook that %s", async (_, removal, mention) => {
     const world = await makeWorld();
     const served = await serve(world, { plugin: { repeat: manualRepeat().repeat } });
     const pidFile = join(world.root, "terminal-pid");
     // The first hook fails when the terminal's shell still runs as it starts.
-    const stillRuns = `case "$(ps -o stat= -p "$(cat '${pidFile}')")" in ""|Z*) ;; *) exit 9;; esac; : "$OPERAD_WORKTREE"`;
+    const stillRuns = `case "$(ps -o stat= -p "$(cat '${pidFile}')")" in ""|Z*) ;; *) exit 9;; esac; ${mention}`;
     mkdirSync(join(world.repository, ".operad"));
     writeFileSync(
       join(world.repository, ".operad", "dev.json"),
       JSON.stringify({
         name: "repository",
         mainBranch: "main",
-        hooks: { afterMerge: [stillRuns, 'git worktree remove --force "$OPERAD_WORKTREE"'] },
+        hooks: { afterMerge: [stillRuns, removal] },
       }),
     );
 
@@ -122,6 +201,9 @@ describe("a removed folder", () => {
     });
     const inMain = await served.start({ command: "read x", folder: world.repository });
     await (await served.stream(inTask.id)).shows(inTask.id, /ready-2/);
+    const gate = `${worktree}-gate`;
+    git(world.repository, "worktree", "add", "-q", "--detach", gate);
+    const inGate = await served.start({ command: "read x", folder: gate });
 
     const result = await registry.runStep("dev/cleanup", {}, { runId: "cleanup-run", object });
 
@@ -131,6 +213,7 @@ describe("a removed folder", () => {
       reason: FOLDER_REMOVED_REASON,
       exitCode: 137,
     });
+    expect(await served.ended(inGate.id)).toMatchObject({ reason: FOLDER_REMOVED_REASON });
     expect((await served.list()).terminals.find((t) => t.id === inMain.id)?.state).toBe("running");
     store.close();
   });

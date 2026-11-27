@@ -349,3 +349,9 @@ setup it depends on, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0656-M1 | packages/harness/claude/src/worker.ts | a rejected rate limit carried no `reported_at`, so dev counted its reset from when it read the result | `a rejected rate limit carries the time until its reset` |
+
+## T-0817 — what the reviews of the terminal tasks found
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0817-M30 | packages/harness/claude/src/index.ts | the command setting was not quoted for a shell | `claude's command for a person > is the command setting as one shell word, and none without it` |

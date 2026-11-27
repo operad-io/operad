@@ -70,3 +70,16 @@ describe("codex's signedIn answer", () => {
     expect(readFileSync(counter, "utf8").length).toBe(2);
   });
 });
+
+describe("codex's command for a person", () => {
+  test("is the command setting without app-server, and none without it", async () => {
+    const plugin = createCodexHarnessPlugin();
+    expect(await plugin.interactiveCommand?.({ command: ["/opt/my tools/codex", "app-server"] })).toBe(
+      "'/opt/my tools/codex'",
+    );
+    expect(await plugin.interactiveCommand?.({ command: ["bun", "/opt/codex.js"] })).toBe(
+      "bun /opt/codex.js",
+    );
+    expect(await plugin.interactiveCommand?.({})).toBeUndefined();
+  });
+});

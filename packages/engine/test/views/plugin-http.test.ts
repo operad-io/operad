@@ -172,6 +172,37 @@ describe("a running plugin's events", () => {
   });
 });
 
+describe("what a reader is given on joining", () => {
+  test("is held whatever its size, and does not count toward the byte limit", async () => {
+    let send: (event: PluginStreamEvent) => void = () => undefined;
+    let closed = false;
+    const served = await serveWith({
+      screens: {
+        request: () => undefined,
+        stream: () => ({
+          open(open) {
+            send = open;
+            const large = "x".repeat(MAX_PLUGIN_STREAM_BYTES);
+            // None is read yet.
+            send({ name: "screen", data: large, snapshot: true });
+            send({ name: "screen", data: large, snapshot: true });
+            send({ name: "end", data: 0 });
+            return () => {
+              closed = true;
+            };
+          },
+        }),
+      },
+    });
+    const stream = await served.call("/v1/events?screens=1");
+    const text = await readUntil(stream, "screens.end");
+    expect(text.length).toBeGreaterThan(2 * MAX_PLUGIN_STREAM_BYTES);
+    expect(closed).toBe(false);
+    send({ name: "big", data: "x".repeat(MAX_PLUGIN_STREAM_BYTES) });
+    expect(closed).toBe(true);
+  }, 30_000);
+});
+
 describe("a request from this machine", () => {
   const request = (headers: Record<string, string> = {}, host = "127.0.0.1:8765") =>
     new Request(`http://${host}/v1/x`, { headers });
@@ -192,7 +223,20 @@ describe("a request from this machine", () => {
     for (const host of ["mac.tail1234.ts.net", "192.168.1.5:8765", "127.0.0.1.example.com"]) {
       expect({ host, local: isLocalRequest("127.0.0.1", request({}, host)) }).toEqual({ host, local: false });
     }
-    for (const header of ["forwarded", "x-forwarded-for", "x-forwarded-host", "x-real-ip", "tailscale-user-login"]) {
+    for (const header of [
+      "forwarded",
+      "x-forwarded-for",
+      "x-forwarded-host",
+      "x-forwarded-proto",
+      "x-real-ip",
+      "x-client-ip",
+      "true-client-ip",
+      "fastly-client-ip",
+      "x-envoy-external-address",
+      "via",
+      "cf-connecting-ip",
+      "tailscale-user-login",
+    ]) {
       expect({ header, local: isLocalRequest("127.0.0.1", request({ [header]: "a" })) }).toEqual({
         header,
         local: false,

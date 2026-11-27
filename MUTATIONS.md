@@ -21,8 +21,8 @@ Each package keeps its mutation checks in `MUTATIONS.md`; a row names the broken
 - [telegram](packages/telegram/MUTATIONS.md)
 - [tui](packages/tui/MUTATIONS.md)
 - [terminal](packages/terminal/MUTATIONS.md)
-## Outside packages
 
+## Outside packages
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0091-M1 | scripts/stress.sh | the final exit status ignored failures | `scripts/stress.sh > a fixture failing every third run reports the counts and exits 1` |

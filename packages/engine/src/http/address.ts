@@ -114,14 +114,22 @@ export function listenAddressKind(
 }
 
 /** Headers a proxy adds when it passes on a request from somewhere else. */
-const FORWARDING_HEADERS = [
+const FORWARDING_HEADERS: ReadonlySet<string> = new Set([
   "forwarded",
-  "x-forwarded-for",
-  "x-forwarded-host",
+  "via",
   "x-real-ip",
-  "tailscale-user-login",
-  "tailscale-funnel-request",
-] as const;
+  "x-client-ip",
+  "true-client-ip",
+  "fastly-client-ip",
+  "x-envoy-external-address",
+]);
+
+/** The same, by how the name starts: `X-Forwarded-*`, Cloudflare's and Tailscale's. */
+const FORWARDING_PREFIXES = ["x-forwarded-", "cf-", "tailscale-"] as const;
+
+function isForwardingHeader(name: string): boolean {
+  return FORWARDING_HEADERS.has(name) || FORWARDING_PREFIXES.some((prefix) => name.startsWith(prefix));
+}
 
 function isLoopbackName(name: string): boolean {
   const bare = name.replace(/^\[|\]$/g, "").replace(/^::ffff:(?=[0-9]+\.)/i, "");
@@ -136,7 +144,7 @@ function isLoopbackName(name: string): boolean {
  */
 export function isLocalRequest(peer: string | undefined, request: Request): boolean {
   if (peer === undefined || peer === "localhost" || !isLoopbackName(peer)) return false;
-  if (FORWARDING_HEADERS.some((header) => request.headers.has(header))) return false;
+  if ([...request.headers.keys()].some(isForwardingHeader)) return false;
   let host: string;
   try {
     host = new URL(request.url).hostname;
