@@ -277,10 +277,11 @@ for (const mode of ["memory", "file"] as const) {
         const run = env.runner(id, timer).run();
         await env.opened(id);
         await timer.armed();
-        expect((await listPending(env.log, env.registry))[0]?.command).toBe(command);
-
+        const open = (await listPending(env.log, env.registry))[0];
+        // The run ends before anything is checked, so a failure leaves none behind.
         timer.fire();
         expect(await run).toBe("waiting");
+        expect(open?.command).toBe(command);
         expect((await readState(env.log, id)).wait?.command).toBe(command);
         expect((await listPending(env.log, env.registry))[0]?.command).toBe(command);
       } finally {
