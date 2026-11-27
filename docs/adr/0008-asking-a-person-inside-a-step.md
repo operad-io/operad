@@ -124,5 +124,13 @@ copied whole. `operad bot login` prints it the same way: after starting the
 login it waits for the login's first question while a `serve` runs it, at most
 30 seconds. The question's text does not repeat the command, so the command
 line, the MCP `pending` tool, the terminal UI and Telegram each show `command`
-on a line of its own where they show the question. A flow's `wait_person` step
-takes no command.
+on a line of its own where they show the question. `history` keeps it with the
+question: the entries `asked you` and `waiting for you` show it on a line of its
+own, whole, and `--json` carries it as `command`.
+
+The terminal UI's `Pending` row is cut to one line, so it says first where the
+command is read: the overlay `a` opens, or `operad pending` when that overlay
+does not show it. The overlay wraps the question's text and widens past its usual
+box, up to the terminal's width, to keep the command on one line. A command wider
+than that is wrapped, and the overlay says `operad pending` prints it on one
+line. A flow's `wait_person` step takes no command.
