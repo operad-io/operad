@@ -129,3 +129,6 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0816-M19 | packages/harness/radian/src/index.ts | radian never said its agent was missing | `whether radian's agent is on this machine > with no radian on PATH it says how to set it up` |
+| T-0816-M30 | packages/harness/radian/src/index.ts | radian declared no setup guide | ``a harness's setup guide > a harness whose agent is missing shows a guide and the missing item `agent` `` |
+| T-0816-M31 | packages/harness/radian/skills/setup/SKILL.md | radian's guide lost its step for `agent` | `a harness's setup guide > each guide has a step for every item and its package ships it` |
+| T-0816-M32 | packages/harness/radian/package.json | radian's package did not ship the guide | `a harness's setup guide > each guide has a step for every item and its package ships it` |

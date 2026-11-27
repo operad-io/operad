@@ -365,3 +365,6 @@ _The second "## T-0766" section above repeats the rows of the first; the rows of
 |---|---|---|---|
 | T-0816-M17 | packages/harness/pi/src/index.ts | pi never said its agent was missing, so a claude home asked for a pi login | `serve on a new home with nothing set up > with only a signed-in claude, nothing waits: the pi that is not there asks for no login` |
 | T-0816-M18 | packages/harness/pi/src/pi-install.ts | the pi installed in the home did not count | `whether pi's agent is on this machine > the pi operad installed in the home counts` |
+| T-0816-M27 | packages/harness/pi/src/index.ts | pi declared no setup guide | ``a harness's setup guide > a harness whose agent is missing shows a guide and the missing item `agent` `` |
+| T-0816-M28 | packages/harness/pi/skills/setup/SKILL.md | pi's guide lost its step for `agent` | `a harness's setup guide > each guide has a step for every item and its package ships it` |
+| T-0816-M29 | packages/harness/pi/package.json | pi's package did not ship the guide | `a harness's setup guide > each guide has a step for every item and its package ships it` |
