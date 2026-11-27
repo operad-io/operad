@@ -155,6 +155,26 @@ function fakeSdkTarball(root: string): string {
   return packed.out.trim();
 }
 
+/** A tarball of a third-party package as this checkout has it installed. */
+function installedTarball(root: string, name: string, from: string): string {
+  const directory = dirname(Bun.resolveSync(`${name}/package.json`, from));
+  const destination = join(root, "third-party-tarballs", name);
+  mkdirSync(destination, { recursive: true });
+  const packed = run(["bun", "pm", "pack", "--ignore-scripts", "--destination", destination, "--quiet"], directory);
+  expect({ name, code: packed.code, err: packed.err }).toEqual({ name, code: 0, err: "" });
+  return packed.out.trim();
+}
+
+/** A small local package, packed. */
+function localTarball(root: string, name: string, extra: Record<string, unknown> = {}): string {
+  const directory = join(root, "local-packages", name);
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(join(directory, "package.json"), JSON.stringify({ name, version: "1.0.0", ...extra }));
+  const packed = run(["bun", "pm", "pack", "--destination", directory, "--quiet"], directory);
+  expect({ name, code: packed.code, err: packed.err }).toEqual({ name, code: 0, err: "" });
+  return packed.out.trim();
+}
+
 /** Installs the CLI from the tarballs into a prefix of its own. */
 function cliPrefix(scratchRoot: string, tarballs: ReadonlyMap<string, string>): string {
   const prefix = join(scratchRoot, "prefix");
@@ -340,6 +360,66 @@ describe("publishing and installing the packages", () => {
     const manifest = join(home, "plugins", "package.json");
     const text = existsSync(manifest) ? readFileSync(manifest, "utf8") : "";
     expect(text).not.toContain("@operad-io/harness-claude");
+  }, 120_000);
+
+  test("enabling terminal from the packed tarballs installs its package, which then loads", () => {
+    const scratchRoot = scratch("operad-publish-terminal-");
+    const tarballs = packAll(join(scratchRoot, "tarballs"));
+    const binary = cliPrefix(scratchRoot, tarballs);
+    const home = join(scratchRoot, "home");
+    const terminalPackage = tarballs.get("@operad-io/terminal");
+    expect(terminalPackage).toBeDefined();
+    const project = join(home, "plugins");
+    mkdirSync(project, { recursive: true });
+    const source = join(root, "packages", "terminal");
+    const addon = dirname(Bun.resolveSync("@xterm/addon-serialize/package.json", source));
+    // A package already in the home's project that names an optional one, as the claude SDK does.
+    const optional = localTarball(scratchRoot, "optional-binary");
+    const host = localTarball(scratchRoot, "optional-host", {
+      optionalDependencies: { "optional-binary": `file:${optional}` },
+    });
+    writeFileSync(
+      join(project, "package.json"),
+      JSON.stringify({
+        name: "operad-plugins",
+        private: true,
+        type: "module",
+        dependencies: {
+          "@operad-io/terminal": `file:${terminalPackage ?? ""}`,
+          "optional-host": `file:${host}`,
+        },
+        overrides: {
+          ...overridesOf(tarballs, ["@operad-io/terminal"]),
+          "@xterm/headless": `file:${installedTarball(scratchRoot, "@xterm/headless", source)}`,
+          "@xterm/addon-serialize": `file:${installedTarball(scratchRoot, "@xterm/addon-serialize", source)}`,
+          "@xterm/xterm": `file:${installedTarball(scratchRoot, "@xterm/xterm", addon)}`,
+        },
+      }),
+    );
+    // Everything is a local tarball: an empty cache and a registry that cannot
+    // answer keep the test off the machine's cache and the network.
+    const env = {
+      OPERAD_HOME: home,
+      BUN_INSTALL_CACHE_DIR: join(scratchRoot, "bun-cache"),
+      BUN_CONFIG_REGISTRY: "http://127.0.0.1:9/",
+    };
+
+    const enabled = run([binary, "plugin", "enable", "terminal"], scratchRoot, env);
+    expect({ code: enabled.code, err: enabled.err }).toEqual({ code: 0, err: "" });
+    expect(enabled.out).toContain("terminal: enabled");
+    for (const name of ["@operad-io/terminal", "@xterm/headless", "@xterm/addon-serialize"]) {
+      expect({ name, installed: existsSync(join(project, "node_modules", name, "package.json")) }).toEqual({
+        name,
+        installed: true,
+      });
+    }
+
+    expect(existsSync(join(project, "node_modules", "optional-host"))).toBe(true);
+    expect(existsSync(join(project, "node_modules", "optional-binary"))).toBe(false);
+
+    const check = run([binary, "plugin", "check", "terminal"], scratchRoot, env);
+    expect({ code: check.code, err: check.err }).toEqual({ code: 0, err: "" });
+    expect(check.out).toContain("terminal: ok");
   }, 120_000);
 
   test.skipIf(!online)(

@@ -1606,6 +1606,51 @@ export interface PluginRequires {
 /** A running source plugin. */
 export interface SourceHandle {
   stop(): MaybePromise<void>;
+  /** What this running plugin serves on the HTTP port of `operad serve` (ADR 0029 D4). */
+  readonly http?: PluginHttp | undefined;
+}
+
+/** One request under `/v1/<plugin>`, already authenticated. */
+export interface PluginHttpRequest {
+  readonly method: string;
+  /** The path segments after `/v1/<plugin>`, decoded. */
+  readonly path: readonly string[];
+  /** Whether it came over loopback from this machine, through no proxy. */
+  readonly local: boolean;
+  /** The JSON body; read at most once. */
+  body(): Promise<unknown>;
+}
+
+/** What a plugin answers: a status and a JSON body. */
+export interface PluginHttpResponse {
+  readonly status: number;
+  readonly body: unknown;
+}
+
+/** One event of a plugin on `/v1/events`, sent as `<plugin>.<name>`. */
+export interface PluginStreamEvent {
+  readonly name: string;
+  readonly data: unknown;
+}
+
+/** An event stream that named the plugin in its query. */
+export interface PluginStreamRequest {
+  /** The values of the query parameter named after the plugin. */
+  readonly values: readonly string[];
+  readonly local: boolean;
+}
+
+/** The plugin's part of one event stream. */
+export interface PluginStream {
+  /** Starts sending; the function returned stops it when the stream closes. */
+  open(send: (event: PluginStreamEvent) => void): () => void;
+}
+
+export interface PluginHttp {
+  /** Answers one request; undefined means there is no such endpoint. */
+  request(request: PluginHttpRequest): MaybePromise<PluginHttpResponse | undefined>;
+  /** Joins one event stream, or answers the request with a refusal instead. */
+  stream?(request: PluginStreamRequest): PluginStream | PluginHttpResponse;
 }
 
 /** The context a source plugin's `start` receives. */
@@ -1619,6 +1664,8 @@ export interface SourceContext extends PluginBaseContext {
   readonly harnessCapabilities?:
     | ((harness: string) => HarnessCapabilities | undefined)
     | undefined;
+  /** The repositories the loaded plugins registered, read when called. */
+  readonly repositories?: (() => Promise<readonly SettingsRepository[]>) | undefined;
   /** Sends one event through the kernel's rules. */
   emit(event: SourceEvent): Promise<void>;
   /**

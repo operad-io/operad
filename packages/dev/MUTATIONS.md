@@ -1746,3 +1746,10 @@ the row fields.
 | T-0757-M1 | packages/dev/src/steps.ts | `looseTaskContext` read dev.json from the file and ignored the attempt's recorded text | `dev/worktree > a step that can retry reads the recorded dev.json too, and a recorded text this build refuses falls back to the file (T-0757)` |
 | T-0757-M2 | packages/dev/src/steps.ts | `recordedSettings` let the error of a recorded text this build refuses escape instead of falling back to the file | `dev/worktree > a step that can retry reads the recorded dev.json too, and a recorded text this build refuses falls back to the file (T-0757)` |
 | T-0800-M1 | packages/dev/src/views.ts | `repoViews.row` did not use the singular "task" for one open task | `the repo type > the row counts open plans and open tasks as they change` |
+
+## T-0810 — cleanup releases a worktree first
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0810-M62 | packages/dev/src/integrate.ts | cleanup released no worktree | `a removed folder > dev's cleanup stops a task worktree's terminals before it removes the worktree` |
+| T-0810-M63 | packages/dev/src/integrate.ts | cleanup released the worktree only after its hooks ran | `a removed folder > dev's cleanup stops a task worktree's terminals before it removes the worktree` |
