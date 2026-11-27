@@ -455,3 +455,6 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 |---|---|---|---|
 | T-0809-M7 | packages/cli/src/doctor.ts | no line for a missing address while others were present | `a listen address this machine lacks is warned about, and is a problem only when none is left` |
 | T-0809-M8 | packages/cli/src/doctor.ts | no problem line when no listen address was present | `a listen address this machine lacks is warned about, and is a problem only when none is left` |
+| T-0809-M10 | packages/cli/src/main.ts | doctor asked serve on the first configured address, present or not | `a real home with a missing address listed first asks serve on the next one and warns` |
+| T-0809-M11 | packages/cli/src/main.ts | the real doctor environment gave no listen addresses, so no warning was printed | `a real home with a missing address listed first asks serve on the next one and warns` |
+| T-0809-M12 | packages/cli/src/main.ts | the listen addresses were checked with the HTTP interface turned off | `a real home with a missing address listed first asks serve on the next one and warns` |

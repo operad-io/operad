@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, mkdirSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { acquireLock, serveLockPath } from "@operad-io/engine";
 import { formatDoctor, runDoctor, type DoctorEnv } from "../src/doctor.ts";
 import { main, type CliIo } from "../src/main.ts";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
@@ -206,6 +207,42 @@ describe("operad doctor", () => {
     expect(await main(["doctor"], { io: out.io, home })).toBe(1);
     expect(out.text()).toContain("problem  config.json is not valid");
     expect(readdirSync(home).sort()).toEqual(before);
+  });
+
+  test("a real home with a missing address listed first asks serve on the next one and warns", async () => {
+    const home = await tempRoot("doctor-listen-");
+    // The last Tailscale address, which this machine does not have.
+    const absent = "100.127.255.254";
+    const server = Bun.serve({ hostname: "127.0.0.1", port: 0, fetch: () => new Response() });
+    // Doctor asks serve only while the home's serve lock is held.
+    const lock = acquireLock(serveLockPath(home));
+    // A test host set where the tests run would be reached over ssh.
+    const testHost = process.env.OPERAD_CHECK_HOST;
+    delete process.env.OPERAD_CHECK_HOST;
+    const doctor = async (enabled: boolean) => {
+      writeFileSync(
+        join(home, "config.json"),
+        JSON.stringify({ plugins: [], http: { enabled, port: server.port, listen: [absent, "127.0.0.1"] } }),
+      );
+      const out = capture();
+      await main(["doctor", "--json"], { io: out.io, home });
+      return (JSON.parse(out.text()) as { checks: { id: string; ok: boolean; message: string }[] }).checks;
+    };
+    try {
+      const checks = await doctor(true);
+      expect(checks).toContainEqual({ id: "serve", ok: true, message: "serve is answering" });
+      expect(checks).toContainEqual({
+        id: `listen:${absent}`,
+        ok: true,
+        message: `${absent} is not on this machine now; serve does not listen there; restart serve once it is`,
+      });
+      // With the interface off, no address is expected to be listened on.
+      expect((await doctor(false)).some((check) => check.id.startsWith("listen"))).toBe(false);
+    } finally {
+      if (testHost !== undefined) process.env.OPERAD_CHECK_HOST = testHost;
+      lock.release();
+      await server.stop(true);
+    }
   });
 
   test("a missing home is reported and not created", async () => {
