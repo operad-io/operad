@@ -134,3 +134,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0814-M8 | packages/mcp/src/format.ts | the pending Markdown left the command out of its code block | `the pending Markdown > puts a question's command alone in a code block` |
+
+## T-0820 — the login question says its command once
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0820-M9 | packages/mcp/src/format.ts | the pending Markdown left the command out | `the pending Markdown > puts a question's command alone in a code block` |
