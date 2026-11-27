@@ -61,18 +61,11 @@ stops them first when it names `$OPERAD_WORKTREE` or runs `git worktree remove`.
 A client that connects again gets the screen and up to 5000 lines above it, then
 the new output.
 
-## Groups
-
-You can make named groups and put terminals from any folders in one, for example
-the dev servers of several worktrees. A terminal is in one group or none. A group
-stays when its terminals end and after `serve` restarts (empty, as the terminals
-are gone). Deleting a group stops nothing.
-
 ## This Mac only
 
 A terminal is a shell on your machine. Starting one, typing in it, resizing,
-closing, changing groups and reading its screen work only from the machine
+closing, any other change and reading its screen work only from the machine
 `serve` runs on, over loopback (`http://127.0.0.1:<port>`). A request from your
 network or your tailnet, also one passed on by a proxy on your machine, is
-refused. Another device may still read the list: each terminal's command line,
-folder and state, and the group names. It needs the token like any request.
+refused. Another device may still read the list, with each terminal's command
+line, folder and state. It needs the token like any request.

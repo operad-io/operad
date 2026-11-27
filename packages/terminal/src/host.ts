@@ -269,7 +269,7 @@ export class TerminalHost {
 
   private async storedGroup(id: string): Promise<StoredGroup> {
     const found = id === "" ? undefined : await this.options.store.get(GROUP_TYPE, id);
-    if (found === undefined) throw new TerminalError(404, "not-found", `no group "${id}"`);
+    if (found === undefined) throw new TerminalError(404, "not-found", `"group": nothing has the id "${id}"`);
     return groupOf(found.id, found.data);
   }
 

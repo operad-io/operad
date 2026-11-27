@@ -597,20 +597,20 @@ the answer is `403` with the kind `refused` and the reason in `message`.
 | Method and path | What it does |
 |---|---|
 | `GET /v1/terminal` | `{ "terminals": [...], "groups": [{ "id", "name", "terminals": ["<id>"] }], "presets": [{ "command": "claude" }] }`. `presets` are command lines a client may offer, one for each enabled harness among `claude`, `codex` and `pi`. Groups are in name order. |
-| `POST /v1/terminal` | Starts a terminal. The body is `{ "folder": "/path", "cols": 80, "rows": 24, "command"?: "bun run dev", "group"?: "<group id>" }`; an empty or absent `command` opens the login shell. The answer is `201` and `{ "terminal": { ... } }`. A folder that is not a registered repository or one of its worktrees is `422`; an unknown group is `404`. |
+| `POST /v1/terminal` | Starts a terminal. The body is `{ "folder": "/path", "cols": 80, "rows": 24, "command"?: "bun run dev", "group"?: "<group id>" }`; an empty or absent `command` opens the login shell. The answer is `201` and `{ "terminal": { ... } }`. A folder that is not a registered repository or one of its worktrees is `422`; an unknown `group` is `404`. |
 | `POST /v1/terminal/<id>/input` | Types into it: `{ "data": "ls\r" }`. An ended terminal is `409`. |
 | `POST /v1/terminal/<id>/resize` | `{ "cols": 100, "rows": 30 }`, each from 1 to 1000. An ended terminal is `409`. |
 | `POST /v1/terminal/<id>/close` | Stops everything it started when it runs, takes it off the list and answers `{ "terminal": { ... } }` as it ended. The body is `{}`. |
-| `POST /v1/terminal/<id>/group` | Puts it in a group, or in none: `{ "group": "<group id>" }` or `{ "group": null }`. |
-| `POST /v1/terminal/groups` | Creates a group: `{ "name": "servers" }` (1 to 100 characters). The answer is `201` and `{ "group": { ... } }`. |
+| `POST /v1/terminal/<id>/group` | Sets its `group`, or none: `{ "group": "<group id>" }` or `{ "group": null }`. A terminal has at most one. |
+| `POST /v1/terminal/groups` | Creates a `group`, a named set of terminals from any folders: `{ "name": "servers" }` (1 to 100 characters). The answer is `201` and `{ "group": { ... } }`. It is kept over a `serve` restart; its terminals are not. |
 | `POST /v1/terminal/groups/<group id>` | Renames it: `{ "name": "dev servers" }`. |
-| `POST /v1/terminal/groups/<group id>/delete` | Deletes it; its terminals keep running, in no group. The body is `{}`. |
+| `POST /v1/terminal/groups/<group id>/delete` | Deletes it; its terminals keep running, with `group` `null`. The body is `{}`. |
 
 A terminal is `{ "id", "command", "folder", "cols", "rows", "group", "state",
 "exitCode", "signal", "reason", "startedAt", "endedAt" }`. `state` is `running`
 or `ended`. `exitCode` is 128 plus the signal number for a signal. `reason` says
 why it ended when neither its command nor a person ended it, such as `stopped
-because its folder was removed`. `group` is a group id or `null`.
+because its folder was removed`. `group` is an id from `groups`, or `null`.
 
 A stream gets terminal events when its query names `terminal`.
 `GET /v1/events?terminal=` gets the changes to the list.
@@ -620,7 +620,7 @@ over the stream.
 
 | Event | `data` | When |
 |---|---|---|
-| `terminal.change` | `{ "id" }` or `{ "group" }` | A terminal started, resized, ended, changed group or was closed, or a group was created, renamed or deleted. Read the list again. |
+| `terminal.change` | `{ "id" }` or `{ "group" }` | A terminal started, resized, ended, changed its `group` or was closed (`id`), or an entry of `groups` was created, renamed or deleted (`group`). Read the list again. |
 | `terminal.screen` | The terminal's fields and `"data"` | First, for each terminal the stream names: the screen and up to 5000 lines above it, as text with escape sequences to write into an empty terminal of `cols` by `rows`. |
 | `terminal.output` | `{ "id", "data" }` | Output that follows the screen, in order. It never ends inside a character or an escape sequence. |
 | `terminal.resize` | `{ "id", "cols", "rows" }` | The size changed at this point of the output. |
