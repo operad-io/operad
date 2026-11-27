@@ -77,6 +77,38 @@ describe("history view", () => {
     for (const line of lines) assertUserWords(line);
   });
 
+  test("a question's command is a line of its own, whole, where the question is", async () => {
+    // Longer than a short detail, with Markdown in it.
+    const command = `/opt/${"long-directory/".repeat(12)}tool \`\`\` *login* _now_`;
+    const facts = [
+      fact("ask_opened", { waitId: "a", step: "work", prompt: "Run the command below.", command }, 1),
+      fact("waiting_for_person", { waitId: "a", step: "work", prompt: "Run the command below.", command }, 2),
+    ];
+    const lines: string[] = [];
+    for await (const entry of historyEntries(from(facts))) {
+      expect(entry.command).toBe(command);
+      lines.push(formatHistoryEntry(entry));
+    }
+    expect(lines[0]?.split("\n").slice(1)).toEqual([`    ${command}`]);
+    expect(lines[0]).toContain("asked you: Run the command below.\n");
+    expect(lines[1]).toContain("waiting for you: Run the command below.\n");
+
+    const section = runHistoryLines(facts, { now: 2_000, full: false }).slice(1);
+    expect(section).toHaveLength(2);
+    for (const line of section) {
+      expect(line.split("\n").slice(1)).toEqual(["  ````", `  ${command}`, "  ````"]);
+    }
+  });
+
+  test("a stored command that cannot be read is left out of history", async () => {
+    const facts = [fact("ask_opened", { waitId: "a", prompt: "Run it.", command: "one\ntwo" }, 1)];
+    for await (const entry of historyEntries(from(facts))) {
+      expect(entry.command).toBeUndefined();
+      expect(formatHistoryEntry(entry)).toEndWith("asked you: Run it.");
+    }
+    expect(runHistoryLines(facts, { now: 2_000, full: false }).join("\n")).not.toContain("two");
+  });
+
   test("a step that stopped with an unexpected result says what it reported", async () => {
     const facts = [
       fact(

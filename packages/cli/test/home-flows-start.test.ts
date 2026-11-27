@@ -251,6 +251,22 @@ describe("starting a flow of the home by hand", () => {
     });
   });
 
+  test("the run's history shows a question's command, and --json carries it", async () => {
+    const home = await flowsHome();
+    const command = "'/home/a b/.bin/tool' auth login some-provider";
+    const runId = await withHome(home, async (context) => {
+      const run = await context.log.startRun("home:echo", "flow:home:echo");
+      await context.log.append(run.runId, 0, [
+        { kind: "ask_opened", payload: { waitId: "a", prompt: "Run it.", command }, cause: "test" },
+      ]);
+      return run.runId;
+    });
+
+    expect((await operad(home, "history", runId)).out).toContain(`asked you: Run it.\n    ${command}\n`);
+    const entries = JSON.parse((await operad(home, "history", runId, "--json")).out) as unknown[];
+    expect(entries).toContainEqual(expect.objectContaining({ what: "asked you", command }));
+  });
+
   test("a run of a flow whose file no longer loads fails, or is handed to its own process to fail", async () => {
     const home = await flowsHome();
     // The runs are made as a start made them while the file still loaded.
