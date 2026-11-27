@@ -1586,3 +1586,6 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0819-M11 | packages/engine/src/http/server.ts | a start with no flow was not refused for it | `serve lists the flows over HTTP and runs one a client starts to its end` |
 | T-0819-M12 | packages/engine/src/http/server.ts | `/v1/flows` took any method | `serve lists the flows over HTTP and runs one a client starts to its end` |
 | T-0819-M13 | packages/engine/src/http/server.ts | `/v1/flows/start` took any method | `serve lists the flows over HTTP and runs one a client starts to its end` |
+| T-0819-M14 | packages/engine/src/loop/serve.ts | a recorded answer did not read its run's unread home flow | `it applies an answer to the flow's run and can cancel it` |
+| T-0819-M15 | packages/engine/src/loop/serve.ts | the pass over active runs did not read an unread home flow | `it gives no process to a run of the flow while a step it needs is missing` |
+| T-0819-M16 | packages/engine/src/loop/serve.ts | each pass listed the active runs once more to read their home flows | `a tick over a large history (sqlite) > reads what changed, not every input, answer and outcome ever recorded` |
