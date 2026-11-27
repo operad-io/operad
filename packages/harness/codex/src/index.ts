@@ -9,6 +9,7 @@
 
 import { messageOf } from "@operad-io/engine";
 import pkg from "../package.json" with { type: "json" };
+import { fileURLToPath } from "node:url";
 import { liveAccess, readProfile, summarizeCall, type AccessProfile } from "@operad-io/access-match";
 import {
   isRecord,
@@ -264,6 +265,9 @@ export function failureOf(end: AppServerEnd, model: string | undefined): Failure
   return { reason: "stop_reason", message: `Codex stopped the turn: ${end.stopReason}` };
 }
 
+/** The `SKILL.md` a bot follows to set this agent up (ADR 0010 D7). */
+const SETUP_GUIDE = fileURLToPath(new URL("../skills/setup/SKILL.md", import.meta.url));
+
 /** Creates the codex harness plugin. */
 export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
   const clock = options.clock ?? systemClock;
@@ -325,6 +329,8 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
       const words = commandOf(settings.command);
       return (words.at(-1) === "app-server" ? words.slice(0, -1) : words).map(shellWord).join(" ") || undefined;
     },
+    // Setup Codex (ADR 0022 D14): the guide a bot follows for what the check reports missing.
+    guide: SETUP_GUIDE,
     settings: PLUGIN_SETTINGS,
     steps: [
       {

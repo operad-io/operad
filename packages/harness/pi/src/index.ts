@@ -251,6 +251,9 @@ export interface PiDeclaredModels {
   info?: Readonly<Record<string, HarnessModelInfo>> | undefined;
 }
 
+/** The `SKILL.md` a bot follows to set this agent up (ADR 0010 D7). */
+const SETUP_GUIDE = fileURLToPath(new URL("../skills/setup/SKILL.md", import.meta.url));
+
 /**
  * Creates the pi harness plugin. Its worker is `worker.ts` under the running
  * Bun; a test replaces the program with a fake that prints fixed lines.
@@ -439,6 +442,8 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
         piProvider(settings.model, readPiSettings(piSettingsPath, readFile)),
       );
     },
+    // Setup Pi (ADR 0022 D14): the guide a bot follows for what the check reports missing.
+    guide: SETUP_GUIDE,
     settings: PLUGIN_SETTINGS,
     steps: [
       {

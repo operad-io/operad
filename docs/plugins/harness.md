@@ -84,6 +84,8 @@ A chat reads `capabilities.accessLevels` the same way. `claude` and `pi` list `p
 
 A harness may declare `agentMissing(settings, context)`. While it returns a sentence saying how to set the agent up, the plugin stays loaded but the harness is not set up: it is not among `ctx.harnesses`, its `signedIn`, model list and `check` are not asked, and the check reports the one missing item `agent` with that sentence. Return `undefined` when the agent is there, or when a setting names its command, so that `check` reports a wrong one. It is asked often, so it only looks and starts nothing.
 
+Declare a `guide` as well ([the declaration](define-plugin.md)), with a step for the items `agent`, `enable` and `check`; each harness operad ships has one, so a bot can walk a person through it.
+
 ## A command for a person
 
 `interactiveCommand(settings, { home })` returns the shell command line a person runs the agent with by hand, or `undefined` when the agent's name will do. A [terminal](../user/terminal.md) offers it. `claude` returns its `command` setting, `codex` its setting without `app-server`, and `pi` its setting or the pi operad installed when `PATH` has none. `shellWord(value)` from `@operad-io/harness-process` writes one word of such a line.
