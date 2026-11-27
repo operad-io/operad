@@ -18,6 +18,7 @@ import {
   type LogBackend,
 } from "../../src/index.ts";
 import { answerRun } from "../../src/testing/index.ts";
+import { isRecord } from "../../src/util.ts";
 import type { TimeoutClock } from "../../src/runner/runner.ts";
 import { waitForChange } from "../../src/platform/index.ts";
 import plugin from "../fixtures/plugins/ask.ts";
@@ -284,6 +285,37 @@ for (const mode of ["memory", "file"] as const) {
         expect(open?.command).toBe(command);
         expect((await readState(env.log, id)).wait?.command).toBe(command);
         expect((await listPending(env.log, env.registry))[0]?.command).toBe(command);
+      } finally {
+        await env.close();
+      }
+    }, 30_000);
+
+    test("an open question whose stored command cannot be read stays pending without it", async () => {
+      const env = await setup(mode);
+      try {
+        // What an old or corrupt log holds: the question's fact with a bad command.
+        const append = env.log.append.bind(env.log);
+        env.log.append = (runId, lastSeq, list) =>
+          append(
+            runId,
+            lastSeq,
+            list.map((fact) =>
+              fact.kind === "ask_opened" && isRecord(fact.payload)
+                ? { ...fact, payload: { ...fact.payload, command: "one\ntwo" } }
+                : fact,
+            ),
+          );
+        const id = await env.create("ask-wait", "stored", { command: "tool auth login" });
+        const timer = new FakeTimer();
+        const run = env.runner(id, timer).run();
+        await env.opened(id);
+        await timer.armed();
+        const open = await listPending(env.log, env.registry);
+        timer.fire();
+        expect(await run).toBe("waiting");
+        expect(open).toHaveLength(1);
+        expect(open[0]?.prompt).toBe("Delete the stale branch?");
+        expect(open[0]?.command).toBeUndefined();
       } finally {
         await env.close();
       }
@@ -920,7 +952,7 @@ describe("ctx.ask survives a crash", () => {
 
 
 describe("command validation", () => {
-  test("an empty, many-line, escaped or overlong command is refused before anyone is asked", async () => {
+  test("an empty, many-line, escaped, disguised or overlong command is refused before anyone is asked", async () => {
     const env = await setup("memory");
     try {
       const asker = {
@@ -931,9 +963,13 @@ describe("command validation", () => {
       };
       for (const [command, problem] of [
         [" ", /ask: command: must be a non-empty string/],
-        ["one\ntwo", /ask: command: must be one line with no control character/],
-        ["one\u2028two", /ask: command: must be one line with no control character/],
-        ["one\u001b[2Ktwo", /ask: command: must be one line with no control character/],
+        ["one\ntwo", /ask: command: must be one line with no control or format character/],
+        ["one\u2028two", /ask: command: must be one line with no control or format character/],
+        ["one\u001b[2Ktwo", /ask: command: must be one line with no control or format character/],
+        ["one\u202etwo", /ask: command: must be one line with no control or format character/],
+        ["one\u2066two", /ask: command: must be one line with no control or format character/],
+        ["one\u200btwo", /ask: command: must be one line with no control or format character/],
+        ["one\ufefftwo", /ask: command: must be one line with no control or format character/],
         ["x".repeat(2049), /ask: command: must be at most 2048 characters/],
       ] as const) {
         await expect(

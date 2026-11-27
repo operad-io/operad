@@ -11,8 +11,9 @@ export function askCommandProblem(value: unknown): string | undefined {
   if (value === undefined) return undefined;
   if (typeof value !== "string" || value.trim().length === 0) return "must be a non-empty string";
   if (value.length > MAX_ASK_COMMAND) return `must be at most ${MAX_ASK_COMMAND} characters`;
-  // A line break or a terminal escape would make the line copied differ from the one read.
-  if (/[\p{Cc}\u2028\u2029]/u.test(value)) return "must be one line with no control character";
+  // A line break, a terminal escape, a bidirectional override or a zero-width
+  // character would make the line copied differ from the one read.
+  if (/[\p{Cc}\p{Cf}\u2028\u2029]/u.test(value)) return "must be one line with no control or format character";
   return undefined;
 }
 
