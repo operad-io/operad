@@ -1522,6 +1522,21 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0810-M60 | packages/engine/src/platform/folder-holds.ts | a release matched folders by name prefix | `folder holds > releasing a folder stops the trees held in it and below it, and tells their holders` |
 | T-0810-M61 | packages/engine/src/platform/folder-holds.ts | a release that failed threw | `folder holds > a release never fails: no list, a broken entry or an unreadable table` |
 
+## T-0813 — the guide of a plugin config.json does not name
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0813-M6 | packages/engine/src/plugin/load.ts | an offered plugin the file does not name was not counted as off | `an offered plugin that config.json does not name yet has its guide readable; a named one that is on does not` |
+| T-0813-M7 | packages/engine/src/plugin/load.ts, registry.ts | a name neither configured nor offered got an offered module's guide | `an offered plugin that config.json does not name yet has its guide readable; a named one that is on does not` |
+## T-0814 — a question carries a command for the person to run
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0814-M3 | packages/engine/src/views/pending.ts | the pending item of an open question dropped the command | `ctx.ask (memory) > a question's command is on the pending item while it is open and after its grace` |
+| T-0814-M4 | packages/engine/src/kernel/decide.ts | the wait after the grace dropped the command | `ctx.ask (memory) > a question's command is on the pending item while it is open and after its grace` |
+| T-0814-M5 | packages/engine/src/plugin/registry.ts | a command was not checked before the question was asked | `command validation > an empty, many-line, escaped or overlong command is refused before anyone is asked` |
+| T-0814-M6 | packages/engine/src/runner/step-worker.ts | a step in a worker thread did not pass the command on | `ctx.ask (file) > a question's command is on the pending item while it is open and after its grace` |
+
 | T-0815-M1 | packages/engine/src/views/flows.ts | the list left out where each step goes next | `flows --json gives a home flow and a plugin flow with their steps` |
 | T-0815-M2 | packages/engine/src/plugin/registry.ts | a home flow's path was only its file name | `flows --json gives a home flow and a plugin flow with their steps`, `serve lists the flows over HTTP and runs one a client starts to its end` |
 | T-0815-M3 | packages/engine/src/views/flows.ts | a wait that checks a condition named no plugin step | `flows --json gives a home flow and a plugin flow with their steps` |

@@ -268,6 +268,27 @@ for (const mode of ["memory", "file"] as const) {
       }
     }, 30_000);
 
+    test("a question's command is on the pending item while it is open and after its grace", async () => {
+      const env = await setup(mode);
+      try {
+        const command = "'/home/a b/.bin/tool' auth login some-provider";
+        const id = await env.create("ask-wait", "command", { command });
+        const timer = new FakeTimer();
+        const run = env.runner(id, timer).run();
+        await env.opened(id);
+        await timer.armed();
+        const open = (await listPending(env.log, env.registry))[0];
+        // The run ends before anything is checked, so a failure leaves none behind.
+        timer.fire();
+        expect(await run).toBe("waiting");
+        expect(open?.command).toBe(command);
+        expect((await readState(env.log, id)).wait?.command).toBe(command);
+        expect((await listPending(env.log, env.registry))[0]?.command).toBe(command);
+      } finally {
+        await env.close();
+      }
+    }, 30_000);
+
     test("a question's choice info reaches the wait, the pending view and the log", async () => {
       const env = await setup(mode);
       try {
@@ -897,6 +918,37 @@ describe("ctx.ask survives a crash", () => {
   }, 60_000);
 });
 
+
+describe("command validation", () => {
+  test("an empty, many-line, escaped or overlong command is refused before anyone is asked", async () => {
+    const env = await setup("memory");
+    try {
+      const asker = {
+        useGrant: async () => false,
+        ask: async () => {
+          throw new Error("the question must not be asked");
+        },
+      };
+      for (const [command, problem] of [
+        [" ", /ask: command: must be a non-empty string/],
+        ["one\ntwo", /ask: command: must be one line with no control character/],
+        ["one\u2028two", /ask: command: must be one line with no control character/],
+        ["one\u001b[2Ktwo", /ask: command: must be one line with no control character/],
+        ["x".repeat(2049), /ask: command: must be at most 2048 characters/],
+      ] as const) {
+        await expect(
+          env.registry.runStep("ask/question", {}, {
+            runId: "bad-command",
+            asker,
+            params: { name: "command", dir: env.dir, command },
+          }),
+        ).rejects.toThrow(problem);
+      }
+    } finally {
+      await env.close();
+    }
+  });
+});
 
 describe("choice info validation", () => {
   const asker = {

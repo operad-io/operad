@@ -40,6 +40,7 @@ import {
   installedPackageFile,
   listPending,
   listFlows,
+  type AskTimer,
   listRunning,
   HOME_FLOW_PREFIX,
   type RunningItem,
@@ -79,6 +80,7 @@ import {
   serve,
   serveLockPath,
   setPluginEnabled,
+  shareOptionalPlugins,
   splitActionName,
   startHttpServer,
   storeRootOf,
@@ -105,7 +107,7 @@ import {
   type ViewRow,
 } from "@operad-io/engine";
 import { flowStarterFor } from "./start-flow.ts";
-import { loginBotFor } from "@operad-io/bot";
+import { loginAction, loginBotFor } from "@operad-io/bot";
 import { findGit, stopAllKeptWorkers } from "@operad-io/engine/platform";
 import { ChannelTypeError, runMcpServer } from "@operad-io/mcp";
 import {
@@ -136,6 +138,7 @@ import {
   serveStartFlags,
   startWithRetry,
 } from "./http-bind.ts";
+import { realLoginTimer, showLoginCommand } from "./login-command.ts";
 import { QrTooLongError, encodeQr, renderQr } from "./qr.ts";
 import {
   DEFAULT_STOP_TIMEOUT_SECS,
@@ -262,6 +265,8 @@ export interface MainOptions {
   readonly doctor?: DoctorEnv | undefined;
   /** Replaces the `bun add` command in a test for `plugin add`; defaults to Bun. */
   readonly pluginInstall?: InstallRunner | undefined;
+  /** Replaces the timer of `bot login`'s wait for its question in a test. */
+  readonly loginTimer?: AskTimer | undefined;
 }
 
 /** What the CLI hands the terminal app. */
@@ -583,13 +588,16 @@ export async function openContext(
   // a kernel with rules hands it over, so serve does not build a second one.
   let eventKernel: Kernel | undefined;
   let opened: OpenedHome | undefined;
+  const { optional } = pluginOffer(home);
+  // The tools server a harness opens for an agent reads the same list.
+  shareOptionalPlugins(optional);
   const context = await openHome({
     home,
     cwd,
     config,
     follow,
     installOnEnable: INSTALL_ON_ENABLE,
-    optional: pluginOffer(home).optional,
+    optional,
     ...(scope === undefined ? {} : { scope }),
     ...(viewsCwd === undefined ? {} : { viewsCwd }),
     cancelSource: "cli",
@@ -1008,6 +1016,8 @@ async function commandPending(
     io.write(`${name}  ${item.flow}  ${item.step ?? "-"}\n`);
     if (item.row !== undefined) io.write(`  ${item.row.title}\n`);
     io.write(`  waiting: ${item.prompt}\n`);
+    // Alone on its line, so it can be copied whole.
+    if (item.command !== undefined) io.write(`    ${item.command}\n`);
     if (item.choices.length > 0) {
       io.write(`  choices: ${item.choices.join(", ")}\n`);
     }
@@ -1660,6 +1670,7 @@ async function commandAction(
   io: CliIo,
   argv: readonly string[],
   tty: boolean,
+  loginTimer: AskTimer,
 ): Promise<boolean> {
   // A plugin command and an action may share a plain name (`plan` is both a
   // dev command and the action that creates a plan). The command keeps the
@@ -1738,6 +1749,16 @@ async function commandAction(
     actor: actorOfCli(),
   });
   printValue(io, run.value);
+  if (run.plugin === "bot" && run.action === loginAction.name) {
+    await showLoginCommand({
+      home: context.home,
+      config: context.config,
+      registry: context.registry,
+      object: `${object.type}:${object.row.id}`,
+      write: (text) => io.write(text),
+      timer: loginTimer,
+    });
+  }
   return true;
 }
 
@@ -3497,6 +3518,7 @@ export async function main(
           write: (text) => io.write(text),
           error: (text) => io.error(text),
           installOnEnable: INSTALL_ON_ENABLE,
+          optional: pluginOffer(home).optional,
           ...(claudeChannel ? { claudeChannel: true } : {}),
           ...(types === undefined ? {} : { types }),
         });
@@ -3846,7 +3868,8 @@ export async function main(
           `plugin "${attempted}" is disabled; turn it on with \`operad plugin enable ${attempted}\``,
         );
       }
-      if (await commandAction(context, io, actionRepo.args, tty)) return 0;
+      const loginTimer = options.loginTimer ?? realLoginTimer;
+      if (await commandAction(context, io, actionRepo.args, tty, loginTimer)) return 0;
       if (await commandPlugin(context, io, args)) return 0;
       const candidates: CommandCandidate[] = [
         ...context.registry

@@ -7,7 +7,7 @@
  */
 
 import { fileURLToPath } from "node:url";
-import { isRecord } from "@operad-io/engine";
+import { isRecord, sharedOptionalPlugins } from "@operad-io/engine";
 
 /** The name the tools go by in a harness: the server's name, and the prefix claude gives its tools. */
 export const OPERAD_SERVER = "operad";
@@ -28,10 +28,16 @@ export function operadToolsOf(value: unknown): OperadTools | undefined {
   return typeof home === "string" && home.length > 0 ? { home } : undefined;
 }
 
-/** The program that serves the tools on stdio, and its arguments. */
+/**
+ * The program that serves the tools on stdio, and its arguments. The offered
+ * plugins go as an argument: a harness may start a server with its own
+ * environment only.
+ */
 export function serverCommand(tools: OperadTools): { readonly command: string; readonly args: readonly string[] } {
   const script = fileURLToPath(import.meta.resolve("@operad-io/mcp/stdio"));
-  return { command: process.execPath, args: [script, "--home", tools.home] };
+  const optional = sharedOptionalPlugins();
+  const offered = optional === undefined ? [] : ["--optional", JSON.stringify(optional)];
+  return { command: process.execPath, args: [script, ...offered, "--home", tools.home] };
 }
 
 /** A server a bot's settings list, started as this command; its name is the one its tools go by. */

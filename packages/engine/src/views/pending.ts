@@ -36,6 +36,11 @@ export interface PendingItem {
    */
   readonly questions?: readonly AskQuestion[] | undefined;
   /**
+   * A command line the person runs themselves (ADR 0008 D9). The prompt says it
+   * too, for a client that does not read this.
+   */
+  readonly command?: string | undefined;
+  /**
    * The question's wait id, which an answer quotes. Absent when the item asks
    * nothing (a candidate or a standing item).
    */
@@ -90,6 +95,7 @@ export async function listPending(
             ? {}
             : { choiceInfo: open.choiceInfo }),
           ...(open.questions === undefined ? {} : { questions: open.questions }),
+          ...(open.command === undefined ? {} : { command: open.command }),
           waitId: open.waitId,
           actions: await actionsFor(registry, run),
           kind: "run",
@@ -118,6 +124,7 @@ export async function listPending(
       ...(state.wait.questions === undefined
         ? {}
         : { questions: state.wait.questions }),
+      ...(state.wait.command === undefined ? {} : { command: state.wait.command }),
       waitId: state.wait.id,
       actions,
       kind: "run",

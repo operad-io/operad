@@ -529,3 +529,9 @@ changes for bots, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0796-M1 | packages/bot/src/tidy.ts | the note's date was its raw file time, with no cap at today | `a note's date is never later than today` |
+
+## T-0813 — the guide of a plugin config.json does not name
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0813-M8 | packages/bot/src/setup-dev.ts | approving Setup Dev did not turn shell on | `approving the proposal turns on dev, pool and shell` |

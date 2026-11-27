@@ -726,6 +726,13 @@ export interface AskRequest {
    */
   readonly questions?: readonly AskQuestion[] | undefined;
   /**
+   * One command line the person runs themselves, such as another program's
+   * login. The kernel checks it is one bounded line, carries it to the pending
+   * item and never runs it (ADR 0008 D9). The prompt still says it, for a
+   * client that does not read this field.
+   */
+  readonly command?: string | undefined;
+  /**
    * How long to wait for the answer, in seconds, while the step goes on
    * waiting. The narrowest of this, the step's `askGraceSecs` param and the
    * `ask.graceSecs` setting counts. `0` does not wait.
@@ -774,6 +781,8 @@ export type AskOutcome =
       readonly choiceInfo?: Readonly<Record<string, ChoiceInfo>> | undefined;
       /** The form the step asked, when it asked one. */
       readonly questions?: readonly AskQuestion[] | undefined;
+      /** The command the person runs, when the question carried one. */
+      readonly command?: string | undefined;
       /** What the step needs to carry on later, when the asker shaped it; the request's own resume otherwise. */
       readonly resume?: JsonValue | undefined;
     };

@@ -83,7 +83,8 @@ import type {
   TriggerRule,
 } from "../trigger/types.ts";
 import { askGraceOf, collectStepTypes, grantRequestProblem, narrowerOf, noteInfo, normalizePlugin, parseObjectKeyMaybe, splitActionName, validateFlows, validatePluginSet, validateRuleFlows, type LoadedPlugin } from "./validate.ts";
-import { choiceInfoJson, choiceInfoProblem, normalizeChoiceInfo } from "./choice-info.ts";
+import { askCommandProblem } from "./ask-command.ts";
+import { choiceInfoJson,choiceInfoProblem, normalizeChoiceInfo } from "./choice-info.ts";
 import { normalizeQuestions, questionsJson, questionsProblem } from "./question-form.ts";
 import { isRecord } from "../util.ts";
 
@@ -1061,6 +1062,10 @@ export class PluginRegistry {
         );
       }
       const choiceInfo = normalizeChoiceInfo(request.choiceInfo, choices);
+      const commandProblem = askCommandProblem(request.command);
+      if (commandProblem !== undefined) {
+        throw new PluginError(`step "${use}": ask: command: ${commandProblem}`);
+      }
       if (
         request.onTimeout !== undefined &&
         request.onTimeout !== "waiting" &&
@@ -1134,6 +1139,9 @@ export class PluginRegistry {
         ...(outcome.choiceInfo === undefined && choiceInfo === undefined
           ? {}
           : { choiceInfo: outcome.choiceInfo ?? choiceInfo }),
+        ...(outcome.command === undefined && request.command === undefined
+          ? {}
+          : { command: outcome.command ?? request.command }),
         resume: outcome.resume ?? request.resume ?? null,
       });
     };
@@ -1226,6 +1234,7 @@ export class PluginRegistry {
           ...(error.questions === undefined
             ? {}
             : { questions: questionsJson(error.questions) }),
+          ...(error.command === undefined ? {} : { command: error.command }),
           resume: error.resume ?? null,
         },
       };

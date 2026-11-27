@@ -122,3 +122,15 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0635-M3 | packages/mcp/src/format.ts | the running table's run time subtracted a second | `the running Markdown > writes one row per run and formats each duration` |
+
+## T-0813 — the guide of a plugin config.json does not name
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0813-M2 | packages/mcp/src/server.ts | tools opened without a list did not take the shared one | `the tools opened in an agent's process answer it once the home was opened` |
+| T-0813-M4 | packages/mcp/src/stdio.ts | the stdio program ignored `--optional` | `the tools server a harness starts answers it` |
+## T-0814 — a question carries a command for the person to run
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0814-M8 | packages/mcp/src/format.ts | the pending Markdown left the command out of its code block | `the pending Markdown > puts a question's command alone in a code block` |
