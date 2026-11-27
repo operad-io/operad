@@ -544,3 +544,9 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 | T-0815-M18 | packages/cli/src/main.ts | extra arguments to a start were ignored | `a refused start says why and starts nothing` |
 
 | T-0815-M21 | packages/cli/src/main.ts | the run process did not fail a run of a home flow that does not load | `a run of a flow whose file no longer loads fails, or is handed to its own process to fail` |
+
+## T-0817 — what the reviews of the terminal tasks found
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0817-M27 | packages/cli/src/main.ts | serve started no plugin when the trigger rules could not be loaded | `serve whose trigger rules cannot be loaded still serves terminals` |

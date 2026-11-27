@@ -2,7 +2,7 @@
 
 import { afterAll, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
-import { createReadStream, mkdirSync, readFileSync, realpathSync } from "node:fs";
+import { createReadStream, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { readHttpToken } from "@operad-io/engine";
@@ -84,6 +84,40 @@ test("a home that enables terminal serves it, and stopping serve ends its termin
     child.kill("SIGTERM");
     expect(await child.exited).toBe(0);
     await gone;
+  } finally {
+    child.kill("SIGKILL");
+    await child.exited;
+  }
+});
+
+test("serve whose trigger rules cannot be loaded still serves terminals", async () => {
+  const port = await freePort();
+  const { home } = await makeHome({
+    plugins: {},
+    extra: { http: { enabled: true, port, listen: ["127.0.0.1"] } },
+  });
+  const quiet = { write: () => undefined, error: () => undefined };
+  expect(await main(["plugin", "enable", "terminal"], { home, io: quiet })).toBe(0);
+  writeFileSync(join(home, "triggers.json"), "{");
+
+  const child = Bun.spawn({
+    cmd: [process.execPath, CLI_ENTRY, "serve"],
+    cwd: home,
+    env: { ...testEnv(), OPERAD_HOME: home, OPERAD_SERVE_INTERVAL_MS: "60" },
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  try {
+    await printed(child, `serving ${home}`);
+    const token = (await readHttpToken(home))?.token ?? "";
+    const listed = await fetch(`http://127.0.0.1:${port}/v1/terminal`, {
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(listed.status).toBe(200);
+    child.kill("SIGTERM");
+    expect(await child.exited).toBe(0);
+    expect(await new Response(child.stderr).text()).toContain("triggers.json");
   } finally {
     child.kill("SIGKILL");
     await child.exited;

@@ -1376,6 +1376,20 @@ export class PluginRegistry {
     }
   }
 
+  /**
+   * The command line a person runs a loaded harness's agent with; undefined
+   * when it is not a harness, declares none, or cannot tell.
+   */
+  async interactiveCommandFor(plugin: string): Promise<string | undefined> {
+    const found = this.byName.get(plugin);
+    if (found === undefined || found.kind !== "harness") return undefined;
+    try {
+      return await found.interactiveCommand?.(this.settingsFor(plugin), { home: this.home });
+    } catch {
+      return undefined;
+    }
+  }
+
   /** What an action's checks may read; `object` names the object it works on. */
   actionEnv(object?: ObjectRef | undefined): ActionEnv {
     return {
@@ -2072,10 +2086,13 @@ export class PluginRegistry {
     readonly emit: (event: TriggerEvent) => MaybePromise<void>;
     readonly client: ClientApi;
     readonly signal?: AbortSignal | undefined;
+    /** False when the rules could not be loaded: only `startsWithoutRules` plugins start. */
+    readonly rulesLoaded?: boolean | undefined;
   }): Promise<readonly { readonly plugin: string; readonly handle: SourceHandle }[]> {
     const running: { plugin: string; handle: SourceHandle }[] = [];
     for (const plugin of this.plugins) {
       if (plugin.start === undefined) continue;
+      if (options.rulesLoaded === false && plugin.startsWithoutRules !== true) continue;
       const emit = async (event: SourceEvent): Promise<void> => {
         const trigger: TriggerEvent = {
           source: event.source ?? plugin.name,
@@ -2112,6 +2129,7 @@ export class PluginRegistry {
         emit,
         client: options.client,
         repositories: () => this.registeredRepositories(),
+        harnessCommand: (name) => this.interactiveCommandFor(name),
         ...(this.onCancelRun === undefined ? {} : { runs: this.runControl() }),
       };
       try {

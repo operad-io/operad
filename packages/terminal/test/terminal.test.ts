@@ -114,8 +114,17 @@ describe("starting a terminal", () => {
   test("offers the loaded agents as command lines", async () => {
     const world = await makeWorld();
     const harness = (name: string) => definePlugin({ name, kind: "harness", version: "1.0.0" });
-    const served = await serve(world, { plugins: [harness("pi"), harness("radian"), harness("claude")] });
-    expect((await served.list()).presets).toEqual([{ command: "claude" }, { command: "pi" }]);
+    const own = definePlugin({
+      name: "pi",
+      kind: "harness",
+      version: "1.0.0",
+      interactiveCommand: () => "/home/x/bin/pi",
+    });
+    const served = await serve(world, { plugins: [own, harness("radian"), harness("claude")] });
+    expect((await served.list()).presets).toEqual([
+      { name: "claude", command: "claude" },
+      { name: "pi", command: "/home/x/bin/pi" },
+    ]);
   });
 });
 
@@ -392,6 +401,35 @@ describe("this machine only", () => {
       { "x-forwarded-for": "100.64.0.9" },
     );
     expect(refused.status).toBe(403);
+    expect((await served.list()).terminals).toEqual([]);
+  });
+});
+
+describe("several readers", () => {
+  test("one is told to answer the program, and the next when it leaves", async () => {
+    const world = await makeWorld();
+    const served = await serve(world);
+    const terminal = await served.start({ command: "read x", folder: world.repository });
+    const first = await served.stream(terminal.id);
+    const screenOf = async (stream: typeof first) =>
+      (await stream.until((event) => event.name === "screen")).data.answers;
+    expect(await screenOf(first)).toBe(true);
+    const second = await served.stream(terminal.id);
+    expect(await screenOf(second)).toBe(false);
+    const third = await served.stream(terminal.id);
+    expect(await screenOf(third)).toBe(false);
+    first.close();
+    expect((await second.until((event) => event.name === "answers")).data).toEqual({ id: terminal.id });
+    await served.input(terminal.id, "\r");
+    await third.until((event) => event.name === "exit");
+    expect(third.events.filter((event) => event.name === "answers")).toEqual([]);
+  });
+});
+
+describe("serve without trigger rules", () => {
+  test("still serves terminals", async () => {
+    const world = await makeWorld();
+    const served = await serve(world, { rulesLoaded: false });
     expect((await served.list()).terminals).toEqual([]);
   });
 });

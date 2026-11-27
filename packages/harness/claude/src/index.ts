@@ -44,6 +44,7 @@ import {
   WALL_TIME_SETTING,
   type Clock,
   type KeptRunOptions,
+  shellWord,
 } from "@operad-io/harness-process";
 import { CLAUDE_FLOOR, DEFAULT_CLAUDE_COMMAND, claudeSignedIn, inspectClaude, sdkVersion } from "./claude-install.ts";
 import { DEFAULT_BASH_TIMEOUT_SECS, CLAUDE_CONTEXT_WINDOWS, EFFORT_LEVELS } from "./protocol.ts";
@@ -217,6 +218,8 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
     efforts: claudeEfforts,
     capabilities: { backgroundModel: "haiku", loadsSkills: true, takesMessagesMidRun: true, accessLevels: ["plan", "ask", "edits", "full"] },
     signedIn: (settings) => claudeSignedInCached(settings),
+    interactiveCommand: (settings) =>
+      typeof settings.command === "string" && settings.command !== "" ? shellWord(settings.command) : undefined,
     settings: PLUGIN_SETTINGS,
     steps: [
       {

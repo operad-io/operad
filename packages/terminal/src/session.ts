@@ -10,6 +10,8 @@ import { holdFolder, spawnPty, type Clock, type FolderHold, type Pty } from "@op
 import { SerializeAddon } from "@xterm/addon-serialize";
 import headless from "@xterm/headless";
 import { splitUnfinished } from "./escape.ts";
+import { OutputQueue } from "./queue.ts";
+import { replayOf } from "./replay.ts";
 
 /** How many lines above the screen a terminal keeps. */
 export const SCROLLBACK_LINES = 5000;
@@ -92,7 +94,9 @@ export class Session {
   private readonly screen: InstanceType<typeof headless.Terminal>;
   private readonly serializer = new SerializeAddon();
   private readonly decoder = new TextDecoder();
-  /** The readers that already have the screen. */
+  /** Everything that goes through the headless terminal, in order. */
+  private readonly queue: OutputQueue;
+  /** The readers that already have the screen; the first one answers the program. */
   private readonly readers = new Set<Send>();
   /** The readers whose screen is still to be sent. */
   private readonly joining = new Set<Send>();
@@ -101,6 +105,8 @@ export class Session {
   private rows: number;
   private end: { exitCode: number | null; signal: string | null; reason: string | null; at: number } | undefined;
   private stopReason: string | null = null;
+  /** Whether the command ended and processes it started may still run. */
+  private leftRunning = false;
   private readonly startedAt: number;
   private disposed = false;
 
@@ -121,6 +127,10 @@ export class Session {
     });
     // The addon is typed against the browser terminal, which shares the interface it uses.
     this.screen.loadAddon(this.serializer as unknown as Parameters<typeof this.screen.loadAddon>[0]);
+    this.queue = new OutputQueue(this.screen, {
+      onDrop: () =>
+        options.onLog(`terminal ${options.id}: output came faster than it could be read; some was left out`),
+    });
     this.pty = spawnPty({
       argv:
         options.command === ""
@@ -134,14 +144,19 @@ export class Session {
       onData: (bytes) => this.receive(this.decoder.decode(bytes, { stream: true })),
     });
     try {
-      this.hold = holdFolder({ home: options.home, folder: options.folder, pid: this.pty.pid });
+      this.hold = holdFolder({
+        home: options.home,
+        folder: options.folder,
+        pid: this.pty.pid,
+        marker: this.pty.marker,
+      });
     } catch (error) {
       // A process nothing could stop before its folder goes is not kept.
       void this.pty.hangUp();
       throw error;
     }
-    // A program asks its terminal things, such as where the cursor is. A reader
-    // answers them; with none, the headless terminal does.
+    // A program asks its terminal things, such as where the cursor is. One
+    // reader answers them; with none, the headless terminal does.
     this.screen.onData((reply) => {
       if (this.readers.size === 0) this.pty.write(reply);
     });
@@ -193,28 +208,34 @@ export class Session {
       if (!this.joining.delete(send)) return;
       send({
         name: "screen",
-        data: { ...this.info(), data: this.serializer.serialize() },
+        data: {
+          ...this.info(),
+          data: replayOf(this.screen, this.serializer),
+          answers: this.readers.size === 0,
+        },
+        snapshot: true,
       });
       this.readers.add(send);
     });
-    return () => {
-      this.joining.delete(send);
-      this.readers.delete(send);
-    };
+    return () => this.detach(send);
   }
 
-  /** Stops the command and everything it started; `reason` is shown with the ended terminal. */
+  /**
+   * Stops the command and everything it started, also what still runs after the
+   * command ended; `reason` is shown with a terminal this ends.
+   */
   async stop(reason: string | null = null): Promise<void> {
-    if (this.end === undefined) {
-      this.stopReason ??= reason;
-      await this.pty.hangUp();
-    }
+    if (this.end !== undefined && !this.leftRunning) return;
+    if (this.end === undefined) this.stopReason ??= reason;
+    await this.pty.hangUp();
     await this.ended;
+    this.leftRunning = false;
+    this.hold.drop();
   }
 
   /** Stops the terminal when its folder is not the one it started in any more. */
   async checkFolder(): Promise<void> {
-    if (this.end !== undefined) return;
+    if (this.end !== undefined && !this.leftRunning) return;
     if (folderIdentity(this.options.folder) === this.folderAtStart) return;
     await this.stop(FOLDER_REMOVED_REASON);
   }
@@ -229,18 +250,23 @@ export class Session {
     this.screen.dispose();
   }
 
+  private detach(send: Send): void {
+    this.joining.delete(send);
+    const answered = this.answerer() === send;
+    if (!this.readers.delete(send) || !answered) return;
+    this.answerer()?.({ name: "answers", data: { id: this.id } });
+  }
+
+  private answerer(): Send | undefined {
+    return this.readers.values().next().value;
+  }
+
   /** Runs `work` once the headless terminal has parsed all output given so far. */
   private afterOutput(work: () => void): void {
     if (this.disposed) return;
-    const run = (): void => {
+    this.queue.run(() => {
       if (!this.disposed) work();
-    };
-    try {
-      this.screen.write("", run);
-    } catch {
-      // Too far behind to take more: what waits its turn goes now.
-      run();
-    }
+    });
   }
 
   private receive(text: string): void {
@@ -251,21 +277,19 @@ export class Session {
 
   private feed(text: string): void {
     if (text === "" || this.disposed) return;
-    try {
-      this.screen.write(text, () => this.tell({ name: "output", data: { id: this.id, data: text } }));
-    } catch (error) {
-      // The headless terminal refuses more once it is tens of megabytes behind.
-      this.options.onLog(`terminal ${this.id}: output dropped: ${String(error)}`);
-    }
+    this.queue.write(text, () => this.tell({ name: "output", data: { id: this.id, data: text } }));
   }
 
   private tell(event: PluginStreamEvent): void {
     for (const send of [...this.readers]) send(event);
   }
 
-  private finish(code: number | null, signal: string | null): Promise<void> {
+  private async finish(code: number | null, signal: string | null): Promise<void> {
+    // What the command left running keeps the folder held. When that cannot be
+    // told, it is taken to be so.
+    this.leftRunning = await this.pty.alive().catch(() => true);
     const released = this.hold.released();
-    this.hold.drop();
+    if (!this.leftRunning) this.hold.drop();
     if (this.folderHandle !== undefined) closeSync(this.folderHandle);
     this.folderHandle = undefined;
     this.feed(this.held + this.decoder.decode());

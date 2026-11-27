@@ -9,7 +9,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync } from "node:fs";
 import { join, resolve, sep } from "node:path";
 import { writeJsonAtomicSync } from "./atomic-write.ts";
-import { processTree, signalRows } from "./process-tree.ts";
+import { markedRows, mergeRows, processTree, signalRows } from "./process-tree.ts";
 import { readProcessTable, type ProcessTable } from "./step-reap.ts";
 
 /** The directory in a home that lists the held folders. */
@@ -22,6 +22,8 @@ interface HoldRecord {
   readonly owner: number;
   readonly folder: string;
   readonly released: boolean;
+  /** The terminal marker of what the tree started; it outlives the root. */
+  readonly marker?: string | undefined;
 }
 
 export interface FolderHold {
@@ -42,10 +44,11 @@ function canonical(path: string): string {
 function readRecord(file: string): HoldRecord | undefined {
   try {
     const value = JSON.parse(readFileSync(file, "utf8")) as Partial<HoldRecord>;
-    const { pid, owner, folder, released } = value;
+    const { pid, owner, folder, released, marker } = value;
     if (typeof pid !== "number" || typeof owner !== "number") return undefined;
     if (typeof folder !== "string" || typeof released !== "boolean") return undefined;
-    return { pid, owner, folder, released };
+    if (marker !== undefined && typeof marker !== "string") return undefined;
+    return { pid, owner, folder, released, ...(marker === undefined ? {} : { marker }) };
   } catch {
     return undefined;
   }
@@ -56,6 +59,8 @@ export function holdFolder(options: {
   readonly home: string;
   readonly folder: string;
   readonly pid: number;
+  /** A `Pty`'s marker, so a release also finds what is left after the root ended. */
+  readonly marker?: string | undefined;
 }): FolderHold {
   const directory = join(options.home, FOLDER_HOLDS_DIRECTORY);
   mkdirSync(directory, { recursive: true });
@@ -65,6 +70,7 @@ export function holdFolder(options: {
     owner: process.pid,
     folder: canonical(options.folder),
     released: false,
+    ...(options.marker === undefined ? {} : { marker: options.marker }),
   };
   writeJsonAtomicSync(file, record);
   let released = false;
@@ -107,14 +113,20 @@ export async function releaseFolder(
     let stopped = 0;
     for (const { file, record } of held) {
       // A hold left by a process that was killed names a pid that may be
-      // another's by now: only a child of the holder is stopped.
-      if (!rows.some((row) => row.pid === record.pid && row.ppid === record.owner)) {
+      // another's by now: only a child of the holder is taken for the root. The
+      // marker names only what that root started.
+      const rooted = rows.some((row) => row.pid === record.pid && row.ppid === record.owner);
+      const found = mergeRows(
+        rooted ? processTree(rows, record.pid) : [],
+        record.marker === undefined ? [] : await markedRows(rows, record.marker),
+      );
+      if (found.length === 0) {
         rmSync(file, { force: true });
         continue;
       }
       // Written first, so the holder that sees its process end knows why.
       writeJsonAtomicSync(file, { ...record, released: true });
-      signalRows(processTree(rows, record.pid), "SIGKILL");
+      signalRows(found, "SIGKILL");
       stopped += 1;
     }
     return stopped;

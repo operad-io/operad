@@ -137,6 +137,8 @@ export interface ServeOptions {
   readonly plugins?: readonly PluginDefinition[];
   /** Whether a plugin that registers the world's repository is loaded; default yes. */
   readonly registersRepository?: boolean;
+  /** False: serve could not load the trigger rules. */
+  readonly rulesLoaded?: boolean;
 }
 
 function repositories(world: World): PluginDefinition {
@@ -216,7 +218,7 @@ export async function serve(world: World, options: ServeOptions = {}): Promise<S
     onLog,
     ...options.server,
   });
-  await kernel.startSources();
+  await kernel.startSources(options.rulesLoaded === false ? { rulesLoaded: false } : {});
   const url = server.urls[0] ?? "";
   const token = (await readHttpToken(world.home))?.token ?? "";
   const authorization = { authorization: `Bearer ${token}` };

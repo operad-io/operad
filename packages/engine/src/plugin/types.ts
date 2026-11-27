@@ -1640,6 +1640,11 @@ export interface PluginHttpResponse {
 export interface PluginStreamEvent {
   readonly name: string;
   readonly data: unknown;
+  /**
+   * What a reader is given once when it joins, such as a screen. It may be of
+   * any size: it does not count toward the unread events that end a stream.
+   */
+  readonly snapshot?: boolean | undefined;
 }
 
 /** An event stream that named the plugin in its query. */
@@ -1675,6 +1680,8 @@ export interface SourceContext extends PluginBaseContext {
     | undefined;
   /** The repositories the loaded plugins registered, read when called. */
   readonly repositories?: (() => Promise<readonly SettingsRepository[]>) | undefined;
+  /** A loaded harness's `interactiveCommand` under its settings, read when called. */
+  readonly harnessCommand?: ((harness: string) => Promise<string | undefined>) | undefined;
   /** Sends one event through the kernel's rules. */
   emit(event: SourceEvent): Promise<void>;
   /**
@@ -1690,6 +1697,21 @@ export interface PluginShape {
   readonly name: string;
   readonly kind: PluginKind;
   readonly version: string;
+  /**
+   * True when `start` sends no event, so `serve` starts the plugin also when
+   * the trigger rules cannot be loaded.
+   */
+  readonly startsWithoutRules?: boolean | undefined;
+  /**
+   * A harness's command line for a person who runs its agent by hand in a shell;
+   * undefined when it knows none.
+   */
+  readonly interactiveCommand?:
+    | ((
+        settings: Readonly<Record<string, unknown>>,
+        context: { readonly home: string },
+      ) => MaybePromise<string | undefined>)
+    | undefined;
   readonly objects?: readonly ObjectTypeDefinition[] | undefined;
   readonly actions?: readonly ActionTypeDefinition[] | undefined;
   readonly steps?: readonly StepTypeDefinition[] | undefined;

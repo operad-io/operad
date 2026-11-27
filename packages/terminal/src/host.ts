@@ -45,8 +45,8 @@ export interface GroupInfo {
 export interface TerminalList {
   readonly terminals: readonly TerminalInfo[];
   readonly groups: readonly GroupInfo[];
-  /** Command lines a client may offer to fill in. */
-  readonly presets: readonly { readonly command: string }[];
+  /** Command lines a client may offer to fill in, one for each agent. */
+  readonly presets: readonly { readonly name: string; readonly command: string }[];
 }
 
 export interface StartInput {
@@ -63,6 +63,8 @@ export interface HostOptions {
   readonly repositories: () => Promise<readonly SettingsRepository[]>;
   /** The loaded harness plugin names. */
   readonly harnesses: readonly string[];
+  /** The command line a loaded harness's agent is run with by hand, when it says one. */
+  readonly harnessCommand: (harness: string) => Promise<string | undefined>;
   readonly shell: string;
   readonly env: Readonly<Record<string, string>>;
   readonly now: () => number;
@@ -102,8 +104,11 @@ export class TerminalHost {
     return {
       terminals,
       groups: groups.map((group) => this.groupInfo(group)),
-      presets: PRESET_AGENTS.filter((name) => this.options.harnesses.includes(name)).map(
-        (command) => ({ command }),
+      presets: await Promise.all(
+        PRESET_AGENTS.filter((name) => this.options.harnesses.includes(name)).map(async (name) => ({
+          name,
+          command: (await this.options.harnessCommand(name)) ?? name,
+        })),
       ),
     };
   }

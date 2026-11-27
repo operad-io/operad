@@ -14,7 +14,7 @@ The kernel has no terminal (ADR 0002): it runs no command. The `terminal` plugin
 
 ### D2: A terminal is a command in a folder on a pseudo terminal, kept by serve
 
-A terminal has a command line, a folder, a size and an id. The command line is any command, run in the person's login shell as `$SHELL -ilc <command>`; an empty command line opens the login shell itself. Agents are presets and nothing more: for each loaded harness plugin named `claude`, `codex` or `pi`, serve offers that name as a command line to fill in.
+A terminal has a command line, a folder, a size and an id. The command line is any command, run in the person's login shell as `$SHELL -ilc <command>`; an empty command line opens the login shell itself. Agents are presets and nothing more: for each loaded harness plugin named `claude`, `codex` or `pi`, serve offers a command line to fill in under that name: the one the harness says a person runs its agent with (its `command` setting, or a pi operad installed), else the name.
 
 The folder is a registered repository's folder or one of its git worktrees, so a task's worktree is a folder a terminal can start in. The plugin learns the repositories from what loaded plugins register (their project settings, ADR 0017), and names no plugin.
 
@@ -24,6 +24,8 @@ The folder is a registered repository's folder or one of its git worktrees, so a
 
 A terminal is running or ended. It keeps running when every client disconnects. It ends when its command ends, when a person closes it, when its folder is removed (D7), or when serve stops. An ended terminal stays in the list with its exit code (128 plus the signal number for a signal), the signal and, when something other than the command or the person ended it, the reason in plain words, until a person closes it. Closing stops the whole process tree, as hanging up a real terminal does and then by force, and takes the terminal off the list.
 
+A command that ends may leave processes running, such as a shell's background jobs. They stay until the person closes the ended terminal, its folder is removed or serve stops, and are then stopped the same way. They are found by a marker each process inherits in its environment. A process that made itself the leader of a session of its own, as a daemon does, is left alone. macOS does not show the environment of Apple's own binaries, so what an ended command left that consists only of those is not found.
+
 Terminals live in serve's memory. A restart of serve, including one serve makes by itself to load changed code, ends every terminal; the new serve lists none.
 
 ### D4: Output over the event stream, input over POST
@@ -32,7 +34,7 @@ A running plugin may serve routes under `/v1/<plugin name>` and send events on `
 
 ### D5: This machine only
 
-Starting, input, resize, close, every change to a group, and reading a terminal's screen and output are refused unless the request comes over loopback from the machine serve runs on, through no proxy: the peer address is a loopback address, the request names a loopback host, and it carries no forwarding header. The token is still required. Output is held to the same rule as input because a screen shows secrets.
+Starting, input, resize, close, every change to a group, and reading a terminal's screen and output are refused unless the request comes over loopback from the machine serve runs on, through no proxy: the peer address is a loopback address, the request names a loopback host, and it carries no forwarding header. The token is still required. Output is held to the same rule as input because a screen shows secrets. A proxy on this machine that names a loopback host and adds no forwarding header cannot be told from a client on this machine, and counts as one.
 
 The list of terminals and groups, and the events that say the list changed, may be read from any address serve listens on: they let another device see what runs without reaching into it. The list includes each command line and folder.
 
@@ -40,9 +42,11 @@ The list of terminals and groups, and the events that say the list changed, may 
 
 serve keeps one `@xterm/headless` terminal per session, fed the same output as the clients, with `@xterm/addon-serialize`. A client that connects or reconnects first receives the serialized screen and scrollback, then the live output that follows it, with nothing twice and nothing missing. Scrollback is capped at 5000 lines. Output is passed on only up to the last whole escape sequence and whole character, so a screen never ends halfway through one.
 
-While no client is reading a terminal's screen, the headless terminal answers the questions a program asks its terminal (such as the cursor position); while a client is reading, the client answers.
+The replayed screen also hides the cursor and sets the scrolling lines when the program did. Output that comes faster than the headless terminal parses it waits; past a limit the oldest is left out, for the screen and every client alike.
 
-These two packages are runtime dependencies of the `terminal` plugin's package alone. The engine has none.
+While no client is reading a terminal's screen, the headless terminal answers the questions a program asks its terminal (such as the cursor position); while clients are reading, one of them answers, and serve tells it which it is.
+
+These two packages are runtime dependencies of the `terminal` plugin's package alone. The engine has none. The addon declares `@xterm/xterm` as a peer dependency, so installing the plugin brings that package too; nothing loads it.
 
 ### D7: A removed folder stops its terminals first
 

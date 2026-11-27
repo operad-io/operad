@@ -49,6 +49,7 @@ import {
   type Clock,
   type KeptRunOptions,
   type StepFlagSpec,
+  shellWord,
 } from "@operad-io/harness-process";
 import { authFileHasCredential } from "./auth-file.ts";
 import {
@@ -416,6 +417,11 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
     models: piModels,
     modelsReady: (settings, context) => piModels(settings, context, true),
     efforts: piEfforts,
+    // The setting's pi, or the one operad installed when PATH has none.
+    interactiveCommand: (settings, context) => {
+      const command = piCommandFor(settings, context.home);
+      return command === DEFAULT_PI_COMMAND ? undefined : shellWord(command);
+    },
     capabilities: { loadsSkills: true, takesMessagesMidRun: true, accessLevels: ["plan", "ask", "edits", "full"] },
     signedIn: async (settings) => {
       const authPath = expandHome(
