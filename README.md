@@ -5,7 +5,7 @@
 <img alt="operad" src="docs/assets/logo-dark.png#gh-dark-mode-only" width="320">
 </p>
 
-<p align="center"><b>The algebra of agent work.</b><br>
+<p align="center"><b>Orchestrate the flow, not the roles.</b><br>
 A desktop app and an open kernel that run agents through verified flows: plan, work, verify, review, merge.</p>
 
 <p align="center">

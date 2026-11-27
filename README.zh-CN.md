@@ -5,7 +5,7 @@
 <img alt="operad" src="docs/assets/logo-dark.png#gh-dark-mode-only" width="320">
 </p>
 
-<p align="center"><b>agent 任务的代数。</b><br>
+<p align="center"><b>编排是流程的编排，不是角色的任命。</b><br>
 桌面应用加开源内核，让 agent 走一条经过验证的流程：计划、开发、检查、评审、合并。</p>
 
 <p align="center">
