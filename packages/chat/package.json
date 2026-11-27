@@ -10,7 +10,7 @@
     "@operad-io/engine": "workspace:*",
     "@operad-io/harness-process": "workspace:*"
   },
-  "description": "operad: the chat plugin",
+  "description": "chats with agents that you can leave and continue from any client",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/operad-io/operad.git",

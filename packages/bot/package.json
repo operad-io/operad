@@ -12,7 +12,7 @@
     "@operad-io/access-match": "workspace:*",
     "@operad-io/memory": "workspace:*"
   },
-  "description": "operad: the bot plugin",
+  "description": "bots with their own memory, skills and routines that you chat with",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/operad-io/operad.git",

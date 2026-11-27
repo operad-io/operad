@@ -3,6 +3,7 @@ import { mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
+  ENGINE_VERSION,
   loadPlugin,
   openConfigLog,
   readConfig,
@@ -11,6 +12,7 @@ import {
   type HttpServerHandle,
   type InstallRunner,
 } from "@operad-io/engine";
+import { OPTIONAL_PLUGINS } from "../src/defaults.ts";
 import { main, openContext, pluginAdminFor, type CliIo } from "../src/main.ts";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
 
@@ -153,6 +155,8 @@ interface Row {
   signedIn?: boolean;
   accessLevels?: string[];
   progress?: string;
+  guide?: boolean;
+  description?: string;
   models?: {
     list: (string | { id: string })[];
     default: string | null;
@@ -213,16 +217,100 @@ describe("plugins over HTTP", () => {
       const { plugins } = (await response.json()) as { plugins: Row[] };
       const cli = await rig.cli("plugin", "list");
       expect(cli.code).toBe(0);
-      const lines = plugins.map(
-        (row) => `${row.name}  ${row.version ?? "-"}  ${row.enabled ? "enabled" : "disabled"}`,
-      );
+      // The configured plugins come first; the shipped ones the file does not name follow.
+      const configured = plugins.slice(0, 3);
+      const lines = configured.map((row) => {
+        const description = row.description === undefined ? "" : `  ${row.description}`;
+        return `${row.name}  ${row.version ?? "-"}  ${row.enabled ? "enabled" : "disabled"}${description}`;
+      });
       expect(`${lines.join("\n")}\n`).toBe(cli.out);
-      expect(plugins.map((row) => [row.name, row.origin])).toEqual([
+      expect(configured.map((row) => [row.name, row.origin])).toEqual([
         ["demo", "home"],
         ["notes", "home"],
         ["shell", "builtin"],
       ]);
       expect(plugins.find((row) => row.name === "notes")?.version).toBe("0.1.0");
+      expect(plugins.find((row) => row.name === "shell")?.description).toBe(
+        "run commands and checks as part of your flows",
+      );
+    });
+  });
+
+  test("GET /v1/plugins lists each shipped optional plugin the file does not name, off", async () => {
+    await withRig(async (rig) => {
+      const before = rig.configText();
+      const rows = ((await (await call(rig, "GET")).json()) as { plugins: Row[] }).plugins;
+      // `shell` is in the file, so it has its own row and is not offered again.
+      expect(rows.map((row) => row.name)).toEqual([
+        "demo",
+        "notes",
+        ...["shell", ...OPTIONAL_PLUGINS.filter((name) => name !== "shell")],
+      ]);
+      expect(rows.find((row) => row.name === "dev")).toEqual({
+        name: "dev",
+        version: ENGINE_VERSION,
+        enabled: false,
+        origin: "builtin",
+        guide: true,
+        description: "plans and tasks that agents work, check and merge",
+      });
+      for (const row of rows.slice(3)) {
+        expect({ name: row.name, enabled: row.enabled, described: row.description !== undefined }).toEqual({
+          name: row.name,
+          enabled: false,
+          described: true,
+        });
+      }
+      expect(rig.configText()).toBe(before);
+    });
+  });
+
+  test("a shipped plugin the file keys by another name is not offered again", async () => {
+    await withRig(
+      async (rig) => {
+        const rows = ((await (await call(rig, "GET")).json()) as { plugins: Row[] }).plugins;
+        expect(rows.filter((row) => row.name === "cron" || row.name === "timer").map((row) => row.name)).toEqual([
+          "timer",
+        ]);
+      },
+      undefined,
+      { timer: { module: "@operad-io/source-cron", enabled: false } },
+    );
+  });
+
+  test("turning on a plugin the file does not name adds it and what it needs, and off keeps it", async () => {
+    await withRig(
+      async (rig) => {
+        const response = await call(rig, "POST", { name: "dev", enabled: true });
+        expect(response.status).toBe(200);
+        expect(((await response.json()) as { plugin: Row }).plugin).toMatchObject({
+          name: "dev",
+          enabled: true,
+          origin: "builtin",
+        });
+        const entries = (): Record<string, unknown> =>
+          (JSON.parse(rig.configText()) as { plugins: Record<string, unknown> }).plugins;
+        expect(entries().dev).toEqual({ module: "@operad-io/dev", enabled: true });
+        expect(entries().pool).toEqual({ module: "@operad-io/pool", enabled: true });
+        expect(entries().shell).toMatchObject({ enabled: true });
+
+        const off = await call(rig, "POST", { name: "dev", enabled: false, confirmed: true });
+        expect(off.status).toBe(200);
+        expect(entries().dev).toEqual({ module: "@operad-io/dev", enabled: false });
+        const rows = ((await (await call(rig, "GET")).json()) as { plugins: Row[] }).plugins;
+        expect(rows.filter((row) => row.name === "dev")).toMatchObject([{ enabled: false, version: null }]);
+      },
+      undefined,
+      { chat: { module: "@operad-io/chat", enabled: true } },
+    );
+  });
+
+  test("turning on claude from its offered row adds it to the file", async () => {
+    await withRig(async (rig) => {
+      const response = await call(rig, "POST", { name: "claude", enabled: true });
+      expect(response.status).toBe(200);
+      const plugins = (JSON.parse(rig.configText()) as { plugins: Record<string, unknown> }).plugins;
+      expect(plugins.claude).toEqual({ module: "@operad-io/harness-claude", enabled: true });
     });
   });
 
@@ -326,8 +414,8 @@ describe("plugins over HTTP", () => {
           const after = ((await (await call(rig, "GET")).json()) as { plugins: Row[] }).plugins;
           expect(after.find((row) => row.name === "pi")?.progress).toBeUndefined();
         },
+        // The file does not name pi: the line goes on the row that offers it.
         run,
-        { pi: { module: "@operad-io/harness-pi", enabled: false } },
       );
     } finally {
       if (previous === undefined) delete process.env.PATH;

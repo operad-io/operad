@@ -10,7 +10,7 @@
     "@operad-io/engine": "workspace:*",
     "@operad-io/harness-process": "workspace:*"
   },
-  "description": "operad: the codex harness, a client of Codex's own app-server",
+  "description": "chats and tasks run by Codex",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/operad-io/operad.git",

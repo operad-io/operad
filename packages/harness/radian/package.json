@@ -10,7 +10,7 @@
     "@operad-io/engine": "workspace:*",
     "@operad-io/harness-process": "workspace:*"
   },
-  "description": "operad: the radian harness",
+  "description": "chats and tasks run by the radian agent",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/operad-io/operad.git",

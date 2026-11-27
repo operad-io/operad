@@ -8,7 +8,7 @@
   "dependencies": {
     "@operad-io/engine": "workspace:*"
   },
-  "description": "operad: the memory plugin and the wiki",
+  "description": "a wiki and memory that agents search and keep up to date",
   "repository": {
     "type": "git",
     "url": "git+https://github.com/operad-io/operad.git",
