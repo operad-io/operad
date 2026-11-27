@@ -197,6 +197,8 @@ async function applyRecordedAnswers(options: {
       progress.waiting.delete(record.inputId);
       continue;
     }
+    // A flow of the home may be newer than what this loop read.
+    await options.registry.readHomeFlow(run.flow);
     const flow = options.registry.flow(run.flow);
     if (flow === undefined) continue;
     const applied = await appliedFor(runId);
@@ -309,14 +311,6 @@ export async function serveOnce(
     // store leaves them in place, so the next pass tries the same starts again.
     options.registry.takeStartedRuns(requests.length);
 
-    // A flow of the home may be newer than what this loop read. It is read for
-    // an active run of it, which then takes answers and a cancel here, and is
-    // not given a process while a step it needs is missing.
-    for (const run of await options.log.runs({ active: true })) {
-      if (options.shouldStop?.() === true) break;
-      await options.registry.readHomeFlow(run.flow);
-    }
-
     if (options.shouldStop?.() !== true) {
       await applyRecordedAnswers({
         log: options.log,
@@ -339,6 +333,10 @@ export async function serveOnce(
     const active = await options.log.runs({ active: true });
     for (const run of active) {
       if (options.shouldStop?.() === true) break;
+      // A flow of the home added since the last read is read for its run, which
+      // then takes a cancel here, and is not given a process while a step it
+      // needs is missing.
+      await options.registry.readHomeFlow(run.flow);
       const state = await readState(options.log, run.runId);
 
       if (state.status === "ended") {
