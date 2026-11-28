@@ -37,7 +37,7 @@ setup guide, and starts a flow of your home by hand.
 
 #### For plugin authors
 
-- A plugin of any kind that declares `start` is started by `operad serve`, not only a source plugin. One whose `start` sends no event can declare `startsWithoutRules`, to start also when the trigger rules cannot be loaded. The context of `start` can read the registered repositories and an agent's command line. See [source plugins](docs/plugins/events.md#a-source-plugin).
+- A plugin whose `start` sends no event can declare `startsWithoutRules`, to be started by `operad serve` also when the trigger rules cannot be loaded. The context of `start` can read the registered repositories and an agent's command line. See [source plugins](docs/plugins/events.md#a-source-plugin).
 - A running plugin can serve [HTTP routes and stream events](docs/plugins/events.md#a-running-plugins-routes-and-events) on `serve`.
 - A harness can declare [`agentMissing`](docs/plugins/harness.md#when-the-agent-is-missing), to be left out while its agent is not on the machine, and [`interactiveCommand`](docs/plugins/harness.md#a-command-for-a-person), the command line a person runs the agent with.
 - `@operad-io/engine/platform` has [pseudo terminals](docs/plugins/platform.md#pseudo-terminals) and [folder holds](docs/plugins/platform.md#folder-holds).
