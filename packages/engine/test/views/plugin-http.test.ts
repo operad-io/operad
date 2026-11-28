@@ -53,18 +53,44 @@ async function serveWith(plugins: Record<string, PluginHttp>) {
   return { call, url: server.urls[0] ?? "" };
 }
 
-/** Reads a response until its text holds `needle`, or it ends. */
+/**
+ * Reads a response until its text holds `needle`, or it ends. Only what is new
+ * is searched: searching all of it after each chunk takes seconds for the tens
+ * of MiB some tests read, and can pass the test's timeout on a slow machine.
+ */
 async function readUntil(response: Response, needle: string): Promise<string> {
   const reader = response.body?.getReader();
   const decoder = new TextDecoder();
-  let text = "";
-  while (reader !== undefined && !text.includes(needle)) {
+  const parts: string[] = [];
+  /** The end of what was searched, where the needle may have begun. */
+  let tail = "";
+  while (reader !== undefined) {
     const chunk = await reader.read();
     if (chunk.done) break;
-    text += decoder.decode(chunk.value, { stream: true });
+    const part = decoder.decode(chunk.value, { stream: true });
+    parts.push(part);
+    const searched = tail + part;
+    if (searched.includes(needle)) break;
+    tail = searched.slice(Math.max(0, searched.length - needle.length + 1));
   }
-  return text;
+  return parts.join("");
 }
+
+describe("reading a response until a text", () => {
+  test("finds a text that arrives in several chunks, and reads no further", async () => {
+    const chunks = ["ab-sc", "r", "ee", "ns.end-cd", "later"];
+    const response = new Response(
+      new ReadableStream<Uint8Array>({
+        pull(controller) {
+          const next = chunks.shift();
+          if (next === undefined) controller.close();
+          else controller.enqueue(new TextEncoder().encode(next));
+        },
+      }),
+    );
+    expect(await readUntil(response, "screens.end")).toBe("ab-screens.end-cd");
+  });
+});
 
 describe("a running plugin's routes", () => {
   test("are answered under its name, with the decoded path, the body and where it came from", async () => {
