@@ -645,7 +645,7 @@ the answer is `403` with the kind `refused` and the reason in `message`.
 | Method and path | What it does |
 |---|---|
 | `GET /v1/terminal` | `{ "terminals": [...], "groups": [{ "id", "name", "terminals": ["<id>"] }], "presets": [{ "name": "claude", "command": "claude" }] }`. `presets` are command lines a client may offer, one for each enabled harness among `claude`, `codex` and `pi`; `command` is what that harness runs its agent with. Groups are in name order. |
-| `POST /v1/terminal` | Starts a terminal. The body is `{ "folder": "/path", "cols": 80, "rows": 24, "command"?: "bun run dev", "group"?: "<group id>" }`; an empty or absent `command` opens the login shell. The answer is `201` and `{ "terminal": { ... } }`. A folder that is not a registered repository or one of its worktrees is `422`; an unknown `group` is `404`. |
+| `POST /v1/terminal` | Starts a terminal. The body is `{ "folder": "/path", "cols": 80, "rows": 24, "command"?: "bun run dev", "group"?: "<group id>" }`; an empty or absent `command` opens the login shell. The answer is `201` and `{ "terminal": { ... } }`. `folder` is any existing directory on the machine `serve` runs on, as an absolute path (`~` is not expanded); the terminal keeps its real path. A relative path, a folder that does not exist and a file are `422`, with the reason in `message`; an unknown `group` is `404`. |
 | `POST /v1/terminal/<id>/input` | Types into it: `{ "data": "ls\r" }`. An ended terminal is `409`. |
 | `POST /v1/terminal/<id>/resize` | `{ "cols": 100, "rows": 30 }`, each from 1 to 1000. An ended terminal is `409`. |
 | `POST /v1/terminal/<id>/close` | Stops everything it started when it runs, takes it off the list and answers `{ "terminal": { ... } }` as it ended. The body is `{}`. |
@@ -654,9 +654,13 @@ the answer is `403` with the kind `refused` and the reason in `message`.
 | `POST /v1/terminal/groups/<group id>` | Renames it: `{ "name": "dev servers" }`. |
 | `POST /v1/terminal/groups/<group id>/delete` | Deletes it; its terminals keep running, with `group` `null`. The body is `{}`. |
 
-A terminal is `{ "id", "command", "folder", "cols", "rows", "group", "state",
-"exitCode", "signal", "reason", "startedAt", "endedAt" }`. `state` is `running`
-or `ended`. `exitCode` is 128 plus the signal number for a signal. `reason` says
+A terminal is `{ "id", "command", "folder", "repository", "cols", "rows",
+"group", "state", "exitCode", "signal", "reason", "startedAt", "endedAt" }`.
+`repository` is the name of the registered repository whose folder or git
+worktree `folder` was when the terminal started, and `null` for any other folder,
+also one inside a repository or a worktree. The list and `terminal.screen` carry
+it; the other events name a terminal by its `id` or a `group`, not by its
+repository. `state` is `running` or `ended`. `exitCode` is 128 plus the signal number for a signal. `reason` says
 why it ended when neither its command nor a person ended it, such as `stopped
 because its folder was removed`. `group` is an id from `groups`, or `null`.
 

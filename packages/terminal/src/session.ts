@@ -28,6 +28,8 @@ export interface TerminalInfo {
   /** The command line; empty for the login shell itself. */
   readonly command: string;
   readonly folder: string;
+  /** The registered repository whose folder or worktree `folder` was at the start. */
+  readonly repository: string | null;
   readonly cols: number;
   readonly rows: number;
   readonly group: string | null;
@@ -45,6 +47,7 @@ export interface SessionOptions {
   readonly id: string;
   readonly command: string;
   readonly folder: string;
+  readonly repository: string | null;
   readonly cols: number;
   readonly rows: number;
   readonly group: string | null;
@@ -169,6 +172,7 @@ export class Session {
       id: this.id,
       command: this.options.command,
       folder: this.options.folder,
+      repository: this.options.repository,
       cols: this.cols,
       rows: this.rows,
       group: this.group,
