@@ -2127,9 +2127,12 @@ export class PluginRegistry {
   sourcePlugins(): readonly {
     readonly plugin: string;
     readonly start: (ctx: SourceContext) => MaybePromise<SourceHandle> | SourceHandle;
+    readonly startsWithoutRules: boolean;
   }[] {
     return this.plugins.flatMap((plugin) =>
-      plugin.start === undefined ? [] : [{ plugin: plugin.name, start: plugin.start }],
+      plugin.start === undefined
+        ? []
+        : [{ plugin: plugin.name, start: plugin.start, startsWithoutRules: plugin.startsWithoutRules }],
     );
   }
 

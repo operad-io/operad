@@ -70,6 +70,14 @@ The handle `start` returns may carry `http`, a `PluginHttp`, which `operad serve
 - `request({ method, path, local, body })` answers a request under `/v1/<plugin name>`: `path` is the decoded segments after the name, `body()` reads the JSON body once, and the answer is `{ status, body }`, or `undefined` for no such endpoint. A built-in endpoint is never handed to a plugin.
 - `stream({ values, local })` is called for a `GET /v1/events` whose query names the plugin, with that parameter's values. It returns `{ open(send) }`, and `send({ name, data })` writes the event `<plugin>.<name>`; the function `open` returns is called when the stream closes. It may return `{ status, body }` instead, which refuses the whole request. Plugin events have no id and are not replayed. A stream that holds more than `MAX_PLUGIN_STREAM_BYTES` of them unread is closed. An event sent with `snapshot: true`, what a reader is given once when it joins, may be of any size and is not counted.
 
+`serve` answers HTTP before the plugins have started, and one plugin starts at a time, so write `stream` to be called at any time while the plugin runs:
+
+- A request under `/v1/<plugin name>` for a plugin that is about to start, or has been stopped, is answered `503` with the error kind `unavailable` and a `Retry-After` header; `request` is not called. A plugin that waits for `serve` to install its package is about to start. One that failed to start, whose install failed, or that is not started because the trigger rules could not be loaded is not, and its routes are `404`.
+- A stream that names a plugin which is not running is answered at once. When the plugin starts, the stream gets a `reset`, so the client reads again what it asked for too early, and then `stream` is called and its part is opened. A refusal at this point has no status left to answer with: the stream ends, and the client's next stream gets the refusal. A `stream` or `open` that throws here also ends the stream.
+- When the plugin is stopped, its part is closed (the function `open` returned is called) after `stop()`, so what the plugin sends while it stops still arrives. The stream stays open, and the next start joins it again in the same way.
+
+A program that runs the kernel and its HTTP server itself learns of each start and stop from a `SourceWatcher`, `(plugin, running) => void`, which it registers with `kernel.watchPlugins(watcher)`; the function that returns ends the watch.
+
 `local` is true only for a request that came over loopback from this machine, to a loopback host name, with no forwarding header (`Forwarded`, `Via`, `X-Forwarded-*`, `X-Real-IP`, `X-Client-IP`, `True-Client-IP`, `Fastly-Client-IP`, `X-Envoy-External-Address`, `CF-*` or `Tailscale-*`). A route that must not be reached from elsewhere checks it.
 
 | Export | What it is |

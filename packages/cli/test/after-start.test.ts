@@ -79,4 +79,18 @@ describe("the plugins awaiting their install", () => {
     });
     expect([...awaited]).toEqual(["new"]);
   });
+
+  test("are loaded by a reload when another process installed their package", async () => {
+    const awaited = new Set(["elsewhere", "missing"]);
+    const installed = await installAfterStart({
+      // `held` is not awaited: it loaded as itself and nothing changed.
+      entries: [entry("elsewhere"), entry("missing"), entry("held")],
+      install: async () => false,
+      arrived: (item) => item.name !== "missing",
+      signal: new AbortController().signal,
+      onFailure: async () => undefined,
+      awaited,
+    });
+    expect({ installed, awaited: [...awaited] }).toEqual({ installed: ["elsewhere"], awaited: ["elsewhere"] });
+  });
 });
