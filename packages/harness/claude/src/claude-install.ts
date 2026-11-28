@@ -39,6 +39,14 @@ export class ClaudeInstallError extends Error {
   }
 }
 
+/** The claude is there, and the person has to update it or log in first. */
+export class ClaudeNotReadyError extends ClaudeInstallError {
+  constructor(message: string) {
+    super(message);
+    this.name = "ClaudeNotReadyError";
+  }
+}
+
 export class ClaudeNotFoundError extends ClaudeInstallError {
   constructor(command: string) {
     super(
@@ -216,7 +224,8 @@ export async function claudeSignedIn(command: string | undefined): Promise<boole
 
 /**
  * Finds the installed claude and checks it: the version is at or above the
- * floor and the login works. Throws `ClaudeInstallError` with what to do.
+ * floor and the login works. Throws `ClaudeInstallError` with what to do; it is
+ * a `ClaudeNotReadyError` for an old claude or one that is not logged in.
  */
 export function inspectClaude(
   command: string | undefined,
@@ -235,7 +244,7 @@ export function inspectClaude(
   }
   const version = match[1];
   if (compareVersions(version, floor) < 0) {
-    throw new ClaudeInstallError(
+    throw new ClaudeNotReadyError(
       `claude ${version} at ${path} is older than the floor ${floor}; update claude (claude update)`,
     );
   }
@@ -243,7 +252,7 @@ export function inspectClaude(
   const status = runClaude(path, ["auth", "status"]);
   const login = loginKind(status.stdout);
   if (login === undefined || status.exitCode !== 0) {
-    throw new ClaudeInstallError("claude is not logged in; run `claude auth login`, then check again");
+    throw new ClaudeNotReadyError("claude is not logged in; run `claude auth login`, then check again");
   }
   return { path, version, login };
 }

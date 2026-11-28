@@ -398,3 +398,9 @@ _The second "## T-0766" section above repeats the rows of the first; the rows of
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0816-M45 | packages/harness/pi/src/index.ts | a replaced login worker did not count, so on a machine with no pi it was not offered as an agent | `the pi login over HTTP saves the key and ends logged in`, `whether pi's agent is on this machine > a replaced login program needs no pi on PATH` |
+
+## T-0826 — an agent signed out or too old is not set up
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0826-M7 | packages/harness/pi/src/pi-install.ts | a pi below the floor was a failed check again | `pi check > a pi below the floor is not set up, with both versions, and no failure` |

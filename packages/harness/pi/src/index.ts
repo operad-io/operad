@@ -23,6 +23,7 @@ import {
   type StepContext,
 } from "@operad-io/engine";
 import {
+  agentNotSetUp,
   assertWorkerAvailable,
   CONCURRENCY_SETTING,
   DEFAULT_STALL_SECS,
@@ -62,7 +63,15 @@ import {
   readPiModelList,
   refreshPiModelList,
 } from "./model-list.ts";
-import { DEFAULT_PI_COMMAND, findPi, PI_FLOOR, PI_VERSION, piPresent } from "./pi-install.ts";
+import {
+  DEFAULT_PI_COMMAND,
+  findPi,
+  PI_FLOOR,
+  PI_VERSION,
+  piPresent,
+  PiTooOldError,
+  type PiInstall,
+} from "./pi-install.ts";
 import { runLoginStep, type LoginRunOptions } from "./login.ts";
 import {
   DEFAULT_BASH_TIMEOUT_SECS,
@@ -649,8 +658,15 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
       const piCommand = optionalText(ctx.settings.command, "pi: settings.command");
       // The user's own pi, or the one operad installed in the home: found and
       // version-checked, not loaded.
-      const pi = findPi(piCommand ?? DEFAULT_PI_COMMAND, { home: ctx.home });
+      // A missing worker program fails the check whatever the pi is.
       assertWorkerAvailable({ command: options.command, args: options.args, workerPath: WORKER_PATH });
+      let pi: PiInstall;
+      try {
+        pi = findPi(piCommand ?? DEFAULT_PI_COMMAND, { home: ctx.home });
+      } catch (error) {
+        if (error instanceof PiTooOldError) return agentNotSetUp(error.message);
+        throw error;
+      }
       return `pi ${pi.version} at ${pi.dir} (floor ${PI_FLOOR}); the worker program is available`;
     },
   });

@@ -300,3 +300,9 @@ _This section repeats the T-0766 rows above it; the rows above stand._
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0813-M3 | packages/harness/process/src/operad-tools.ts | the server command left out `--optional` | `the tools server a harness starts answers it` |
+
+## T-0826 — an agent signed out or too old is not set up
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0826-M8 | packages/harness/process/src/not-set-up.ts | the line lost its `not set up:` | `` `operad init` with an agent that needs the person > a claude that is not signed in is not set up, init passes, and doctor lists a problem `` |

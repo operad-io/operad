@@ -202,3 +202,11 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 | T-0816-M24 | packages/harness/codex/src/index.ts | codex declared no setup guide | ``a harness's setup guide > a harness whose agent is missing shows a guide and the missing item `agent` `` |
 | T-0816-M25 | packages/harness/codex/skills/setup/SKILL.md | codex's guide lost its step for `agent` | `a harness's setup guide > each guide has a step for every item and its package ships it` |
 | T-0816-M26 | packages/harness/codex/package.json | codex's package did not ship the guide | `a harness's setup guide > each guide has a step for every item and its package ships it` |
+
+## T-0826 — an agent signed out or too old is not set up
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0826-M4 | packages/harness/codex/src/install.ts | a Codex that is not logged in was a failed check again | `codex check > is not set up, and no failure, when Codex is not logged in` |
+| T-0826-M5 | packages/harness/codex/src/install.ts | a Codex below the floor was a failed check again | `codex check > is not set up, and no failure, with an installed Codex that is too old` |
+| T-0826-M6 | packages/harness/codex/src/install.ts | the app-server was proved before the version was read | `codex check > an old Codex with no app-server is not set up for its version` |

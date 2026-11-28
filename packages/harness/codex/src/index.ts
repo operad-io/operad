@@ -19,6 +19,7 @@ import {
   type StepContext,
 } from "@operad-io/engine";
 import {
+  agentNotSetUp,
   answerFor,
   askNote,
   askQuestions,
@@ -69,7 +70,17 @@ import {
   type AppServerError,
   type AppServerMcpServer,
 } from "./app-server.ts";
-import { CODEX_FLOOR, codexCommand, codexModels, codexSignedIn, commandOf, inspectCodex, refreshCodexModels } from "./install.ts";
+import {
+  CODEX_FLOOR,
+  CodexNotReadyError,
+  codexCommand,
+  codexModels,
+  codexSignedIn,
+  commandOf,
+  inspectCodex,
+  refreshCodexModels,
+  type CodexInstall,
+} from "./install.ts";
 import { CodexLog, toolNameOf } from "./log.ts";
 
 export {
@@ -748,7 +759,13 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
       }
       const bun = Bun.which("bun") ?? process.execPath;
       const codex = options.codex ?? codexCommand(bun);
-      const install = inspectCodex(command, codex);
+      let install: CodexInstall;
+      try {
+        install = inspectCodex(command, codex);
+      } catch (error) {
+        if (error instanceof CodexNotReadyError) return agentNotSetUp(error.message);
+        throw error;
+      }
       return (
         `codex ${install.codexVersion ?? "not found on PATH"} (${command.join(" ")}; ` +
         `app-server, built against ${CODEX_FLOOR}); login ${install.login ?? "unknown"}`

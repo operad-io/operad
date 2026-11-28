@@ -296,13 +296,14 @@ describe("pi check", () => {
     expect(JSON.stringify(result)).toContain("1.7.2");
   });
 
-  test("refuses a pi below the floor with both versions", async () => {
+  test("a pi below the floor is not set up, with both versions, and no failure", async () => {
     const root = await fresh();
     const pi = installPi(root, "npm", { version: "1.2.0" });
     const result = await checkWith(join(pi.bin, "pi"));
-    expect(result?.ok).toBe(false);
-    expect(JSON.stringify(result)).toContain("1.2.0");
-    expect(JSON.stringify(result)).toContain("1.5.0");
+    expect(result?.ok).toBe(true);
+    expect(result?.message).toStartWith("not set up: pi 1.2.0 at ");
+    expect(result?.message).toContain("1.5.0");
+    expect(result?.missing?.map((item) => item.name)).toEqual(["check"]);
   });
 
   test("is not set up, and no failure, when there is no pi at all", async () => {
