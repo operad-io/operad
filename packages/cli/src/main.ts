@@ -39,6 +39,7 @@ import {
   ensureInstalledPackage,
   standInModule,
   pluginProjectManifestPath,
+  pluginProjectPath,
   formatHistoryEntry,
   historyEntry,
   historyEntries,
@@ -768,8 +769,28 @@ async function installPluginPackage(options: PluginInstallOptions): Promise<void
       version: PI_CODING_AGENT_VERSION,
       ...(options.run === undefined ? {} : { run: options.run }),
       ...(report === undefined ? {} : { onProgress: report }),
+      signal: options.signal,
+      onInstall: options.onInstall,
     });
   }
+}
+
+/**
+ * True when the home's plugin project holds operad's own pi: at any version,
+ * and also one an install left part done.
+ */
+function homeHoldsPi(home: string): boolean {
+  return existsSync(join(pluginProjectPath(home), "node_modules", PI_CODING_AGENT_PACKAGE, "package.json"));
+}
+
+/**
+ * True for an entry whose install `serve` runs once it is serving: those of
+ * `INSTALL_AFTER_START`, and a pi the home already holds, which may be older
+ * than the pin (ADR 0023 D9).
+ */
+function installsAfterStart(home: string, entry: OperadConfig["plugins"][number]): boolean {
+  if (entry.name === undefined) return false;
+  return INSTALL_AFTER_START.includes(entry.name) || (entry.name === "pi" && homeHoldsPi(home));
 }
 
 /** True when the home's plugin project names `name` as a dependency. */
@@ -800,6 +821,8 @@ async function ensureHomeConfig(
   options: {
     readonly run?: InstallRunner | undefined;
     readonly onProgress?: ((name: string, line: string) => void) | undefined;
+    /** Leaves a pi the home has installed as it is, for `serve` to move. */
+    readonly leaveHomePi?: boolean | undefined;
   } = {},
 ): Promise<{
   readonly created: boolean;
@@ -832,6 +855,13 @@ async function ensureHomeConfig(
     if (entry.name === "pi" && hasOtherAgent && !namesPi) continue;
     // `serve` installs these once it is serving, so no start waits for them.
     if (entry.name !== undefined && INSTALL_AFTER_START.includes(entry.name)) continue;
+    if (
+      options.leaveHomePi === true &&
+      entry.name === "pi" &&
+      installedPackageFile(home, PI_CODING_AGENT_PACKAGE) !== undefined
+    ) {
+      continue;
+    }
     await installPluginPackage({
       home,
       entry,
@@ -2257,6 +2287,7 @@ async function commandServe(
   lock: LockHandle,
   supervised: boolean,
   retryBind: boolean,
+  installRun?: InstallRunner,
 ): Promise<"stopped" | "reload"> {
   const interval = process.env.OPERAD_SERVE_INTERVAL_MS;
   const parsed = interval === undefined ? Number.NaN : Number(interval);
@@ -2381,9 +2412,7 @@ async function commandServe(
     controller.signal.addEventListener("abort", () => installStop.abort(), { once: true });
     if (controller.signal.aborted) installStop.abort();
     installing = installAfterStart({
-      entries: context.config.plugins.filter(
-        (entry) => entry.name !== undefined && INSTALL_AFTER_START.includes(entry.name),
-      ),
+      entries: context.config.plugins.filter((entry) => installsAfterStart(context.home, entry)),
       signal: installStop.signal,
       install: async (entry) => {
         let installed = false;
@@ -2391,6 +2420,7 @@ async function commandServe(
           home: context.home,
           entry,
           signal: installStop.signal,
+          ...(installRun === undefined ? {} : { run: installRun }),
           onInstall: () => {
             installed = true;
           },
@@ -2398,7 +2428,9 @@ async function commandServe(
         return installed;
       },
       onFailure: async (name, reason) => {
-        await createPluginLogger(context.storeRoot, name, "install").write(`not set up: ${reason}`);
+        // A pi here is one the home holds, and it stays in use.
+        const state = name === "pi" ? `not moved to ${PI_CODING_AGENT_VERSION}` : "not set up";
+        await createPluginLogger(context.storeRoot, name, "install").write(`${state}: ${reason}`);
       },
     }).then((installed) => {
       // The new package is loaded by a fresh process, as changed code is.
@@ -3585,6 +3617,8 @@ export async function main(
         {
           ...(options.pluginInstall === undefined ? {} : { run: options.pluginInstall }),
           onProgress: (name, line) => io.write(`${name}: ${line}\n`),
+          // The old copy works, so this start does not wait for the new one.
+          leaveHomePi: true,
         },
       );
       const startChat = ensured.config.plugins.some(
@@ -3796,7 +3830,7 @@ export async function main(
               ? opened
               : { ...opened, code: snapshotOf(opened.code, restored) };
           try {
-            return await commandServe(context, io, lock, isSupervised, retryBind);
+            return await commandServe(context, io, lock, isSupervised, retryBind, options.pluginInstall);
           } finally {
             await closeServeContext(context, closePluginStore);
           }

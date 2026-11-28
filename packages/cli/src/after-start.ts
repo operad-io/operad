@@ -1,7 +1,7 @@
 /**
- * The packages `operad serve` installs once it is serving (ADR 0012 D4), so no
- * start waits for a download. A failure is not serve's failure: the plugin
- * stays not set up and the next start tries again.
+ * The packages `operad serve` installs once it is serving (ADR 0012 D4,
+ * ADR 0023 D9), so no start waits for a download. A failure is not serve's
+ * failure: the plugin stays as it was and the next start tries again.
  */
 
 import { messageOf, type OperadConfig } from "@operad-io/engine";

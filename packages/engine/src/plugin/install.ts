@@ -357,6 +357,13 @@ async function changingProject<T>(
   });
 }
 
+/** True when the installed package is the one `wanted` names; a tarball names no version to compare. */
+function holdsWanted(home: string, specifier: string, wanted: string): boolean {
+  if (wanted.startsWith("file:")) return true;
+  const directory = join(pluginProjectPath(home), "node_modules", packageNameOf(specifier));
+  return packageManifest(directory)?.version === wanted;
+}
+
 /**
  * Makes sure `specifier` is available from the home project and returns its
  * file. In a workspace checkout, where the package already resolves from the
@@ -391,7 +398,10 @@ function installedAs(
     typeof existing === "string" && (existing === version || existing.startsWith("file:"))
       ? existing
       : version;
-  return { wanted, file: existing === wanted ? installedPackageFile(home, specifier) : undefined };
+  // The manifest names the new version before the install runs, so after a
+  // failed upgrade only the installed package says what the home holds.
+  const installed = existing === wanted && holdsWanted(home, specifier, wanted);
+  return { wanted, file: installed ? installedPackageFile(home, specifier) : undefined };
 }
 
 /** Puts back the dependency the project named for `specifier` before an install. */
@@ -442,6 +452,10 @@ async function installPackage(options: EnsureInstalledOptions): Promise<string> 
       throw new Error(
         `${specifier}: was installed into ${directory}, but its entry does not resolve or a dependency is missing`,
       );
+    }
+    // `serve` reloads after an install, so one that changed nothing must not count.
+    if (!holdsWanted(home, specifier, wanted)) {
+      throw new Error(`${specifier}: was installed into ${directory}, but it is not version ${wanted}`);
     }
     return installed;
   } catch (error) {

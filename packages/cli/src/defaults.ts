@@ -25,7 +25,8 @@ export const INSTALL_ON_ENABLE: readonly string[] = ["claude", "terminal"];
 
 /**
  * The installed plugins no start waits for (ADR 0012 D4): `operad init` leaves
- * them, and `operad serve` installs them once it is serving.
+ * them, and `operad serve` installs them once it is serving. `serve` also moves
+ * a pi the home holds (ADR 0023 D9).
  */
 export const INSTALL_AFTER_START: readonly string[] = ["terminal"];
 

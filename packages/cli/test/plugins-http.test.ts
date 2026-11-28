@@ -329,7 +329,7 @@ describe("plugins over HTTP", () => {
       const name = "@operad-io/harness-claude";
       const directory = join(cwd, "node_modules", name);
       mkdirSync(directory, { recursive: true });
-      writeFileSync(join(directory, "package.json"), JSON.stringify({ name, exports: "./index.ts" }));
+      writeFileSync(join(directory, "package.json"), JSON.stringify({ name, version: ENGINE_VERSION, exports: "./index.ts" }));
       writeFileSync(join(directory, "index.ts"), "export default {};\n");
       return { exitCode: 0, stdout: "", stderr: "" };
     };

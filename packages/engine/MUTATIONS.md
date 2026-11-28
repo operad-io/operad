@@ -1669,3 +1669,10 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0831-M15 | packages/engine/src/plugin/install.ts | installs took no lock | `two installs in one home > the second waits for the first, says so, and keeps both dependencies` |
 | T-0831-M16 | packages/engine/src/plugin/install.ts | a stop did not end the wait for the lock | `two installs in one home > a stop ends the wait` |
 | T-0831-M17 | packages/engine/src/plugin/install.ts | a failed install kept its dependency | `an install that did not finish > a failed install that is to be forgotten leaves the project naming what it named` |
+
+## T-0836 — a failed upgrade is tried again
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0836-M2 | packages/engine/src/plugin/install.ts | a package counted as installed once the project named the wanted version | `ensuring a package is installed in the home > a failed upgrade is tried again, though the project already names the new version` |
+| T-0836-M3 | packages/engine/src/plugin/install.ts | an install that left another version behind passed | `ensuring a package is installed in the home > an install that leaves another version behind fails` |
