@@ -1631,6 +1631,12 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0825-M1 | packages/engine/src/runner/runner.ts | any message from a settled step's worker ended the worker, as before the fix | `a cancelled step in a worker > finishes its cleanup while it withdraws a question and gives a place back` |
 | T-0825-M2 | packages/engine/src/runner/runner.ts | a settled step's worker was not served the place its cleanup gives back | `a cancelled step in a worker > finishes its cleanup while it withdraws a question and gives a place back` |
 
+## T-0827 — the install's environment
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0827-M1 | packages/engine/src/plugin/install.ts | the install child got the environment the process started with, as before the fix | `adding a package to the home project > the install uses the cache the process names when it runs` |
+
 ## T-0816 — every shipped plugin on in a new home
 
 | id | file | mutation | failing test |

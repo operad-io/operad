@@ -201,6 +201,9 @@ async function runWithBun(
     cmd: [process.execPath, ...args],
     cwd,
     ...(signal === undefined ? {} : { signal }),
+    // Without this Bun gives a child the environment the process started with,
+    // so a cache or registry set since then would not reach the install.
+    env: process.env,
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
