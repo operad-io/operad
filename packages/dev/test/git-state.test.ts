@@ -3,6 +3,7 @@ import {
   chmodSync,
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   realpathSync,
   rmSync,
   symlinkSync,
@@ -11,7 +12,7 @@ import {
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { realGitFinderHost } from "@operad-io/engine/platform";
-import { GitStateError, gitStateOf } from "../src/git-state.ts";
+import { GitStateError, gitStateOf, taskRefusalOf } from "../src/git-state.ts";
 
 const scratch = realpathSync(mkdtempSync(join(tmpdir(), "git-state-")));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
@@ -187,5 +188,27 @@ describe("gitStateOf", () => {
     expect(state(dir)).toMatchObject({
       identity: { name: "Grace", email: undefined, set: false },
     });
+  });
+});
+
+describe("taskRefusalOf", () => {
+  // Every new plan and task asks this, so each extra git run is paid often.
+  test("a ready folder costs two git runs, for the root and the commit", () => {
+    const dir = folder();
+    run(dir, "init");
+    commit(dir);
+    const bin = join(scratch, `logging-${counter++}`);
+    mkdirSync(bin);
+    const log = join(bin, "log");
+    const real = Bun.which("git");
+    writeFileSync(join(bin, "git"), `#!/bin/sh\necho "$3 $4" >> '${log}'\nexec '${real}' "$@"\n`);
+    chmodSync(join(bin, "git"), 0o755);
+    const env = { ...WITH_IDENTITY, PATH: `${bin}:${WITH_IDENTITY.PATH ?? ""}` };
+
+    expect(taskRefusalOf(dir, { env })).toBeUndefined();
+    expect(readFileSync(log, "utf8").trim().split("\n")).toEqual([
+      "rev-parse --show-toplevel",
+      "rev-parse --verify",
+    ]);
   });
 });
