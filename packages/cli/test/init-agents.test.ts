@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { PI_CODING_AGENT_VERSION } from "../src/defaults.ts";
 import { main, type CliIo } from "../src/main.ts";
 import type { InstallRunner } from "@operad-io/engine";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
@@ -361,6 +362,29 @@ describe("`operad init` finds the agent on PATH", () => {
       if (previous === undefined) delete process.env.PATH;
       else process.env.PATH = previous;
     }
+  });
+
+  test("a home with another agent still moves the pi it already names, and retries it", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    mkdirSync(join(home, "plugins"), { recursive: true });
+    const manifest = join(home, "plugins", "package.json");
+    writeFileSync(manifest, JSON.stringify({ dependencies: { "@earendil-works/pi-coding-agent": "1.5.0" } }));
+    const asked: string[] = [];
+    await initWith(root, ["radian"], {
+      installRun: () => {
+        const read = JSON.parse(readFileSync(manifest, "utf8")) as { dependencies: Record<string, string> };
+        asked.push(read.dependencies["@earendil-works/pi-coding-agent"] ?? "");
+        return { exitCode: 1, stdout: "", stderr: "no network" };
+      },
+    });
+    await initWith(root, ["radian"], {
+      installRun: () => {
+        asked.push("again");
+        return { exitCode: 1, stdout: "", stderr: "no network" };
+      },
+    });
+    expect(asked).toEqual([PI_CODING_AGENT_VERSION, "again"]);
   });
 
   test("a new home with another agent installs no pi", async () => {

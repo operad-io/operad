@@ -77,10 +77,13 @@ function harnessPlugin(name: string | undefined, module: unknown): string | unde
 /**
  * True when a harness has something to start: a command its entry sets, the
  * agent's command on PATH, or for pi the copy operad installed in the home.
+ * For claude and pi the agent's own name as `command` sets nothing, as in
+ * those plugins (ADR 0022 D14).
  */
 function agentPresent(harness: string, entry: unknown, home: string): boolean {
   const settings = isRecord(entry) && isRecord(entry.settings) ? entry.settings : {};
-  if (settings.command !== undefined) return true;
+  const ownName = (harness === "claude" || harness === "pi") && settings.command === harness;
+  if (settings.command !== undefined && !ownName) return true;
   if (Bun.which(harness, { PATH: process.env.PATH ?? "" }) !== null) return true;
   return (
     harness === "pi" &&

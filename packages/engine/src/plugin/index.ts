@@ -6,6 +6,7 @@ export { KERNEL_VERBS, openHome, type KernelVerb, type OpenHomeOptions, type Ope
 export {
   addPackage,
   ensureInstalledPackage,
+  INSTALL_WAITING_LINE,
   installedPackageFile,
   pluginProjectManifestPath,
   pluginProjectPath,
@@ -19,6 +20,7 @@ export {
   loadConfiguredPlugins,
   loadPlugin,
   loadPluginRegistry,
+  standInModule,
   type ConfiguredPlugin,
   type ConfiguredPlugins,
 } from "./load.ts";

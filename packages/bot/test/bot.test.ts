@@ -3,17 +3,19 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { match, readProfile, type AccessProfile } from "@operad-io/access-match";
 import { CHAT_TYPE, allMessages, chatData } from "@operad-io/chat";
-import { createViews, listTypes, Views, type HarnessModelInfo, type TriggerEvent } from "@operad-io/engine";
+import { createViews, definePlugin, listTypes, Views, type HarnessModelInfo, type TriggerEvent } from "@operad-io/engine";
 import {
   BOT_SETTINGS,
   DEFAULT_BOT,
   BotError,
   defaultAccess,
+  agentRefusal,
   openChat,
   readBots,
   resolveBot,
   syncBots,
 } from "../src/index.ts";
+import { noAgent } from "../src/no-agent.ts";
 import { cleanupRoots, rig, writeBotConfig } from "./support.ts";
 
 afterAll(cleanupRoots);
@@ -534,6 +536,30 @@ describe("bot:chat", () => {
     expect((await views.get("bot:default")).actions.map((a) => a.name)).not.toContain("bot:chat");
     await expect(views.act("bot:chat", "bot:default", { surface: "cli", actor: { via: "cli", id: "me" } })).rejects.toThrow(
       "no agent is loaded",
+    );
+  });
+
+  test("an agent that is not set up is refused with how to set it up", () => {
+    const missing = { claude: "claude is not on PATH" };
+    expect(agentRefusal("claude", ["pi"], missing)).toBe('agent "claude" is not set up: claude is not on PATH');
+    expect(agentRefusal("grok", ["pi"], missing)).toBe('agent "grok" is not loaded; the loaded ones are: pi');
+    expect(noAgent(missing, "no agent is loaded")).toBe("no agent is set up; claude: claude is not on PATH");
+    expect(noAgent({}, "no agent is loaded")).toBe("no agent is loaded");
+  });
+
+  test("opening a chat on a missing agent says how to set it up", async () => {
+    const gone = definePlugin({
+      name: "gone",
+      kind: "harness",
+      version: "0.0.0",
+      agentMissing: () => "install gone",
+    });
+    const r = await rig({ own: { harness: "gone" } }, ["claude"], undefined, [gone]);
+    await expect(r.open("own")).rejects.toThrow('agent "gone" is not set up: install gone');
+    const none = await rig({}, [], undefined, [gone]);
+    const views = new Views({ registry: none.registry, store: none.store, onLog: () => undefined });
+    await expect(views.act("bot:chat", "bot:default", { surface: "cli", actor: { via: "cli", id: "me" } })).rejects.toThrow(
+      "no agent is set up; gone: install gone",
     );
   });
 

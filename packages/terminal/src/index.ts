@@ -45,7 +45,7 @@ export function createTerminalPlugin(options: TerminalPluginOptions = {}) {
         home: ctx.home,
         store: ctx.store,
         repositories: ctx.repositories ?? (async () => []),
-        harnesses: ctx.harnesses ?? [],
+        harnesses: () => ctx.harnesses ?? [],
         harnessCommand: ctx.harnessCommand ?? (async () => undefined),
         shell: options.shell ?? loginShell(),
         env: options.env ?? {},

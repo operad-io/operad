@@ -36,7 +36,9 @@ export interface LoadPluginRegistryOptions extends PluginRegistryOptions {
   readonly optional?: Readonly<Record<string, string>> | undefined;
   /**
    * What loads in place of a package the distribution has not installed yet,
-   * by the package's module name, each the path of a plugin module. It stands
+   * by the package's module name, each the path of a plugin module, or of a
+   * `SKILL.md` for a plugin whose guide alone is readable while it is off and
+   * not installed. It stands
    * only for a package that neither resolves nor is in the home's project, so
    * an installed package that fails to load is still reported. Empty by
    * default: the engine names no plugin.
@@ -134,7 +136,7 @@ function absent(specifier: string, installed: string | undefined): boolean {
   }
 }
 
-/** The stand-in for `specifier` when its package is not installed. */
+/** What stands in for `specifier` when its package is not installed. */
 function standInFor(
   specifier: string,
   installed: string | undefined,
@@ -142,6 +144,24 @@ function standInFor(
 ): string | undefined {
   const standIn = standIns[specifier];
   return standIn !== undefined && absent(specifier, installed) ? standIn : undefined;
+}
+
+/** True for a stand-in that is a plugin's guide alone, which loads as no plugin. */
+function guideOnly(standIn: string): boolean {
+  return standIn.endsWith(".md");
+}
+
+/**
+ * The plugin module that loads in place of `specifier` while its package is not
+ * installed in the home; undefined when `specifier` itself is what loads.
+ */
+export function standInModule(
+  home: string,
+  specifier: string,
+  standIns: Readonly<Record<string, string>>,
+): string | undefined {
+  const standIn = standInFor(specifier, installedPackageFile(home, specifier), standIns);
+  return standIn === undefined || guideOnly(standIn) ? undefined : standIn;
 }
 
 /** One configured plugin and the definition it resolved to, if any. */
@@ -210,7 +230,7 @@ export async function loadConfiguredPlugins(
     const source = installed !== undefined && !runningFromWorkspace() ? installed : entry.module;
     let definition: unknown;
     try {
-      const standIn = standInFor(entry.module, installed, options.standIns ?? {});
+      const standIn = standInModule(home, entry.module, options.standIns ?? {});
       definition = await loadPlugin(standIn ?? source, home, installed);
     } catch (error) {
       if (
@@ -268,13 +288,13 @@ function offGuideReader(
     const module =
       entries.find((item) => !item.enabled && item.name === name)?.module ??
       (entries.some((item) => item.name === name) ? undefined : optional[name]);
-    const read =
-      module === undefined
-        ? Promise.resolve(undefined)
-        : loadPlugin(standInFor(module, installedPackageFile(home, module), standIns) ?? module, home).then(
-            definitionGuide,
-            () => undefined,
-          );
+    const guideAt = async (from: string): Promise<string | undefined> => {
+      const installed = installedPackageFile(home, from);
+      const standIn = standInFor(from, installed, standIns);
+      if (standIn !== undefined && guideOnly(standIn)) return standIn;
+      return await loadPlugin(standIn ?? from, home, installed).then(definitionGuide, () => undefined);
+    };
+    const read = module === undefined ? Promise.resolve(undefined) : guideAt(module);
     seen.set(name, read);
     return read;
   };

@@ -1325,6 +1325,11 @@ export class PluginRegistry {
     }
   }
 
+  /** `missingAgents` by name, as an action reads it. */
+  private missingAgentSentences(): Readonly<Record<string, string>> {
+    return Object.fromEntries(this.missingAgents().map((item) => [item.name, item.description]));
+  }
+
   private modelContext(): HarnessModelContext {
     return { home: this.home, log: this.onLog };
   }
@@ -1455,6 +1460,7 @@ export class PluginRegistry {
       ...(object === undefined ? {} : { object }),
       home: this.home,
       harnesses: this.loadedHarnesses(),
+      missingAgents: this.missingAgentSentences(),
       models: this.loadedModels(),
       efforts: this.loadedEfforts(),
       capabilities: this.loadedCapabilities(),
@@ -1592,6 +1598,7 @@ export class PluginRegistry {
       actor,
       answer,
       harnesses: this.loadedHarnesses(),
+      missingAgents: this.missingAgentSentences(),
       ...(this.runLookup === undefined ? {} : { runLookup: this.runLookup }),
       stepLoaded: (use) => this.stepIndex.has(use),
       models: this.loadedModels(),
@@ -2179,6 +2186,7 @@ export class PluginRegistry {
           );
         }
       };
+      const harnesses = (): readonly string[] => this.loadedHarnesses();
       const ctx: SourceContext = {
         plugin: plugin.name,
         home: this.home,
@@ -2189,7 +2197,10 @@ export class PluginRegistry {
         signal: options.signal ?? new AbortController().signal,
         rules: options.rules,
         clock: options.clock,
-        harnesses: this.loadedHarnesses(),
+        // Asked at each read, so an agent installed while sources run is seen.
+        get harnesses() {
+          return harnesses();
+        },
         harnessCapabilities: (name) => this.loadedCapabilities()[name],
         settings: this.settingsFor(plugin.name),
         secrets: this.secretsFor(plugin.name),

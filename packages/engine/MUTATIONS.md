@@ -1658,6 +1658,18 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0816-M43 | packages/engine/src/plugin/load.ts | a plugin that is off had no guide from its stand-in | `the stand-in of a package that is not installed > gives its guide while the plugin is off` |
 | T-0833-M1 | packages/engine/test/views/plugin-http.test.ts | `readUntil` searched only the new chunk, without the end of what came before | `reading a response until a text > finds a text that arrives in several chunks, and reads no further` |
 
+## T-0831 — review findings of the offered shipped plugins
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0831-M7 | packages/engine/src/plugin/registry.ts | a source's harnesses were read once | `a harness plugin whose agent is missing > is seen by a source that is already running once the agent is there` |
+| T-0831-M10 | packages/engine/src/plugin/load.ts | a guide-only stand-in was imported as a plugin | `the stand-in of a package that is not installed > a guide alone is the guide while the plugin is off` |
+| T-0831-M11 | packages/engine/src/plugin/load.ts | an off plugin's guide ignored the package in the home | `the stand-in of a package that is not installed > an installed package that is off gives its own guide from the home` |
+| T-0831-M14 | packages/engine/src/plugin/install.ts | an entry without its dependencies counted as installed | `an install that did not finish > a package without one of its dependencies is not installed, and is installed again` |
+| T-0831-M15 | packages/engine/src/plugin/install.ts | installs took no lock | `two installs in one home > the second waits for the first, says so, and keeps both dependencies` |
+| T-0831-M16 | packages/engine/src/plugin/install.ts | a stop did not end the wait for the lock | `two installs in one home > a stop ends the wait` |
+| T-0831-M17 | packages/engine/src/plugin/install.ts | a failed install kept its dependency | `an install that did not finish > a failed install that is to be forgotten leaves the project naming what it named` |
+
 ## T-0836 — a failed upgrade is tried again
 
 | id | file | mutation | failing test |

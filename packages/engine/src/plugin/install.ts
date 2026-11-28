@@ -9,8 +9,10 @@
  * install skips optional dependencies.
  */
 
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, realpathSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
+import { withLockFile } from "../platform/file-lock.ts";
+import { waitForChange } from "../platform/watch.ts";
 import { isMissingFile, isRecord } from "../util.ts";
 
 /** The directory under the operad home that holds the Bun project. */
@@ -127,15 +129,40 @@ function packageEntry(packageDirectory: string, subpath: string): string | undef
   return existsSync(file) ? file : undefined;
 }
 
+/** True when `name` is in a `node_modules` that a module in `directory` looks in. */
+function dependencyFrom(directory: string, name: string): boolean {
+  for (let at = directory; ; at = dirname(at)) {
+    if (existsSync(join(at, "node_modules", name, "package.json"))) return true;
+    if (dirname(at) === at) return false;
+  }
+}
+
+/**
+ * True when each dependency the package names is there, apart from the optional
+ * ones: an install that was left part done has the package and not all of them.
+ */
+function dependenciesPresent(packageDirectory: string): boolean {
+  const manifest = packageManifest(packageDirectory);
+  const optional = manifest?.optionalDependencies;
+  const names = Object.keys(dependenciesOf(manifest)).filter(
+    (name) => !(isRecord(optional) && Object.hasOwn(optional, name)),
+  );
+  if (names.length === 0) return true;
+  // An isolated layout links the package; its dependencies are beside the target.
+  const real = realpathSync(packageDirectory);
+  return names.every((name) => dependencyFrom(real, name));
+}
+
 /**
  * The file a specifier resolves to in the home's plugin project, or undefined
- * when the project does not hold it.
+ * when the project does not hold it, or holds it without its dependencies.
  */
 export function installedPackageFile(home: string, specifier: string): string | undefined {
   const manifest = pluginProjectManifestPath(home);
   if (!existsSync(manifest)) return undefined;
   const packageDirectory = join(pluginProjectPath(home), "node_modules", packageNameOf(specifier));
-  return packageEntry(packageDirectory, subpathOf(specifier));
+  const entry = packageEntry(packageDirectory, subpathOf(specifier));
+  return entry !== undefined && dependenciesPresent(packageDirectory) ? entry : undefined;
 }
 
 /** What a command a test replaces returned. */
@@ -291,6 +318,43 @@ export interface EnsureInstalledOptions {
   readonly signal?: AbortSignal | undefined;
   /** Called when something has to be installed, before the command runs. */
   readonly onInstall?: (() => void) | undefined;
+  /**
+   * A failed install puts the project's manifest back as it was for this
+   * package, so a later install in the project does not fetch it.
+   */
+  readonly forgetOnFailure?: boolean | undefined;
+}
+
+/** How long an install waits for another one in the same home to end. */
+const INSTALL_LOCK_TIMEOUT_MS = 15 * 60_000;
+
+/** What a waiting install reports, once. */
+export const INSTALL_WAITING_LINE = "waiting for another install in this home to end";
+
+/**
+ * Runs `work` as the only change to the home's plugin project, in this process
+ * and any other. An aborted signal ends the wait.
+ */
+async function changingProject<T>(
+  home: string,
+  work: () => Promise<T>,
+  options: { readonly onProgress?: InstallProgress | undefined; readonly signal?: AbortSignal | undefined } = {},
+): Promise<T> {
+  const lock = join(pluginProjectPath(home), ".install.lock");
+  let told = false;
+  return await withLockFile(lock, work, {
+    label: "plugin install",
+    timeoutMs: INSTALL_LOCK_TIMEOUT_MS,
+    wait: async (ms) => {
+      options.signal?.throwIfAborted();
+      if (!told) {
+        told = true;
+        options.onProgress?.(INSTALL_WAITING_LINE);
+      }
+      await waitForChange(dirname(lock), lock, ms);
+      options.signal?.throwIfAborted();
+    },
+  });
 }
 
 /** True when the installed package is the one `wanted` names; a tarball names no version to compare. */
@@ -316,6 +380,44 @@ export async function ensureInstalledPackage(options: EnsureInstalledOptions): P
     }
   }
 
+  // What is already there is answered without waiting for another install.
+  const ready = installedAs(home, specifier, version).file;
+  if (ready !== undefined) return ready;
+  return await changingProject(home, () => installPackage(options), options);
+}
+
+/** The dependency to name for `specifier`, and its file when nothing has to be installed. */
+function installedAs(
+  home: string,
+  specifier: string,
+  version: string,
+): { readonly wanted: string; readonly file: string | undefined } {
+  const existing = dependenciesOf(readManifest(pluginProjectManifestPath(home)))[specifier];
+  // A test (or a person pinning a local build) may name a tarball; keep it.
+  const wanted =
+    typeof existing === "string" && (existing === version || existing.startsWith("file:"))
+      ? existing
+      : version;
+  // The manifest names the new version before the install runs, so after a
+  // failed upgrade only the installed package says what the home holds.
+  const installed = existing === wanted && holdsWanted(home, specifier, wanted);
+  return { wanted, file: installed ? installedPackageFile(home, specifier) : undefined };
+}
+
+/** Puts back the dependency the project named for `specifier` before an install. */
+function restoreDependency(path: string, specifier: string, previous: unknown): void {
+  const manifest = readManifest(path);
+  if (manifest === undefined) return;
+  const dependencies = { ...dependenciesOf(manifest) };
+  if (previous === undefined) delete dependencies[specifier];
+  else dependencies[specifier] = previous;
+  manifest.dependencies = dependencies;
+  writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
+}
+
+/** Writes the dependency and runs the install; the caller holds the project. */
+async function installPackage(options: EnsureInstalledOptions): Promise<string> {
+  const { home, specifier, version } = options;
   const directory = pluginProjectPath(home);
   const path = join(directory, "package.json");
   const manifest = readManifest(path) ?? {
@@ -329,15 +431,9 @@ export async function ensureInstalledPackage(options: EnsureInstalledOptions): P
   }
   const dependencies: Record<string, unknown> = { ...(rawDependencies ?? {}) };
   const existing = dependencies[specifier];
-  // A test (or a person pinning a local build) may name a tarball; keep it.
-  const wanted =
-    typeof existing === "string" && (existing === version || existing.startsWith("file:"))
-      ? existing
-      : version;
-  const found = installedPackageFile(home, specifier);
-  // The manifest names the new version before the install runs, so after a
-  // failed upgrade only the installed package says what the home holds.
-  if (existing === wanted && found !== undefined && holdsWanted(home, specifier, wanted)) return found;
+  // Another install may have brought it while this one waited.
+  const { wanted, file } = installedAs(home, specifier, version);
+  if (file !== undefined) return file;
 
   dependencies[specifier] = wanted;
   manifest.dependencies = dependencies;
@@ -346,19 +442,26 @@ export async function ensureInstalledPackage(options: EnsureInstalledOptions): P
 
   const args = ["install", ...(options.omitOptional === true ? ["--omit=optional"] : []), "--no-summary"];
   options.onInstall?.();
-  const run = await (options.run ?? runWithBun)(directory, args, options.onProgress, options.signal);
-  if (run.exitCode !== 0) {
-    throw failedInstall(specifier, args, directory, run);
+  try {
+    const run = await (options.run ?? runWithBun)(directory, args, options.onProgress, options.signal);
+    if (run.exitCode !== 0) {
+      throw failedInstall(specifier, args, directory, run);
+    }
+    const installed = installedPackageFile(home, specifier);
+    if (installed === undefined) {
+      throw new Error(
+        `${specifier}: was installed into ${directory}, but its entry does not resolve or a dependency is missing`,
+      );
+    }
+    // `serve` reloads after an install, so one that changed nothing must not count.
+    if (!holdsWanted(home, specifier, wanted)) {
+      throw new Error(`${specifier}: was installed into ${directory}, but it is not version ${wanted}`);
+    }
+    return installed;
+  } catch (error) {
+    if (options.forgetOnFailure === true) restoreDependency(path, specifier, existing);
+    throw error;
   }
-  const installed = installedPackageFile(home, specifier);
-  if (installed === undefined) {
-    throw new Error(`${specifier}: was installed into ${directory}, but its entry does not resolve`);
-  }
-  // `serve` reloads after an install, so one that changed nothing must not count.
-  if (!holdsWanted(home, specifier, wanted)) {
-    throw new Error(`${specifier}: was installed into ${directory}, but it is not version ${wanted}`);
-  }
-  return installed;
 }
 
 
@@ -455,6 +558,10 @@ export interface AddedPackage {
  * adding it gets the version they named.
  */
 export async function addPackage(options: AddPackageOptions): Promise<AddedPackage> {
+  return await changingProject(options.home, () => addToProject(options), options);
+}
+
+async function addToProject(options: AddPackageOptions): Promise<AddedPackage> {
   const directory = pluginProjectPath(options.home);
   const path = join(directory, "package.json");
   const before = readManifest(path);
@@ -517,6 +624,12 @@ export async function addPackage(options: AddPackageOptions): Promise<AddedPacka
  * A package the project does not name is left alone.
  */
 export async function removePackage(options: RemovePackageOptions): Promise<void> {
+  // A home with no project has nothing to take out, and gets no lock file.
+  if (!existsSync(pluginProjectManifestPath(options.home))) return;
+  await changingProject(options.home, () => removeFromProject(options));
+}
+
+async function removeFromProject(options: RemovePackageOptions): Promise<void> {
   const directory = pluginProjectPath(options.home);
   const path = join(directory, "package.json");
   const manifest = readManifest(path);

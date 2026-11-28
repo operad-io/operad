@@ -14,7 +14,7 @@ the same version.
 - A plugin that is not set up is quiet. A harness whose agent is not on the machine is not offered as an agent and asks for no login; `operad init` and `operad doctor` say it is not set up, and its setup guide (`/setup codex`, Setup Codex) walks you through it. Telegram without a token no longer logs a failure at each start of `serve`.
 - A repository that names no worker uses the first enabled agent that is on the machine.
 - `operad init` installs operad's own pi only when it finds no `claude`, `pi` or `radian`.
-- operad's own pi is now 1.7.0 (was 1.6.0). A home that has the older copy and no `pi` on `PATH` gets the new one from `operad serve`, once it is serving, or sooner from `operad plugin enable pi` or an `operad init` that installs pi. The oldest pi accepted is still 1.5.0.
+- operad's own pi is now 1.7.0 (was 1.6.0). A home that has the older copy and no `pi` on `PATH` gets the new one from `operad serve`, once it is serving, or sooner from `operad plugin enable pi` or `operad init`. The oldest pi accepted is still 1.5.0.
 - A `claude`, `codex` or `pi` that is signed out or too old is `not set up:` in `operad init` and no longer fails it, and `operad doctor` names the next command instead of `operad init`. An enabled plugin that does not load fails `operad init`.
 
 ### Added

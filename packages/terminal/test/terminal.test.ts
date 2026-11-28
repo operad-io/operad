@@ -184,6 +184,21 @@ describe("starting a terminal", () => {
     expect((await served.list()).terminals).toEqual([]);
   });
 
+  test("offers an agent installed while it runs", async () => {
+    const world = await makeWorld();
+    let there = false;
+    const claude = definePlugin({
+      name: "claude",
+      kind: "harness",
+      version: "1.0.0",
+      agentMissing: () => (there ? undefined : "install it"),
+    });
+    const served = await serve(world, { plugins: [claude] });
+    expect((await served.list()).presets).toEqual([]);
+    there = true;
+    expect((await served.list()).presets).toEqual([{ name: "claude", command: "claude" }]);
+  });
+
   test("offers the loaded agents as command lines", async () => {
     const world = await makeWorld();
     const harness = (name: string) => definePlugin({ name, kind: "harness", version: "1.0.0" });

@@ -535,3 +535,9 @@ changes for bots, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0813-M8 | packages/bot/src/setup-dev.ts | approving Setup Dev did not turn shell on | `approving the proposal turns on dev, pool and shell` |
+
+## T-0831 — review findings of the offered shipped plugins
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0831-M6 | packages/bot/src/index.ts | the refusal forgot the missing agents | `bot:chat > opening a chat on a missing agent says how to set it up` |

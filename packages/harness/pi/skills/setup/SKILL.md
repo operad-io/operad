@@ -23,8 +23,8 @@ Take the steps for the missing items listed above, in this order.
   that path is right.
 
 The check does not cover the login to a model. Once nothing is missing, ask me whether I am
-logged in; if not, I run `operad bot:login <bot>` for an API key, or
-`pi auth login openai-codex` for a ChatGPT plan.
+logged in; if not, I run `operad bot:login <bot>`. It asks for an API key, and for a ChatGPT
+plan it shows the command line I run myself, which works with operad's own pi too.
 
 After each step, check again: call the operad `command` tool with plugin `bot`, verb `setup`
 and the arguments `{bot}` and `pi`. Stop when it says nothing is missing. If an item stays,

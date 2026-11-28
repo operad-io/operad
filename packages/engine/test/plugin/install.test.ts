@@ -4,6 +4,7 @@ import { join } from "node:path";
 import {
   addPackage,
   ensureInstalledPackage,
+  INSTALL_WAITING_LINE,
   installedPackageFile,
   loadPlugin,
   pluginProjectManifestPath,
@@ -330,7 +331,9 @@ describe("adding a package to the home project", () => {
     try {
       await addPackage({ home: join(root, "home"), specifier: `file:${tarball}` });
     } finally {
-      process.env.BUN_INSTALL_CACHE_DIR = named;
+      // Assigning undefined would leave the string "undefined".
+      if (named === undefined) delete process.env.BUN_INSTALL_CACHE_DIR;
+      else process.env.BUN_INSTALL_CACHE_DIR = named;
     }
 
     expect(readdirSync(cache)).not.toEqual([]);
@@ -457,5 +460,158 @@ describe("adding a package to the home project", () => {
     await expect(
       addPackage({ home: join(root, "home"), specifier: `file:${tarball}` }),
     ).rejects.toThrow(/install script.*needs one/s);
+  });
+});
+
+const ok = { exitCode: 0, stdout: "", stderr: "" };
+
+function projectDependencies(home: string): Record<string, string> {
+  const manifest = JSON.parse(readFileSync(pluginProjectManifestPath(home), "utf8")) as {
+    dependencies?: Record<string, string>;
+  };
+  return manifest.dependencies ?? {};
+}
+
+/** Writes a package into the home's project, as an install would. */
+function writePackage(home: string, name: string, extra: object = {}): void {
+  const directory = join(pluginProjectPath(home), "node_modules", name);
+  mkdirSync(directory, { recursive: true });
+  writeFileSync(
+    join(directory, "package.json"),
+    JSON.stringify({ name, version: "1.0.0", exports: { ".": "./index.ts" }, ...extra }),
+  );
+  writeFileSync(join(directory, "index.ts"), "export default {};\n");
+}
+
+describe("an install that did not finish", () => {
+  test("a package without one of its dependencies is not installed, and is installed again", async () => {
+    const root = await tempRoot();
+    const fixture = installFixture(root, "part-done");
+    writePackage(fixture.home, "part-done", {
+      version: "0.0.1",
+      dependencies: { "operad-test-needed": "1.0.0", "operad-test-optional": "1.0.0" },
+      optionalDependencies: { "operad-test-optional": "1.0.0" },
+    });
+    writeFileSync(pluginProjectManifestPath(fixture.home), JSON.stringify({ dependencies: { "part-done": "0.0.1" } }));
+    expect(installedPackageFile(fixture.home, "part-done")).toBeUndefined();
+
+    let runs = 0;
+    const file = await ensureInstalledPackage({
+      home: fixture.home,
+      specifier: "part-done",
+      version: "0.0.1",
+      run: () => {
+        runs += 1;
+        writePackage(fixture.home, "operad-test-needed");
+        return ok;
+      },
+    });
+    expect(runs).toBe(1);
+    expect(file).toBe(fixture.file);
+  });
+
+  test("a failed install that is to be forgotten leaves the project naming what it named", async () => {
+    const home = join(await tempRoot(), "home");
+    mkdirSync(pluginProjectPath(home), { recursive: true });
+    writeFileSync(pluginProjectManifestPath(home), JSON.stringify({ dependencies: { kept: "1.0.0", old: "1.0.0" } }));
+    const fail = () => ({ exitCode: 1, stdout: "", stderr: "no" });
+    for (const specifier of ["fresh", "old"]) {
+      await expect(
+        ensureInstalledPackage({ home, specifier, version: "2.0.0", run: fail, forgetOnFailure: true }),
+      ).rejects.toThrow("exit code 1");
+    }
+    expect(projectDependencies(home)).toEqual({ kept: "1.0.0", old: "1.0.0" });
+
+    await expect(ensureInstalledPackage({ home, specifier: "tried", version: "2.0.0", run: fail })).rejects.toThrow();
+    expect(projectDependencies(home).tried).toBe("2.0.0");
+  });
+});
+
+describe("two installs in one home", () => {
+  test("the second waits for the first, says so, and keeps both dependencies", async () => {
+    const home = join(await tempRoot(), "home");
+    const order: string[] = [];
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let began: () => void = () => undefined;
+    const running = new Promise<void>((resolve) => {
+      began = resolve;
+    });
+    const first = ensureInstalledPackage({
+      home,
+      specifier: "first",
+      version: "1.0.0",
+      run: async () => {
+        order.push("first starts");
+        began();
+        await gate;
+        writePackage(home, "first");
+        order.push("first ends");
+        return ok;
+      },
+    });
+    await running;
+    const second = ensureInstalledPackage({
+      home,
+      specifier: "second",
+      version: "1.0.0",
+      onProgress: (line) => {
+        if (line !== INSTALL_WAITING_LINE) return;
+        order.push("second waits");
+        release();
+      },
+      run: () => {
+        order.push("second starts");
+        writePackage(home, "second");
+        return ok;
+      },
+    });
+    await Promise.all([first, second]);
+    expect(order).toEqual(["first starts", "second waits", "first ends", "second starts"]);
+    expect(projectDependencies(home)).toEqual({ first: "1.0.0", second: "1.0.0" });
+  });
+
+  test("a stop ends the wait", async () => {
+    const home = join(await tempRoot(), "home");
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let began: () => void = () => undefined;
+    const running = new Promise<void>((resolve) => {
+      began = resolve;
+    });
+    const first = ensureInstalledPackage({
+      home,
+      specifier: "first",
+      version: "1.0.0",
+      run: async () => {
+        began();
+        await gate;
+        writePackage(home, "first");
+        return ok;
+      },
+    });
+    await running;
+    const stop = new AbortController();
+    let ran = false;
+    await expect(
+      ensureInstalledPackage({
+        home,
+        specifier: "second",
+        version: "1.0.0",
+        signal: stop.signal,
+        onProgress: () => stop.abort(new Error("serve is stopping")),
+        run: () => {
+          ran = true;
+          return ok;
+        },
+      }),
+    ).rejects.toThrow("serve is stopping");
+    release();
+    await first;
+    expect(ran).toBe(false);
   });
 });
