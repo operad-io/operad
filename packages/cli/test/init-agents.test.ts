@@ -91,7 +91,7 @@ function packPiFixture(root: string): string {
     join(directory, "package.json"),
     JSON.stringify({
       name: "@earendil-works/pi-coding-agent",
-      version: "1.6.0",
+      version: "1.7.0",
       exports: { ".": { import: "./dist/index.js" } },
       bin: { pi: "dist/bundle/cli.js" },
     }),
@@ -244,7 +244,7 @@ describe("`operad init` finds the agent on PATH", () => {
     expect(plugins).toEqual([...FIXED, "pi", "codex", "radian"]);
     expect(output.text()).toContain("telegram: not set up: ");
     expect(output.text()).toContain("no agent found on PATH: installing operad's own pi");
-    expect(output.text()).toContain("pi: pi 1.6.0");
+    expect(output.text()).toContain("pi: pi 1.7.0");
     expect(output.errors()).toBe("");
   });
 
@@ -275,7 +275,43 @@ describe("`operad init` finds the agent on PATH", () => {
 
     const second = await initWith(root, [], { piTarball: tarball });
     expect(second.code).toBe(0);
-    expect(second.output.text()).toContain("pi: pi 1.6.0");
+    expect(second.output.text()).toContain("pi: pi 1.7.0");
+  });
+
+  test("a home with operad's pi at an older pin is moved to the new one", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    const plugins = join(home, "plugins");
+    const name = "@earendil-works/pi-coding-agent";
+    const writePi = (version: string): void => {
+      const dir = join(plugins, "node_modules", name);
+      mkdirSync(join(dir, "dist"), { recursive: true });
+      writeFileSync(
+        join(dir, "package.json"),
+        JSON.stringify({ name, version, exports: { ".": "./dist/index.js" } }),
+      );
+      writeFileSync(join(dir, "dist", "index.js"), "export {};\n");
+    };
+    writePi("1.6.0");
+    writeFileSync(
+      join(plugins, "package.json"),
+      JSON.stringify({ name: "operad-plugins", private: true, dependencies: { [name]: "1.6.0" } }),
+    );
+    const calls: string[] = [];
+    const { code, output } = await initWith(root, [], {
+      installRun: (_cwd, args) => {
+        calls.push(args.join(" "));
+        writePi("1.7.0");
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    });
+    expect(code).toBe(0);
+    expect(calls).toEqual(["install --no-summary"]);
+    const manifest = JSON.parse(readFileSync(join(plugins, "package.json"), "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    expect(manifest.dependencies[name]).toBe("1.7.0");
+    expect(output.text()).toContain("pi: pi 1.7.0");
   });
 
   test("a new home with another agent installs no pi", async () => {

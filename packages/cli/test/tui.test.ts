@@ -18,7 +18,7 @@ function fakePiInstall(): InstallRunner {
     mkdirSync(join(dir, "dist"), { recursive: true });
     writeFileSync(
       join(dir, "package.json"),
-      JSON.stringify({ name, version: "1.6.0", exports: { ".": "./dist/index.js" }, bin: { pi: "dist/cli.js" } }),
+      JSON.stringify({ name, version: "1.7.0", exports: { ".": "./dist/index.js" }, bin: { pi: "dist/cli.js" } }),
     );
     writeFileSync(join(dir, "dist", "index.js"), "export {};\n");
     writeFileSync(join(dir, "dist", "cli.js"), "#!/bin/sh\nexit 1\n");
