@@ -89,41 +89,60 @@ function identityOf(folder: string, options: GitOptions): GitIdentity {
 /** Test-only: the machine every state check looks for git on, when the caller gives none. */
 export const gitStateTestHooks: { finder?: GitFinderHost | undefined } = {};
 
-/** The state of `folder`, which must be an existing directory. */
-export function gitStateOf(folder: string, stateOptions: GitStateOptions = {}): GitState {
+/** What a folder allows, without the facts only a git setup reads. */
+type Readiness =
+  | { readonly state: "no program" | "no repository" | "no commit" | "ready" }
+  | { readonly state: "subfolder"; readonly root: string };
+
+/**
+ * The state alone, in at most two git runs. Creating a plan or a task asks
+ * this, so it reads neither the identity nor the branch.
+ */
+function readinessOf(folder: string, stateOptions: GitStateOptions): Readiness {
   if (statSync(folder, { throwIfNoEntry: false })?.isDirectory() !== true) {
     throw new Error(`"${folder}" is not a folder`);
   }
   const env = stateOptions.env ?? { ...process.env };
-  const options: GitOptions = { env };
   // The finder runs nothing that could open the macOS install dialog.
   if (findGit(stateOptions.finder ?? gitStateTestHooks.finder ?? { ...realGitFinderHost(), env }) === undefined) return { state: "no program" };
-  const identity = identityOf(folder, options);
   // Git's messages are forced to English for this one question, so the words
   // that say "no repository" can be told from every other refusal.
   const top = git(folder, ["rev-parse", "--show-toplevel"], {
     env: { ...env, LC_ALL: "C", LANGUAGE: "" },
   });
   if (!top.ok) {
-    if (NO_REPOSITORY.test(top.err)) return { state: "no repository", identity };
+    if (NO_REPOSITORY.test(top.err)) return { state: "no repository" };
     // Dubious ownership, an unreadable .git, a git that prints nothing: the
     // folder may well be a repository, so it is not taken for a plain folder.
     throw new GitStateError(folder, top.err);
   }
   if (canonical(top.out) !== canonical(folder)) {
-    return { state: "subfolder", root: top.out, identity };
+    return { state: "subfolder", root: top.out };
   }
-  const branchResult = git(folder, ["symbolic-ref", "--short", "-q", "HEAD"], options);
+  const head = git(folder, ["rev-parse", "--verify", "-q", "HEAD^{commit}"], { env });
+  return { state: head.ok ? "ready" : "no commit" };
+}
+
+/** The state of `folder`, which must be an existing directory. */
+export function gitStateOf(folder: string, stateOptions: GitStateOptions = {}): GitState {
+  const env = stateOptions.env ?? { ...process.env };
+  const readiness = readinessOf(folder, { ...stateOptions, env });
+  if (readiness.state === "no program") return { state: "no program" };
+  const identity = identityOf(folder, { env });
+  if (readiness.state === "no repository") return { state: "no repository", identity };
+  if (readiness.state === "subfolder") {
+    return { state: "subfolder", root: readiness.root, identity };
+  }
+  const branchResult = git(folder, ["symbolic-ref", "--short", "-q", "HEAD"], { env });
   const branch = branchResult.ok && branchResult.out !== "" ? branchResult.out : undefined;
-  const head = git(folder, ["rev-parse", "--verify", "-q", "HEAD^{commit}"], options);
-  return { state: head.ok ? "ready" : "no commit", branch, identity };
+  return { state: readiness.state, branch, identity };
 }
 
 // Why a task cannot be created in `folder` now, in the line a person reads, or
 // `undefined` when git is ready there. The bot turns the line into the person's
 // language and starts the git setup; the line itself starts nothing.
 export function taskRefusalOf(folder: string, stateOptions: GitStateOptions = {}): string | undefined {
-  const state = gitStateOf(folder, stateOptions);
+  const state = readinessOf(folder, stateOptions);
   switch (state.state) {
     case "ready":
       return undefined;
