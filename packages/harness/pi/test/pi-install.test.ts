@@ -270,9 +270,9 @@ describe("findPi", () => {
 });
 
 describe("pi check", () => {
-  async function checkWith(command: string | undefined, path?: string) {
+  async function checkWith(command: string | undefined, path?: string, options: { readonly workerPath?: string } = {}) {
     const root = await fresh();
-    const registry = new PluginRegistry([createPiHarnessPlugin()], {
+    const registry = new PluginRegistry([createPiHarnessPlugin(options)], {
       home: root,
       cwd: root,
       store: new MemoryPluginStore({ root: join(root, "store") }),
@@ -304,6 +304,14 @@ describe("pi check", () => {
     expect(result?.message).toStartWith("not set up: pi 1.2.0 at ");
     expect(result?.message).toContain("1.5.0");
     expect(result?.missing?.map((item) => item.name)).toEqual(["check"]);
+  });
+
+  test("a missing worker program fails the check with a pi below the floor", async () => {
+    const root = await fresh();
+    const pi = installPi(root, "npm", { version: "1.2.0" });
+    const result = await checkWith(join(pi.bin, "pi"), undefined, { workerPath: join(root, "no-worker.ts") });
+    expect(result?.ok).toBe(false);
+    expect(result?.message).toContain("the worker program is missing");
   });
 
   test("is not set up, and no failure, when there is no pi at all", async () => {

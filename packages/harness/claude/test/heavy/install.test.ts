@@ -161,7 +161,7 @@ describe("inspectClaude", () => {
     const said = await fakeClaude({ auth: JSON.stringify({ loggedIn: false }), authExit: 0 });
     expect(() => inspectClaude(said)).toThrow(/not logged in/);
     const failing = await fakeClaude({ auth: JSON.stringify({ loggedIn: true, authMethod: "claude.ai" }), authExit: 1 });
-    expect(() => inspectClaude(failing)).toThrow(/not logged in/);
+    expect(() => inspectClaude(failing)).toThrow(/no login answer/);
   });
 
   test("auth status output it cannot parse is refused", async () => {
@@ -193,9 +193,9 @@ describe("inspectClaude", () => {
 });
 
 describe("claude check", () => {
-  async function checks(command: string | undefined) {
+  async function checks(command: string | undefined, options: { readonly workerPath?: string } = {}) {
     const root = await tempRoot();
-    const registry = new PluginRegistry([createClaudeHarnessPlugin()], {
+    const registry = new PluginRegistry([createClaudeHarnessPlugin(options)], {
       home: root,
       cwd: root,
       store: new MemoryPluginStore({ root: join(root, "store") }),
@@ -238,6 +238,29 @@ describe("claude check", () => {
     expect(check?.ok).toBe(false);
     expect(check?.message).toContain("auth status");
   });
+
+  for (const [title, fake] of [
+    ["has no loggedIn", { auth: JSON.stringify({ authMethod: "claude.ai" }) }],
+    ["has a loggedIn that is not a boolean", { auth: JSON.stringify({ loggedIn: "false" }), authExit: 1 }],
+    ["says logged in with a failing exit", { auth: JSON.stringify({ loggedIn: true }), authExit: 1 }],
+  ] as const) {
+    test(`fails when claude's login answer ${title}`, async () => {
+      const check = await checks(await fakeClaude(fake));
+      expect(check?.ok).toBe(false);
+      expect(check?.message).toContain("no login answer");
+    });
+  }
+
+  for (const [title, fake] of [
+    ["too old", { version: "2.0.0 (Claude Code)" }],
+    ["signed out", { auth: JSON.stringify({ loggedIn: false }), authExit: 1 }],
+  ] as const) {
+    test(`a missing worker program fails the check with a claude that is ${title}`, async () => {
+      const check = await checks(await fakeClaude(fake), { workerPath: "/nowhere/worker.ts" });
+      expect(check?.ok).toBe(false);
+      expect(check?.message).toContain("the worker program is missing");
+    });
+  }
 
   test("fails when there is no claude", async () => {
     const check = await checks("/nowhere/claude");

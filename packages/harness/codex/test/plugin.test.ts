@@ -1,5 +1,5 @@
 import { afterAll, afterEach, describe, expect, test } from "bun:test";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
@@ -62,6 +62,8 @@ async function setup(
   mode: string,
   options: {
     readonly settings?: Record<string, unknown>;
+    /** Leaves `command` unset, so the codex of PATH is the command. */
+    readonly defaultCommand?: boolean;
     readonly clock?: ManualClock;
     readonly vars?: Record<string, string>;
     readonly now?: (() => number) | undefined;
@@ -87,7 +89,9 @@ async function setup(
     home: root,
     cwd: root,
     store: new MemoryPluginStore({ root: join(root, "store") }),
-    settings: { codex: { command: [process.execPath, FAKE], ...(options.settings ?? {}) } },
+    settings: {
+      codex: { ...(options.defaultCommand === true ? {} : { command: [process.execPath, FAKE] }), ...(options.settings ?? {}) },
+    },
   });
   return { root, clock, registry, record, marker, release };
 }
@@ -969,10 +973,42 @@ describe("codex check", () => {
   });
 
   test("an old Codex with no app-server is not set up for its version", async () => {
-    const env = await setup("no-app-server", { vars: { FAKE_CODEX_VERSION: "0.100.0" } });
+    // The default command is the codex of PATH, so none is set here.
+    const env = await setup("no-app-server", {
+      defaultCommand: true,
+      vars: { FAKE_CODEX_VERSION: "0.100.0" },
+    });
+    const bin = join(env.root, "bin");
+    mkdirSync(bin);
+    writeFileSync(join(bin, "codex"), "#!/bin/sh\nexit 1\n");
+    chmodSync(join(bin, "codex"), 0o755);
+    setEnv("PATH", `${bin}:${process.env.PATH ?? ""}`);
     const check = (await env.registry.checks()).find((item) => item.plugin === "codex");
     expect(check?.ok).toBe(true);
     expect(check?.message).toStartWith("not set up: Codex 0.100.0 is too old");
+  });
+
+  test("a command the owner set with no app-server fails, though the codex asked is old", async () => {
+    // `setup` sets `command`, as an owner would.
+    const env = await setup("no-app-server", { vars: { FAKE_CODEX_VERSION: "0.100.0" } });
+    const check = (await env.registry.checks()).find((item) => item.plugin === "codex");
+    expect(check?.ok).toBe(false);
+    expect(check?.message).toContain("no app-server");
+  });
+
+  test("fails when Codex's login answer cannot be read", async () => {
+    const env = await setup("done", { vars: { FAKE_CODEX_LOGIN: "broken" } });
+    const check = (await env.registry.checks()).find((item) => item.plugin === "codex");
+    expect(check?.ok).toBe(false);
+    expect(check?.message).toContain("login answer");
+    expect(check?.message).not.toContain("config.toml");
+  });
+
+  test("fails when Codex's version cannot be read", async () => {
+    const env = await setup("done", { vars: { FAKE_CODEX_VERSION: "unknown" } });
+    const check = (await env.registry.checks()).find((item) => item.plugin === "codex");
+    expect(check?.ok).toBe(false);
+    expect(check?.message).toContain("did not print a version this check can read");
   });
 
   test("refuses a Codex with no app-server", async () => {

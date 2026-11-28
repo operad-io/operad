@@ -577,11 +577,11 @@ as failed with the reason that it was cancelled.
 `codex` runs the user's own Codex through `codex app-server`, Codex's own
 JSON-RPC interface. A new home has it on; in a home made earlier turn it on with
 `operad plugin enable codex`. operad brings no Codex of its own: put `codex` on
-`PATH` (the client was built against codex-cli `0.166.0`; an older one is
-refused) and run `codex login` once; operad uses your own Codex login.
+`PATH` (the client was built against codex-cli `0.166.0`) and run `codex login` once; operad uses your own Codex login.
 `operad plugin check codex` reports the Codex version, the app-server command and
-the login kind, and says what to do when the installed Codex has no app-server,
-is too old, or is not logged in. Its settings are in the `codex` section of
+the login kind. It prints `not set up:` with what to do when Codex is too old or
+not logged in, and fails when the installed Codex has no app-server or its
+version or login answer cannot be read. Its settings are in the `codex` section of
 `config.json`:
 
 | Setting | Type | Default | What it does |
@@ -616,8 +616,8 @@ project on first use; that needs the network once, and a failed download says so
 and is retried by running the enable or `operad init` again. The oldest pi it
 accepts is `1.5.0`. With neither a `pi` on `PATH` nor the one operad installed
 in the home, `pi` is not set up: it is not offered as an agent, and its check
-says to run `operad plugin enable pi`. When your pi is older, the check fails and
-names both versions. To use another pi, set `command` in the
+says to run `operad plugin enable pi`. When your pi is older, the check prints
+`not set up:` and names both versions. To use another pi, set `command` in the
 `pi` section of `config.json` to its path. A `pi` that is a shell wrapper script
 is refused with its path; point `command` at the package's bin instead
 (`.../@earendil-works/pi-coding-agent/dist/bundle/cli.js`).
@@ -694,9 +694,10 @@ one you installed (see https://code.claude.com), so a `claude` command must be o
 `PATH`. Run `claude` once and log in. operad uses your own login and passes no
 credential of its own. `operad plugin check` runs `claude --version` and
 `claude auth status` and reports the claude version, the Agent SDK version and
-the login kind (such as `claude.ai (max)`). It fails, saying what to do, when
-there is no `claude`, when claude is older than `2.1.319`, or when it is not
-logged in. The SDK version is only reported. To use another claude, set `command`
+the login kind (such as `claude.ai (max)`). It prints `not set up:` with what to
+do when there is no `claude`, when claude is older than `2.1.319`, or when it is
+not logged in. It fails when a `command` you set leads to no claude, or claude's
+version or login answer cannot be read. The SDK version is only reported. To use another claude, set `command`
 in the `claude` section of `config.json` to its path.
 
 **A machine without a browser.** Run `claude setup-token` on a machine where you
