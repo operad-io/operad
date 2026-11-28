@@ -16,23 +16,32 @@ setup guide, and starts a flow of your home by hand.
 ### Changed
 
 - A new home turns every shipped plugin on: `chat`, `bot`, `memory`, `cron`, `shell`, `pool`, `dev`, `telegram`, `terminal`, `pi`, `codex` and `radian`, and `claude` when `claude` is on your `PATH` (it needs a download).
-- `terminal` no longer holds up a start: `operad serve` installs its package once it is serving and reloads. Until then it is not set up (Setup Terminal), and a failed download is tried again at the next start of `serve`. A home you already have is not rewritten: the plugins it lacks show as off in the plugin list and in their setup guides, and you turn one on there or with `operad plugin enable <name>`.
+- `terminal` does not hold up a start: `operad serve` installs its package once it is serving and reloads. Until then it is not set up (Setup Terminal), and a failed download is tried again at the next start of `serve`.
+- A home you already have keeps the plugins it has. A client of `operad serve` lists the shipped plugins it lacks (apart from `chat` and `radian`) as off, and you turn one on there or with `operad plugin enable <name>`.
 - A plugin that is not set up is quiet. A harness whose agent is not on the machine is not offered as an agent and asks for no login; `operad init` and `operad doctor` say it is not set up, and its setup guide (`/setup codex`, Setup Codex) walks you through it. Telegram without a token no longer logs a failure at each start of `serve`.
 - A repository that names no worker uses the first enabled agent that is on the machine.
-- `operad init` installs operad's own pi only when it finds no `claude`, `pi` or `radian`.
+- `operad init` installs operad's own pi for the first time only when it finds no `claude`, `pi` or `radian`.
 - operad's own pi is now 1.7.0 (was 1.6.0). A home that has the older copy and no `pi` on `PATH` gets the new one from `operad serve`, once it is serving, or sooner from `operad plugin enable pi` or `operad init`. The oldest pi accepted is still 1.5.0. A download that fails is tried again.
 - pi 1.7.0 no longer has a telemetry setting, so an opt-out in your own pi settings (`enableInstallTelemetry` or `PI_TELEMETRY`) no longer applies. pi dropped its install and update report, and now always names itself in requests to providers that accept an app name, such as OpenRouter.
-- A `claude`, `codex` or `pi` that is signed out or too old is `not set up:` in `operad init` and no longer fails it, and `operad doctor` names the next command instead of `operad init`. An enabled plugin that does not load fails `operad init`.
+- A `claude` or `codex` that is signed out, and a `claude`, `codex` or `pi` that is too old, is `not set up:` in `operad init` and no longer fails it (`init` does not check whether `pi` is signed in). For such an agent `operad doctor` names the next command instead of `operad init`. An enabled plugin that does not load fails `operad init`.
 - Creating a plan or a task is faster.
 - `operad serve` skips an `http.listen` address the machine does not have, such as one on a network that is down, with a warning, and listens on the others; restart it once the address is back. `operad doctor` reports each such address, the terminal client passes over it, and `operad pair` does not offer it. An address that cannot be opened is reported with its port.
-- A question that asks you to run a command, such as pi's ChatGPT login, gives the command on its own, so you can copy it whole: `operad pending`, history, the terminal client, Telegram and the MCP `pending` tool show it that way, and `operad bot login` waits for the question and prints it. The terminal client also wraps a long question.
+- A question that asks you to run a command, such as pi's ChatGPT login, gives the command on its own, so you can copy it whole: `operad pending`, history, the terminal client, Telegram and the MCP `pending` tool show it that way, and `operad bot login` waits for the question and prints the command. The terminal client also wraps a long question.
 
 ### Added
 
-- Terminals, the `terminal` plugin (on in a new home; elsewhere `operad plugin enable terminal`): `operad serve` runs any command or your login shell in any folder, keeps it when a client disconnects, and replays its screen to a client that comes back. A terminal in a registered repository or one of its worktrees says which repository. Starting and using one works only from the machine `serve` runs on. See [terminals](docs/user/terminal.md).
-- A setup guide for each of `claude`, `codex`, `pi` and `radian`. The guide of a shipped plugin is readable also while your config does not name it, and the `claude` guide before `claude` is installed.
-- `operad plugin list` says in one line what each plugin gives. A client of `operad serve` also lists the shipped plugins your config does not name, as off, so you can turn one on there.
+- Terminals, the `terminal` plugin (on in a new home; elsewhere `operad plugin enable terminal`): `operad serve` runs any command or your login shell in any folder, keeps it when a client disconnects, and replays its screen to a client that comes back. A terminal started in a registered repository's folder or in one of its git worktrees says which repository. Starting and using one works only from the machine `serve` runs on. See [terminals](docs/user/terminal.md).
+- A setup guide for each of `claude`, `codex`, `pi` and `radian`. The guides of `claude`, `codex`, `pi`, `dev` and `terminal` are readable also while your config does not name the plugin, and the `claude` guide before its package is installed.
+- `operad plugin list` says in one line what each plugin gives, and so does the plugin list a client of `operad serve` reads.
 - `operad start home:<name>` runs a [flow of your home](docs/user/home-flows.md) once, now, with optional `--params`, and history says who started it. `operad flows --json` shows each flow's steps, and a client can list flows and start one over [HTTP](docs/user/http.md#flows).
+
+#### For plugin authors
+
+- A plugin of any kind that declares `start` is started by `operad serve`, not only a source plugin. One whose `start` sends no event can declare `startsWithoutRules`, to start also when the trigger rules cannot be loaded. The context of `start` can read the registered repositories and an agent's command line. See [source plugins](docs/plugins/events.md#a-source-plugin).
+- A running plugin can serve [HTTP routes and stream events](docs/plugins/events.md#a-running-plugins-routes-and-events) on `serve`.
+- A harness can declare [`agentMissing`](docs/plugins/harness.md#when-the-agent-is-missing), to be left out while its agent is not on the machine, and [`interactiveCommand`](docs/plugins/harness.md#a-command-for-a-person), the command line a person runs the agent with.
+- `@operad-io/engine/platform` has [pseudo terminals](docs/plugins/platform.md#pseudo-terminals) and [folder holds](docs/plugins/platform.md#folder-holds).
+- A step's question can carry `command`, one line the person runs themselves; operad shows it and never runs it. [Tests](docs/plugins/testing.md) read it on the open question.
 
 ### Fixed
 
@@ -40,6 +49,7 @@ setup guide, and starts a flow of your home by hand.
 - A pi login answered from a client no longer ends as cancelled, and a first login no longer fails with no model to choose.
 - With `authPath` set for pi, the model list after a login includes the new provider.
 - pi's API key question closes once its login has ended.
+- A cancelled step's cleanup, such as giving back its place under a model's limit, is no longer cut off at its first message.
 
 ## [0.4.1] - 2026-11-24
 
