@@ -18,7 +18,9 @@ The package brings third-party dependencies, so it is not in the base install, a
 
 A terminal has a command line, a folder, a size and an id. The command line is any command, run in the person's login shell as `$SHELL -ilc <command>`; an empty command line opens the login shell itself. Agents are presets and nothing more: for each loaded harness plugin named `claude`, `codex` or `pi`, serve offers a command line to fill in under that name: the one the harness says a person runs its agent with (its `command` setting, or a pi operad installed), else the name.
 
-The folder is a registered repository's folder or one of its git worktrees, so a task's worktree is a folder a terminal can start in. The plugin learns the repositories from what loaded plugins register (their project settings, ADR 0017), and names no plugin.
+The folder is any existing directory on the machine serve runs on, kept as its real path. It is given as an absolute path; a relative path and `~` are refused.
+
+A terminal whose folder is a registered repository's folder or one of its git worktrees, such as a task's, says which repository that is, as found when it started, so a client can group terminals by project. Any other terminal, also one in a folder inside a repository or a worktree, has no repository. The plugin learns the repositories from what loaded plugins register (their project settings, ADR 0017), and names no plugin.
 
 `operad serve` owns the process. No other process starts one.
 
