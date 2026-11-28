@@ -77,3 +77,19 @@ the row fields.
 | T-0817-M21 | packages/terminal/src/session.ts | no reader was told to answer when the first left | `several readers > one is told to answer the program, and the next when it leaves` |
 | T-0817-M22 | packages/terminal/src/host.ts | a preset ignored the harness's command | `starting a terminal > offers the loaded agents as command lines` |
 | T-0817-M26 | packages/terminal/src/index.ts | the plugin did not say it starts without trigger rules | `serve without trigger rules > still serves terminals` |
+
+## T-0829 — a terminal starts in any folder
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0829-M1 | packages/terminal/src/host.ts | a folder that is no repository's was refused | `starting a terminal > starts in the home folder and in a folder outside every repository, which name none`, `a removed folder > a folder outside every repository removed is noticed and its terminals stopped`, `a removed folder > releasing a worktree stops the terminals in folders inside it, and no others` |
+| T-0829-M2 | packages/terminal/src/folders.ts | the folder was kept as asked, not as its real path | `starting a terminal > keeps the real path of a folder reached through a link` |
+| T-0829-M3 | packages/terminal/src/folders.ts | a relative path and `~` were not refused as such | `starting a terminal > refuses a missing folder, a file, a relative path and ~, saying why` |
+| T-0829-M4 | packages/terminal/src/folders.ts | a file was taken for a folder | `starting a terminal > refuses a missing folder, a file, a relative path and ~, saying why` |
+| T-0829-M5 | packages/terminal/src/folders.ts | a missing folder was reported as one that cannot be opened | `starting a terminal > refuses a missing folder, a file, a relative path and ~, saying why` |
+| T-0829-M6 | packages/terminal/src/folders.ts | a folder that cannot be opened was reported as missing | `starting a terminal > refuses a missing folder, a file, a relative path and ~, saying why` |
+| T-0829-M7 | packages/terminal/src/host.ts | a terminal did not keep the repository of its folder | `starting a terminal > in a repository or one of its worktrees names that repository`, `starting a terminal > keeps the real path of a folder reached through a link` |
+| T-0829-M8 | packages/terminal/src/folders.ts | a repository's worktrees named no repository | `starting a terminal > in a repository or one of its worktrees names that repository` |
+| T-0829-M9 | packages/terminal/src/folders.ts | a folder outside every repository named the first one | `starting a terminal > starts in the home folder and in a folder outside every repository, which name none` |
+| T-0829-M10 | packages/terminal/src/session.ts | the folder of a terminal with no repository was not looked at | `a removed folder > a folder outside every repository removed is noticed and its terminals stopped` |
+| T-0829-M11 | packages/terminal/src/session.ts | the folder hold did not name the terminal's folder | `a removed folder > releasing a worktree stops the terminals in folders inside it, and no others`, `a removed folder > releasing a worktree stops its terminals, and they say why`, `a removed folder > dev making a checking worktree again stops its terminals first`, `a removed folder > dev's cleanup stops both worktrees' terminals before a hook that names $OPERAD_WORKTREE`, `a removed folder > dev's cleanup stops both worktrees' terminals before a hook that runs git worktree remove`, `what an ended terminal left running > is stopped when its folder is released` |
