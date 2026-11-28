@@ -70,6 +70,7 @@ The types a plugin imports, by the page that explains them. The values these ent
 | `PluginStream` | The part of one event stream that belongs to a plugin. | [events](events.md) |
 | `PluginStreamEvent` | One event of a plugin on `/v1/events`. | [events](events.md) |
 | `PluginStreamRequest` | An event stream that named the plugin in its query. | [events](events.md) |
+| `SourceWatcher` | Told that a plugin's source started (`running`) or has stopped. | [events](events.md) |
 | `SourcedTriggerRule` | One rule and where it came from: `user`, or the plugin that shipped it. | [events](events.md) |
 | `StartRequest` | A type of the plugin API; its fields are described on the page. | [events](events.md) |
 | `StartResult` | What starting one run did. | [events](events.md) |

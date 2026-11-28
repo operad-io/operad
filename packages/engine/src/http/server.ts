@@ -16,10 +16,11 @@ import type {
   Actor,
   AskQuestionAnswer,
   PluginHttp,
+  PluginHttpResponse,
   PluginStream,
   PluginStreamEvent,
 } from "../plugin/types.ts";
-import type { Kernel } from "../trigger/kernel.ts";
+import type { Kernel, SourceWatcher } from "../trigger/kernel.ts";
 import { eventLine, fitsEventLine } from "../views/event-line.ts";
 import { listPending } from "../views/pending.ts";
 import {
@@ -75,6 +76,9 @@ export { MAX_SSE_EVENT_BYTES } from "../views/event-line.ts";
  */
 export const MAX_PLUGIN_STREAM_BYTES = 32 * 1024 * 1024;
 
+/** The `Retry-After` of a request for a plugin that is about to start, in seconds. */
+const PLUGIN_STARTING_RETRY_SECS = 1;
+
 /** The first path segments serve answers itself; no plugin is asked about them. */
 const BUILT_IN_ENDPOINTS: ReadonlySet<string> = new Set([
   "act",
@@ -110,6 +114,13 @@ export interface HttpServerOptions {
   readonly onLog?: ((message: string) => void) | undefined;
   /** What a running plugin serves under `/v1/<name>` and on the event stream. */
   readonly pluginHttp?: ((plugin: string) => PluginHttp | undefined) | undefined;
+  /** Whether a plugin that is not running is about to start: its routes answer `503`. */
+  readonly pluginStarting?: ((plugin: string) => boolean) | undefined;
+  /**
+   * Calls the watcher when a plugin starts or has stopped, so that open streams
+   * follow; the function returned ends that.
+   */
+  readonly watchPlugins?: ((watcher: SourceWatcher) => () => void) | undefined;
   /** The address a request came from; tests replace it to stand for another machine. */
   readonly peerAddress?: ((address: string | undefined) => string | undefined) | undefined;
   /** Called once per address with the URL it listens on. */
@@ -540,7 +551,7 @@ export function eventResponse(
   queueLimit: number,
   token: string,
   track: (token: string, close: () => void) => () => void,
-  plugins: readonly { readonly plugin: string; readonly stream: PluginStream }[] = [],
+  plugins: PluginParts = NO_PLUGIN_PARTS,
 ): Response {
   const resumeFrom = lastEventId(request.headers.get("last-event-id"));
   const encoder = new TextEncoder();
@@ -549,7 +560,9 @@ export function eventResponse(
   /** The kernel's own entries in the queue, and the bytes of the plugins'. */
   let queued = 0;
   let queuedPluginBytes = 0;
-  const closers: (() => void)[] = [];
+  /** How to end each plugin's part that is open, by plugin name. */
+  const closers = new Map<string, () => void>();
+  let unwatch: (() => void) | undefined;
   let closed = false;
   let finished = false;
   let wake: (() => void) | undefined;
@@ -563,7 +576,10 @@ export function eventResponse(
     closed = true;
     unsubscribe?.();
     unsubscribe = undefined;
-    for (const closer of closers.splice(0)) closer();
+    unwatch?.();
+    unwatch = undefined;
+    for (const closer of closers.values()) closer();
+    closers.clear();
     untrack?.();
     untrack = undefined;
     if (keepAlive !== undefined) clearInterval(keepAlive);
@@ -605,6 +621,39 @@ export function eventResponse(
     else enqueue(text, false, bytes);
   };
 
+  const openPart = (plugin: string, part: PluginStream): void => {
+    const closer = part.open((event) => pushPlugin(plugin, event));
+    // The stream may have ended while the plugin was opening its part.
+    if (closed) closer();
+    else closers.set(plugin, closer);
+  };
+
+  /** A plugin started or stopped while the stream was open. */
+  const follow = (plugin: string, running: boolean): void => {
+    if (closed || !plugins.names.has(plugin)) return;
+    if (!running) {
+      closers.get(plugin)?.();
+      closers.delete(plugin);
+      return;
+    }
+    try {
+      const joined = plugins.join(plugin);
+      if (joined === undefined) return;
+      // No status is left to refuse with: the next stream gets the refusal.
+      if (!("open" in joined)) {
+        finish();
+        return;
+      }
+      // What the client asked for before now may have been too early.
+      push(RESET_EVENT);
+      if (!closed) openPart(plugin, joined);
+    } catch (error) {
+      // The client opens another stream, which says what is wrong.
+      finish();
+      throw error;
+    }
+  };
+
   const stream = new ReadableStream<Uint8Array>({
     start(started) {
       controller = started;
@@ -622,12 +671,12 @@ export function eventResponse(
       // An immediate comment flushes the response headers; the client then has
       // a stream even when nothing changes for a while.
       push(": keep-alive\n\n");
-      for (const { plugin, stream: part } of plugins) {
+      // Nothing is awaited since the parts were joined, so no plugin started
+      // or stopped between that and this watch.
+      if (!closed) unwatch = plugins.watch?.(follow);
+      for (const { plugin, stream: part } of plugins.joined) {
         if (closed) break;
-        const closer = part.open((event) => pushPlugin(plugin, event));
-        // The stream may have ended while the plugin was opening its part.
-        if (closed) closer();
-        else closers.push(closer);
+        openPart(plugin, part);
       }
       keepAlive = setInterval(() => push(": keep-alive\n\n"), keepAliveMs);
       (keepAlive as { unref?: () => void }).unref?.();
@@ -656,6 +705,19 @@ export function eventResponse(
 
   return new Response(stream, { headers: SSE_HEADERS });
 }
+
+/** The plugins' parts of one event stream. */
+export interface PluginParts {
+  /** Those of the plugins that were running when the stream was asked for. */
+  readonly joined: readonly { readonly plugin: string; readonly stream: PluginStream }[];
+  /** The names the stream's query gave: a plugin among them may start later. */
+  readonly names: ReadonlySet<string>;
+  /** The part of a plugin that has started since; undefined when it sends no events. */
+  readonly join: (plugin: string) => PluginStream | PluginHttpResponse | undefined;
+  readonly watch?: ((watcher: SourceWatcher) => () => void) | undefined;
+}
+
+const NO_PLUGIN_PARTS: PluginParts = { joined: [], names: new Set(), join: () => undefined };
 
 /** A request body over the limit: the status line is 413. */
 class BodyTooLarge extends Error {}
@@ -711,14 +773,14 @@ function createHandler(
     const method = request.method.toUpperCase();
 
     if (method === "GET" && path === "/v1/events") {
+      const local = isLocalRequest(peer, request);
+      const names = new Set(url.searchParams.keys());
+      const join = (name: string) =>
+        options.pluginHttp?.(name)?.stream?.({ values: url.searchParams.getAll(name), local });
       const parts: { readonly plugin: string; readonly stream: PluginStream }[] = [];
-      for (const name of new Set(url.searchParams.keys())) {
-        const served = options.pluginHttp?.(name);
-        if (served?.stream === undefined) continue;
-        const joined = served.stream({
-          values: url.searchParams.getAll(name),
-          local: isLocalRequest(peer, request),
-        });
+      for (const name of names) {
+        const joined = join(name);
+        if (joined === undefined) continue;
         if (!("open" in joined)) return json(joined.body, joined.status);
         parts.push({ plugin: name, stream: joined });
       }
@@ -729,7 +791,7 @@ function createHandler(
         queueLimit,
         token.token,
         (value, close) => streams.track(value, close),
-        parts,
+        { joined: parts, names, join, watch: options.watchPlugins },
       );
     }
 
@@ -1187,7 +1249,13 @@ function createHandler(
 
     const [, version, plugin, ...rest] = path.split("/");
     if (version === "v1" && plugin !== undefined && !BUILT_IN_ENDPOINTS.has(plugin)) {
-      const answer = await options.pluginHttp?.(plugin)?.request({
+      const served = options.pluginHttp?.(plugin);
+      if (served === undefined && options.pluginStarting?.(plugin) === true) {
+        const starting = errorResponse(503, "unavailable", `plugin "${plugin}" is starting; try again`);
+        starting.headers.set("retry-after", String(PLUGIN_STARTING_RETRY_SECS));
+        return starting;
+      }
+      const answer = await served?.request({
         method,
         path: rest.map(decodeSegment),
         local: isLocalRequest(peer, request),

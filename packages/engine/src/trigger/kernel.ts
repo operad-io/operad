@@ -161,6 +161,9 @@ export async function start(
   });
 }
 
+/** Told that a plugin's source started (`running`) or has stopped. */
+export type SourceWatcher = (plugin: string, running: boolean) => void;
+
 export class Kernel {
   readonly log: LogBackend;
   readonly registry: PluginRegistry;
@@ -175,6 +178,9 @@ export class Kernel {
     readonly plugin: string;
     readonly handle: SourceHandle;
   }[] = [];
+  /** The sources whose start failed or was skipped: they are not about to run. */
+  private readonly notStarting = new Set<string>();
+  private readonly sourceWatchers = new Set<SourceWatcher>();
   /** One in-flight route per input, so same-process callers share a decision. */
   private readonly routing = new Map<string, Promise<TriggerResult>>();
   /** Where `recoverUnrouted` has read the inputs and the outcomes up to. */
@@ -818,7 +824,7 @@ export class Kernel {
     if (this.client === undefined) {
       throw new Error("the kernel has no client API to give its sources");
     }
-    const running = await this.registry.startSources({
+    await this.registry.startSources({
       ...(options.rulesLoaded === undefined ? {} : { rulesLoaded: options.rulesLoaded }),
       rules: this.rules,
       clock: this.clock,
@@ -826,13 +832,55 @@ export class Kernel {
       emit: async (event) => {
         await this.receive(event);
       },
+      onSettled: (plugin, handle) => {
+        if (handle === undefined) {
+          this.notStarting.add(plugin);
+          return;
+        }
+        this.notStarting.delete(plugin);
+        this.runningSources.push({ plugin, handle });
+        this.tellSourceWatchers(plugin, true);
+      },
     });
-    this.runningSources.push(...running);
   }
 
   /** What a running plugin serves over HTTP; undefined when it serves nothing. */
   pluginHttp(plugin: string): PluginHttp | undefined {
     return this.runningSources.find((source) => source.plugin === plugin)?.handle.http;
+  }
+
+  /**
+   * Whether a plugin has a source that is not running and may still start: its
+   * start has not ended, or it was stopped.
+   */
+  pluginStarting(plugin: string): boolean {
+    return (
+      this.registry.sourcePlugins().some((source) => source.plugin === plugin) &&
+      !this.notStarting.has(plugin) &&
+      !this.runningSources.some((source) => source.plugin === plugin)
+    );
+  }
+
+  /**
+   * Calls `watcher` each time a source starts or has stopped; the function
+   * returned ends that.
+   */
+  watchPlugins(watcher: SourceWatcher): () => void {
+    this.sourceWatchers.add(watcher);
+    return () => {
+      this.sourceWatchers.delete(watcher);
+    };
+  }
+
+  /** A watcher that throws is logged; it stops no source and no other watcher. */
+  private tellSourceWatchers(plugin: string, running: boolean): void {
+    for (const watcher of [...this.sourceWatchers]) {
+      try {
+        watcher(plugin, running);
+      } catch (error) {
+        this.onLog(`plugin "${plugin}": ${messageOf(error)}`);
+      }
+    }
   }
 
   /** Stops every source. A source that throws while stopping is logged. */
@@ -846,6 +894,8 @@ export class Kernel {
           `plugin "${source.plugin}": stop failed: ${messageOf(error)}`,
         );
       }
+      // After the stop, so what the source says while it stops is still heard.
+      this.tellSourceWatchers(source.plugin, false);
     }
   }
 

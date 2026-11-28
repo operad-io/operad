@@ -1676,3 +1676,12 @@ resume window`. Rows are append-only, so the old lines stay as history.
 |---|---|---|---|
 | T-0836-M2 | packages/engine/src/plugin/install.ts | a package counted as installed once the project named the wanted version | `ensuring a package is installed in the home > a failed upgrade is tried again, though the project already names the new version` |
 | T-0836-M3 | packages/engine/src/plugin/install.ts | an install that left another version behind passed | `ensuring a package is installed in the home > an install that leaves another version behind fails` |
+| T-0839-M1 | packages/engine/src/trigger/kernel.ts | open streams were not told that a plugin started | `a stream opened before a plugin starts > gets a reset and then the plugin's events once it runs` |
+| T-0839-M2 | packages/engine/src/http/server.ts | a part joined late with no `reset` before it | `a stream opened before a plugin starts > gets a reset and then the plugin's events once it runs` |
+| T-0839-M3 | packages/engine/src/http/server.ts | a stream kept the part of a plugin that stopped | `a stream opened before a plugin starts > leaves a plugin that stops and joins it again when it starts` |
+| T-0839-M4 | packages/engine/src/trigger/kernel.ts | started plugins were published only once the last one had started | `a stream opened before a plugin starts > does not wait for a slower plugin, and joins only the plugins it names` |
+| T-0839-M5 | packages/engine/src/http/server.ts | a stream joined a started plugin it did not name | `a stream opened before a plugin starts > does not wait for a slower plugin, and joins only the plugins it names` |
+| T-0839-M6 | packages/engine/src/http/server.ts | a stream stayed open when a plugin refused to join it late | `a stream opened before a plugin starts > ends when the plugin refuses its part, so the next one is told why` |
+| T-0839-M7 | packages/engine/src/http/server.ts | a stream stayed open when a late part could not be opened | `a stream opened before a plugin starts > ends when the plugin's part cannot be opened, and the other plugins still start` |
+| T-0839-M8 | packages/engine/src/http/server.ts | the routes of a plugin about to start were not answered `503` | `the routes of a plugin that is not running > say it is starting, with when to ask again, until it runs` |
+| T-0839-M9 | packages/engine/src/trigger/kernel.ts | a plugin whose start failed or was skipped still counted as starting | `the routes of a plugin that is not running > are not found when its start failed or is not tried` |

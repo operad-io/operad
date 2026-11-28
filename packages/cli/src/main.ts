@@ -11,7 +11,7 @@ import {
   pluginOffer,
   standInPlugins,
 } from "./defaults.ts";
-import { installAfterStart } from "./after-start.ts";
+import { awaitedPlugins, installAfterStart } from "./after-start.ts";
 import { pluginDescription } from "./plugin-description.ts";
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, writeSync } from "node:fs";
 import { userInfo } from "node:os";
@@ -2335,6 +2335,9 @@ async function commandServe(
   let installing: Promise<void> | undefined;
   const olderNotice = olderCodeNotice(context.home);
   olderNotice.clear();
+  const afterStart = context.config.plugins.filter((entry) => installsAfterStart(context.home, entry));
+  // Their routes say they are starting until the install here is done with them.
+  const awaited = awaitedPlugins(context.home, afterStart, standInPlugins());
   try {
     serveStage("starting the http server");
     if (context.config.http.enabled) {
@@ -2349,6 +2352,8 @@ async function commandServe(
           plugins: pluginAdminFor(context),
           flows: flowStarterFor(kernel, (message) => io.error(`${message}\n`)),
           pluginHttp: (name) => kernel.pluginHttp(name),
+          pluginStarting: (name) => awaited.has(name) || kernel.pluginStarting(name),
+          watchPlugins: (watcher) => kernel.watchPlugins(watcher),
           onListen: (url) => io.write(`http ${url}\n`),
           onLog: (message) => io.error(`${message}\n`),
         });
@@ -2412,7 +2417,8 @@ async function commandServe(
     controller.signal.addEventListener("abort", () => installStop.abort(), { once: true });
     if (controller.signal.aborted) installStop.abort();
     installing = installAfterStart({
-      entries: context.config.plugins.filter((entry) => installsAfterStart(context.home, entry)),
+      entries: afterStart,
+      awaited,
       signal: installStop.signal,
       install: async (entry) => {
         let installed = false;

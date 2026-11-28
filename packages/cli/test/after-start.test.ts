@@ -1,7 +1,7 @@
 // The packages `serve` installs once it is serving (ADR 0012 D4).
 
 import { describe, expect, test } from "bun:test";
-import { installAfterStart } from "../src/after-start.ts";
+import { awaitedPlugins, installAfterStart } from "../src/after-start.ts";
 
 const entry = (name: string) => ({ name, module: `@operad-io/${name}`, enabled: true, settings: {} });
 
@@ -46,5 +46,37 @@ describe("installing after the start", () => {
       onFailure: async (name) => void failures.push(name),
     });
     expect({ installed, asked, failures }).toEqual({ installed: [], asked: ["first"], failures: [] });
+  });
+});
+
+describe("the plugins awaiting their install", () => {
+  test("are those that are on and have a stand-in loading for them", () => {
+    const standIn = "/stand-in/plugin.ts";
+    const awaited = awaitedPlugins(
+      "/tmp/operad-test-no-home",
+      [
+        { ...entry("absent"), module: "operad-test-absent" },
+        { ...entry("off"), module: "operad-test-off", enabled: false },
+        // Its package is here, so it loads as itself.
+        entry("engine"),
+      ],
+      { "operad-test-absent": standIn, "operad-test-off": standIn, "@operad-io/engine": standIn },
+    );
+    expect([...awaited]).toEqual(["absent"]);
+  });
+
+  test("stay while a reload will load them, and leave when none will", async () => {
+    const awaited = new Set(["new", "there", "broken"]);
+    await installAfterStart({
+      entries: [entry("new"), entry("there"), entry("broken")],
+      install: async (item) => {
+        if (item.name === "broken") throw new Error("no network");
+        return item.name === "new";
+      },
+      signal: new AbortController().signal,
+      onFailure: async () => undefined,
+      awaited,
+    });
+    expect([...awaited]).toEqual(["new"]);
   });
 });

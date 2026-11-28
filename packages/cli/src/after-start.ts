@@ -4,7 +4,7 @@
  * failure: the plugin stays as it was and the next start tries again.
  */
 
-import { messageOf, type OperadConfig } from "@operad-io/engine";
+import { messageOf, standInModule, type OperadConfig } from "@operad-io/engine";
 
 type Entry = OperadConfig["plugins"][number];
 
@@ -16,6 +16,27 @@ export interface AfterStartOptions {
   readonly signal: AbortSignal;
   /** Receives the one line that says why a plugin is not set up. */
   readonly onFailure: (name: string, reason: string) => Promise<void>;
+  /**
+   * The names `awaitedPlugins` gave. One leaves when no reload will follow for
+   * it: its install failed or had nothing to do.
+   */
+  readonly awaited?: Set<string> | undefined;
+}
+
+/**
+ * The plugins a stand-in loads for among `entries`: each is about to start,
+ * once its package is installed and serve has reloaded (ADR 0029 D4).
+ */
+export function awaitedPlugins(
+  home: string,
+  entries: readonly Entry[],
+  standIns: Readonly<Record<string, string>>,
+): Set<string> {
+  return new Set(
+    entries
+      .filter((entry) => entry.enabled && standInModule(home, entry.module, standIns) !== undefined)
+      .flatMap((entry) => (entry.name === undefined ? [] : [entry.name])),
+  );
 }
 
 /** Installs one after another, as they share one project; answers the names newly installed. */
@@ -26,8 +47,10 @@ export async function installAfterStart(options: AfterStartOptions): Promise<rea
     const name = entry.name ?? entry.module;
     try {
       if (await options.install(entry)) installed.push(name);
+      else options.awaited?.delete(name);
     } catch (error) {
       if (options.signal.aborted) break;
+      options.awaited?.delete(name);
       await options.onFailure(name, messageOf(error).replace(/\s+/g, " ").trim());
     }
   }
