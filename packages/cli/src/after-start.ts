@@ -12,13 +12,18 @@ export interface AfterStartOptions {
   readonly entries: readonly Entry[];
   /** Installs what the entry needs; true when there was something to install. */
   readonly install: (entry: Entry) => Promise<boolean>;
+  /**
+   * Whether the package of an awaited entry is there now. Asked when `install`
+   * had nothing to do: another process may have installed it.
+   */
+  readonly arrived?: ((entry: Entry) => boolean) | undefined;
   /** An aborted signal means serve is stopping: nothing more starts and nothing is reported. */
   readonly signal: AbortSignal;
   /** Receives the one line that says why a plugin is not set up. */
   readonly onFailure: (name: string, reason: string) => Promise<void>;
   /**
    * The names `awaitedPlugins` gave. One leaves when no reload will follow for
-   * it: its install failed or had nothing to do.
+   * it: its install failed, or had nothing to do and its package is not there.
    */
   readonly awaited?: Set<string> | undefined;
 }
@@ -39,15 +44,20 @@ export function awaitedPlugins(
   );
 }
 
-/** Installs one after another, as they share one project; answers the names newly installed. */
+/**
+ * Installs one after another, as they share one project; answers the names a
+ * reload is to load: those newly installed, and awaited ones that arrived.
+ */
 export async function installAfterStart(options: AfterStartOptions): Promise<readonly string[]> {
   const installed: string[] = [];
   for (const entry of options.entries) {
     if (options.signal.aborted) break;
     const name = entry.name ?? entry.module;
     try {
-      if (await options.install(entry)) installed.push(name);
-      else options.awaited?.delete(name);
+      const installedHere = await options.install(entry);
+      if (installedHere || (options.awaited?.has(name) === true && options.arrived?.(entry) === true)) {
+        installed.push(name);
+      } else options.awaited?.delete(name);
     } catch (error) {
       if (options.signal.aborted) break;
       options.awaited?.delete(name);

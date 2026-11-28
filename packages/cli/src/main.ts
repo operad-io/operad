@@ -562,6 +562,8 @@ function rowLine(row: ViewRow, tty: boolean): string {
 interface Context extends OpenedHome {
   /** The code this process loaded, when the caller asked to keep track. */
   readonly code: CodeSnapshot | undefined;
+  /** The plugins that were to load as a stand-in, by name (ADR 0029 D4). */
+  readonly standingIn: ReadonlySet<string>;
 }
 
 interface OpenContextOptions {
@@ -605,6 +607,9 @@ export async function openContext(
   shareOptionalPlugins(optional);
   const standIns = standInPlugins();
   shareStandInPlugins(standIns);
+  // Also before anything loads: a package that arrives while loading is then
+  // still awaited, and a reload loads it.
+  const standingIn = awaitedPlugins(home, config.plugins, standIns);
   const context = await openHome({
     home,
     cwd,
@@ -648,6 +653,7 @@ export async function openContext(
   return {
     ...context,
     code,
+    standingIn,
     useKernelForEvents(kernel: Kernel): void {
       eventKernel = kernel;
     },
@@ -2337,7 +2343,9 @@ async function commandServe(
   olderNotice.clear();
   const afterStart = context.config.plugins.filter((entry) => installsAfterStart(context.home, entry));
   // Their routes say they are starting until the install here is done with them.
-  const awaited = awaitedPlugins(context.home, afterStart, standInPlugins());
+  const awaited = new Set(
+    afterStart.flatMap(({ name }) => (name !== undefined && context.standingIn.has(name) ? [name] : [])),
+  );
   try {
     serveStage("starting the http server");
     if (context.config.http.enabled) {
@@ -2419,6 +2427,7 @@ async function commandServe(
     installing = installAfterStart({
       entries: afterStart,
       awaited,
+      arrived: (entry) => standInModule(context.home, entry.module, standInPlugins()) === undefined,
       signal: installStop.signal,
       install: async (entry) => {
         let installed = false;
