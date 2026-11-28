@@ -824,6 +824,12 @@ export class Kernel {
     if (this.client === undefined) {
       throw new Error("the kernel has no client API to give its sources");
     }
+    // Those that will be skipped are not about to start, also while an earlier one starts.
+    if (options.rulesLoaded === false) {
+      for (const source of this.registry.sourcePlugins()) {
+        if (!source.startsWithoutRules) this.notStarting.add(source.plugin);
+      }
+    }
     await this.registry.startSources({
       ...(options.rulesLoaded === undefined ? {} : { rulesLoaded: options.rulesLoaded }),
       rules: this.rules,

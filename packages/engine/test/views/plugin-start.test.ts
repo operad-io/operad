@@ -25,7 +25,10 @@ afterEach(async () => {
 });
 
 /** A source plugin whose start ends only once the test releases it. */
-function gated(name: string, options: { readonly fails?: boolean; readonly http?: Partial<PluginHttp> } = {}) {
+function gated(
+  name: string,
+  options: { readonly fails?: boolean; readonly withoutRules?: boolean; readonly http?: Partial<PluginHttp> } = {},
+) {
   let release: () => void = () => undefined;
   let gate = Promise.resolve();
   const hold = (): void => {
@@ -42,6 +45,7 @@ function gated(name: string, options: { readonly fails?: boolean; readonly http?
     name,
     kind: "domain",
     version: "0.0.0",
+    startsWithoutRules: options.withoutRules === true,
     async start() {
       await gate;
       if (options.fails === true) throw new Error("no");
@@ -264,5 +268,15 @@ describe("the routes of a plugin that is not running", () => {
     const skipped = await serveWith([gated("skipped")]);
     await skipped.kernel.startSources({ rulesLoaded: false });
     expect((await skipped.call("/v1/skipped")).status).toBe(404);
+  });
+
+  test("are not found when it is not tried, while an earlier plugin is still starting", async () => {
+    const first = gated("first", { withoutRules: true });
+    const served = await serveWith([first, gated("later")]);
+    const starting = served.kernel.startSources({ rulesLoaded: false });
+    expect((await served.call("/v1/later")).status).toBe(404);
+    expect((await served.call("/v1/first")).status).toBe(503);
+    first.release();
+    await starting;
   });
 });
