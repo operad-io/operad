@@ -19,7 +19,7 @@ import { isRecord } from "@operad-io/engine";
 export const PI_PACKAGE = "@earendil-works/pi-coding-agent";
 
 /** The version operad installs into the home; it moves with an operad release (ADR 0023 D9). */
-export const PI_VERSION = "1.6.0";
+export const PI_VERSION = "1.7.0";
 
 /** The oldest pi the worker's calls are written for. */
 export const PI_FLOOR = "1.5.0";

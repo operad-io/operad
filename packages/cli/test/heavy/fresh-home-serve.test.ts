@@ -23,7 +23,7 @@ function homePi(home: string): void {
     join(dir, "package.json"),
     JSON.stringify({
       name: "@earendil-works/pi-coding-agent",
-      version: "1.6.0",
+      version: "1.7.0",
       exports: { ".": "./dist/index.js" },
       bin: { pi: "dist/cli.js" },
     }),
