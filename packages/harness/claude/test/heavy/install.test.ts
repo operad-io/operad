@@ -214,16 +214,29 @@ describe("claude check", () => {
     expect(detail).not.toContain("someone@example.com");
   });
 
-  test("fails when claude is below the floor", async () => {
+  test("is not set up, and no failure, when claude is below the floor", async () => {
     const check = await checks(await fakeClaude({ version: "2.0.0 (Claude Code)" }));
-    expect(check?.ok).toBe(false);
-    expect(JSON.stringify(check)).toContain("older than the floor");
+    expect(check?.ok).toBe(true);
+    expect(check?.message).toStartWith("not set up: claude 2.0.0 at ");
+    expect(check?.message).toContain("older than the floor");
+    expect(check?.missing?.map((item) => item.name)).toEqual(["check"]);
   });
 
-  test("fails when claude is not logged in", async () => {
+  test("is not set up, and no failure, when claude is not logged in", async () => {
     const check = await checks(await fakeClaude({ auth: JSON.stringify({ loggedIn: false }), authExit: 1 }));
+    const reason = "claude is not logged in; run `claude auth login`, then check again";
+    expect(check).toEqual({
+      plugin: "claude",
+      ok: true,
+      message: `not set up: ${reason}`,
+      missing: [{ name: "check", description: reason }],
+    });
+  });
+
+  test("fails when claude's login answer cannot be read", async () => {
+    const check = await checks(await fakeClaude({ auth: "Logged in as nobody" }));
     expect(check?.ok).toBe(false);
-    expect(JSON.stringify(check)).toContain("not logged in");
+    expect(check?.message).toContain("auth status");
   });
 
   test("fails when there is no claude", async () => {

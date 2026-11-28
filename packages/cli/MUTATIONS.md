@@ -595,3 +595,11 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 | T-0816-M37 | packages/cli/src/after-start.ts | a failed install failed serve instead of being reported | `installing after the start > reports a failure as one line and goes on, without failing` |
 | T-0816-M38 | packages/cli/src/after-start.ts | the next install started after a stop | `installing after the start > a stop ends it quietly: no report, and nothing more starts` |
 | T-0816-M39 | packages/cli/src/stand-in/terminal/plugin.ts | the stand-in said it was set up | `terminal in a new home of the packed CLI > no start fails with a download that does, and the next start installs and loads it` |
+
+## T-0826 — an agent signed out or too old is not set up
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0826-M9 | packages/cli/src/main.ts | doctor ignored what a passing check reports missing | `` `operad init` with an agent that needs the person > a claude older than the floor is not set up, init passes, and doctor lists a problem `` |
+| T-0826-M10 | packages/cli/src/main.ts | init passed with an enabled plugin that did not load | `` `operad init` still fails on a real failure > a plugin that cannot load, beside plugins that load `` |
+| T-0826-M11 | packages/cli/src/main.ts | init passed when no plugin at all loaded | `` `operad init` still fails on a real failure > a plugin that cannot load, as the only plugin `` |

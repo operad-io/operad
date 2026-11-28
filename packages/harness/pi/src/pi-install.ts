@@ -35,6 +35,14 @@ export class PiInstallError extends Error {
   }
 }
 
+/** The pi is there, and the person has to upgrade it first. */
+export class PiTooOldError extends PiInstallError {
+  constructor(message: string) {
+    super(message);
+    this.name = "PiTooOldError";
+  }
+}
+
 /** Where a pi lives and what it is. */
 export interface PiInstall {
   /** The command as given. */
@@ -154,7 +162,7 @@ function installAt(packageDir: string, command: string, realPath: string, floor:
     throw new PiInstallError(`${join(packageDir, "package.json")}: version is missing or not a version`);
   }
   if (compareVersions(version, floor) < 0) {
-    throw new PiInstallError(
+    throw new PiTooOldError(
       `pi ${version} at ${packageDir} is older than the floor ${floor}; upgrade pi (${PI_PACKAGE} ${floor} or newer)`,
     );
   }

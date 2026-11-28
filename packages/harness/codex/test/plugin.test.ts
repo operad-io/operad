@@ -947,19 +947,32 @@ describe("codex check", () => {
     expect(check?.message).toContain("login ChatGPT");
   });
 
-  test("refuses when Codex is not logged in", async () => {
+  test("is not set up, and no failure, when Codex is not logged in", async () => {
     const env = await setup("done", { vars: { FAKE_CODEX_LOGIN: "out" } });
     const check = (await env.registry.checks()).find((item) => item.plugin === "codex");
-    expect(check?.ok).toBe(false);
-    expect(check?.message).toContain("not logged in");
+    const reason = "Codex is not logged in; run `codex login` first";
+    expect(check).toEqual({
+      plugin: "codex",
+      ok: true,
+      message: `not set up: ${reason}`,
+      missing: [{ name: "check", description: reason }],
+    });
   });
 
-  test("refuses an installed Codex that is too old", async () => {
+  test("is not set up, and no failure, with an installed Codex that is too old", async () => {
     const env = await setup("done", { vars: { FAKE_CODEX_VERSION: "0.100.0" } });
     const check = (await env.registry.checks()).find((item) => item.plugin === "codex");
-    expect(check?.ok).toBe(false);
-    expect(check?.message).toContain("too old");
+    expect(check?.ok).toBe(true);
+    expect(check?.message).toStartWith("not set up: Codex 0.100.0 is too old");
     expect(check?.message).toContain("0.166.0");
+    expect(check?.missing?.map((item) => item.name)).toEqual(["check"]);
+  });
+
+  test("an old Codex with no app-server is not set up for its version", async () => {
+    const env = await setup("no-app-server", { vars: { FAKE_CODEX_VERSION: "0.100.0" } });
+    const check = (await env.registry.checks()).find((item) => item.plugin === "codex");
+    expect(check?.ok).toBe(true);
+    expect(check?.message).toStartWith("not set up: Codex 0.100.0 is too old");
   });
 
   test("refuses a Codex with no app-server", async () => {
