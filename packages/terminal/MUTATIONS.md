@@ -93,3 +93,9 @@ the row fields.
 | T-0829-M9 | packages/terminal/src/folders.ts | a folder outside every repository named the first one | `starting a terminal > starts in the home folder and in a folder outside every repository, which name none` |
 | T-0829-M10 | packages/terminal/src/session.ts | the folder of a terminal with no repository was not looked at | `a removed folder > a folder outside every repository removed is noticed and its terminals stopped` |
 | T-0829-M11 | packages/terminal/src/session.ts | the folder hold did not name the terminal's folder | `a removed folder > releasing a worktree stops the terminals in folders inside it, and no others`, `a removed folder > releasing a worktree stops its terminals, and they say why`, `a removed folder > dev making a checking worktree again stops its terminals first`, `a removed folder > dev's cleanup stops both worktrees' terminals before a hook that names $OPERAD_WORKTREE`, `a removed folder > dev's cleanup stops both worktrees' terminals before a hook that runs git worktree remove`, `what an ended terminal left running > is stopped when its folder is released` |
+
+## T-0834 — follow-ups to terminals in any folder
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0834-M1 | packages/terminal/src/folders.ts | another repository's worktree, listed first, named a repository's own folder | `starting a terminal > a repository's own folder names it before another repository's worktree` |
