@@ -54,11 +54,13 @@ import {
 import { authFileHasCredential } from "./auth-file.ts";
 import {
   PI_LIST_TIMEOUT_MS,
+  type PiListFiles,
   piModelInfo,
   piModelList,
   piModelListReady,
   piModelWindows,
   readPiModelList,
+  refreshPiModelList,
 } from "./model-list.ts";
 import { DEFAULT_PI_COMMAND, findPi, PI_FLOOR, PI_VERSION, piPresent } from "./pi-install.ts";
 import { runLoginStep, type LoginRunOptions } from "./login.ts";
@@ -102,6 +104,8 @@ export interface PiHarnessOptions {
   readonly now?: (() => number) | undefined;
   /** How long `pi --list-models` may take; defaults to `PI_LIST_TIMEOUT_MS`. */
   readonly listTimeoutMs?: number | undefined;
+  /** Test seam: pi's own agent folder; defaults to `PI_CODING_AGENT_DIR`, else `~/.pi/agent`. */
+  readonly piAgentDir?: string | undefined;
   /** pi's settings file, where its default model is; defaults to `~/.pi/agent/settings.json`. */
   readonly piSettingsPath?: string | undefined;
   /** Test seam: how long a chat's worker is kept after a reply. */
@@ -280,18 +284,36 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
       : DEFAULT_MODELS_PATH;
   }
 
-  function listOptions(
-    piCommand: string,
-    context: HarnessModelContext,
-    modelsPath: string = DEFAULT_MODELS_PATH,
-  ) {
+  /**
+   * The files the model list is read from, which a login and a step use too.
+   * Undefined when they are the two in pi's own folder (the one
+   * `PI_CODING_AGENT_DIR` may name), where pi finds them itself.
+   */
+  function listFilesOf(settings: Readonly<Record<string, unknown>>): PiListFiles | undefined {
+    const agentDir = expandHome(
+      options.piAgentDir ?? (process.env.PI_CODING_AGENT_DIR || dirname(DEFAULT_AUTH_PATH)),
+    );
+    const authPath = expandHome(
+      typeof settings.authPath === "string" && settings.authPath !== ""
+        ? settings.authPath
+        : DEFAULT_AUTH_PATH,
+    );
+    const modelsPath = expandHome(modelsPathOf(settings));
+    const piFindsThem =
+      resolve(authPath) === resolve(agentDir, "auth.json") &&
+      resolve(modelsPath) === resolve(agentDir, "models.json");
+    return piFindsThem ? undefined : { agentDir, authPath, modelsPath };
+  }
+
+  function listOptions(settings: Readonly<Record<string, unknown>>, context: HarnessModelContext) {
     return {
       home: context.home,
-      command: piCommand,
+      command: piCommandFor(settings, context.home),
+      files: listFilesOf(settings),
       now,
       timeoutMs: listTimeoutMs,
       log: context.log,
-      registryPath: join(dirname(expandHome(modelsPath)), "models-store.json"),
+      registryPath: join(dirname(expandHome(modelsPathOf(settings))), "models-store.json"),
       readFile,
     };
   }
@@ -389,12 +411,12 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
     ready = false,
   ): PiDeclaredModels | Promise<PiDeclaredModels> {
     const configured = stringList(settings.models);
-    const options = listOptions(piCommandFor(settings, context.home), context, modelsPathOf(settings));
-    const first = readPiModelList(options) ?? null;
-    if (configured !== undefined) return declaredModels(settings, options, first, configured);
-    if (!ready) return declaredModels(settings, options, first, piModelList(options, first));
-    return piModelListReady(options, first).then((list) =>
-      declaredModels(settings, options, first ?? readPiModelList(options) ?? null, list),
+    const asked = listOptions(settings, context);
+    const first = readPiModelList(asked) ?? null;
+    if (configured !== undefined) return declaredModels(settings, asked, first, configured);
+    if (!ready) return declaredModels(settings, asked, first, piModelList(asked, first));
+    return piModelListReady(asked, first).then((list) =>
+      declaredModels(settings, asked, first ?? readPiModelList(asked) ?? null, list),
     );
   }
 
@@ -452,7 +474,16 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
         // model they chose (ADR 0023 D11).
         results: ["done", "failed"],
         timeoutSecs: 660,
-        run: (ctx: StepContext) => runLoginStep(ctx, loginOptions),
+        run: (ctx: StepContext) =>
+          runLoginStep(ctx, {
+            ...loginOptions,
+            // A list kept from before the login lacks the models it opens.
+            afterLogin: async () => {
+              if (stringList(ctx.settings.models) !== undefined) return;
+              const context = { home: ctx.home, log: (message: string) => void ctx.logger.write(message) };
+              await refreshPiModelList(listOptions(ctx.settings, context));
+            },
+          }),
       },
       {
         name: "agent",
@@ -511,18 +542,12 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
               const configured = stringList(ctx.settings.models);
               if (configured !== undefined && read.model !== undefined && configured.includes(read.model)) {
                 const listed = piModelList(
-                  listOptions(
-                    piCommandFor(ctx.settings, ctx.home),
-                    {
-                      home: ctx.home,
-                      log: (message) => {
-                        void ctx.logger.write(message);
-                      },
+                  listOptions(ctx.settings, {
+                    home: ctx.home,
+                    log: (message) => {
+                      void ctx.logger.write(message);
                     },
-                    typeof ctx.settings.modelsPath === "string"
-                      ? ctx.settings.modelsPath
-                      : DEFAULT_MODELS_PATH,
-                  ),
+                  }),
                 );
                 if (listed.length > 0 && !listed.includes(read.model)) {
                   await ctx.logger.write(

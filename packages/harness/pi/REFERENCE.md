@@ -229,6 +229,15 @@ store like every step log. The model list `pi --list-models` printed is kept in
 `<operad home>/harness/pi/model-list.json`; a read older than ten minutes starts
 one background refresh, and no process waits for that refresh at load.
 
+When `authPath` or `modelsPath` is not the file pi's own agent folder holds
+(`~/.pi/agent`, or what `PI_CODING_AGENT_DIR` names), `pi --list-models` runs
+with `PI_CODING_AGENT_DIR` set to `<operad home>/harness/pi/list-agent`: pi has
+no option for a credentials file. That folder holds links to what pi's own agent
+folder holds, except its `.lock` entries, with `auth.json`, `models.json` and
+`models-store.json` leading to `authPath`, `modelsPath` and the registry store
+beside `modelsPath`. A configured file that does not exist yet is linked when
+its folder exists, so pi creates it there.
+
 ### How the step ends
 
 | condition | result | `reason` |

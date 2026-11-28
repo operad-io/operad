@@ -50,6 +50,8 @@ export interface LoginRunOptions {
   readonly timeoutMs?: number | undefined;
   /** The time now in milliseconds; defaults to `Date.now`. */
   readonly now?: (() => number) | undefined;
+  /** Runs once the credential is written, before the model choice. */
+  readonly afterLogin?: (() => Promise<void>) | undefined;
 }
 
 /** A failure that ends the login without a person's answer. */
@@ -236,7 +238,7 @@ async function chooseProvider(
     choiceInfo[route.provider] = { label: routeLabel(provider) };
   }
   const answer = await ctx.ask({
-    prompt: `Choose a provider to log in with an API key. For a ChatGPT plan, run \`${command}\` instead; operad picks it up once it is done.`,
+    prompt: "Choose a provider to log in with an API key. For a ChatGPT plan, run the command below instead; operad picks it up once it is done.",
     command,
     choices,
     choiceInfo,
@@ -384,6 +386,7 @@ export async function runLoginStep(
         if (answer !== "") child.send({ type: "answer", id: line.id, value: answer });
       }
     }
+    await options.afterLogin?.();
     const model = await chooseModel(ctx, route.provider);
     if (model === undefined) return failed("the login finished but no model was chosen");
     return { result: "done", data: { provider: route.provider, model } };

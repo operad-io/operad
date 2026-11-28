@@ -86,16 +86,19 @@ the risk the owner decided against. A person who wants their
 ChatGPT plan, or another subscription (ADR 0024 D3 gives the reason for
 Anthropic), runs pi's own login, `pi auth login openai-codex`. The first
 question of the login says in plain words that logging in there takes an API key
-and that a ChatGPT plan logs in by running that command instead. The command a
-person can run is in that sentence and, alone, in the question's `command` (ADR
-0008 D9): `pi ...` when `pi` is on `PATH` (or the `command` setting), else the
-full path of the pi operad installed in the home (D9). operad only checks
+and that a ChatGPT plan logs in by running the command below instead. The
+command a person can run is not in that sentence; it is alone in the question's
+`command` (ADR 0008 D9): `pi ...` when `pi` is on `PATH` (or the `command`
+setting), else the full path of the pi operad installed in the home (D9). operad only checks
 whether pi is signed in, as it does for `claude` and `codex`: `signedIn` reads
 `authPath` on every call, so the next check sees a login made elsewhere with no
 restart of `serve`.
 
 The providers and the models are pi's own catalog, read through the child and
-`ctx.harnessModels`; operad names no provider or model of its own. The model
+`ctx.harnessModels`; operad names no provider or model of its own. When the
+`models` setting names no list, the step asks `pi --list-models` again once the
+login is done, because a list operad kept from before the login lacks the models
+the new credential opens. The model
 preselected after a login is the harness's declared default when it belongs to
 the provider, else the first model the catalog lists for that provider; the
 step checks the choice against the catalog before it returns. The credential is

@@ -1590,6 +1590,47 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0819-M15 | packages/engine/src/loop/serve.ts | the pass over active runs did not read an unread home flow | `it gives no process to a run of the flow while a step it needs is missing` |
 | T-0819-M16 | packages/engine/src/loop/serve.ts | each pass listed the active runs once more to read their home flows | `a tick over a large history (sqlite) > reads what changed, not every input, answer and outcome ever recorded` |
 
+## T-0821 — a question's command in history
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0821-M1 | packages/engine/src/views/history.ts | an entry did not carry the question's command | `a question's command is a line of its own, whole, where the question is` |
+| T-0821-M2 | packages/engine/src/views/history.ts | the printed entry left the command out | `a question's command is a line of its own, whole, where the question is` |
+| T-0821-M3 | packages/engine/src/views/history.ts | the History section left the command out | `a question's command is a line of its own, whole, where the question is` |
+| T-0821-M4 | packages/engine/src/views/history.ts | the section's fence was three backticks whatever the command held | `a question's command is a line of its own, whole, where the question is` |
+## T-0822 — a secret answer reaches the step
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0822-M1 | packages/engine/src/runner/ask.ts | the step did not read the hand-over, so it got no text from another process | `a secret answer over HTTP reaches the step, is never recorded, and a second is refused`, `the pi login over HTTP saves the key and ends logged in` |
+| T-0822-M2 | packages/engine/src/runner/ask.ts | the answerer removed the text when the step had already written the fact from its claim | `a secret answer's hand-over > it is kept when the step writes the answer's fact before the answerer does` |
+| T-0822-M3 | packages/engine/src/views/presentation.ts | an answer over HTTP named no home | `the pi login over HTTP saves the key and ends logged in`, `a secret answer over HTTP reaches the step, is never recorded, and a second is refused` |
+| T-0822-M4 | packages/engine/src/runner/ask.ts | an answer that lost the claim was not refused | `a secret answer's hand-over > a second answer that loses the claim is refused and leaves the first one's text` |
+| T-0822-M5 | packages/engine/src/runner/ask.ts | an answer that lost the claim removed every text of the question | `a secret answer's hand-over > a second answer that loses the claim is refused and leaves the first one's text` |
+| T-0822-M6 | packages/engine/src/runner/ask.ts | an answer that lost the claim left its own text | `a secret answer's hand-over > a second answer that loses the claim is refused and leaves the first one's text` |
+| T-0822-M7 | packages/engine/src/runner/secret-answers.ts | the file was written with the default mode | `a secret answer's hand-over > only the owner can read what waits for the step` |
+| T-0822-M8 | packages/engine/src/runner/ask.ts | an answer refused because the question closed left its text | `a secret answer's hand-over > an answer the question closed before leaves nothing behind` |
+| T-0822-M9 | packages/engine/src/runner/ask.ts | a step that stopped waiting left the question's texts | `a secret answer's hand-over > a step that stops waiting removes an answer that was never claimed` |
+| T-0822-M10 | packages/engine/src/runner/ask.ts | a secret answer with no home was taken as success without reaching the step | `a secret answer's hand-over > an answer that cannot name a home to hand it through is refused before it is claimed` |
+| T-0822-M11 | packages/engine/src/loop/serve.ts | `serve` did not remove left-over texts when it started | `a secret answer's hand-over > a left-over answer is removed once it is stale, by a sweep and when serve starts` |
+| T-0822-M12 | packages/engine/src/runner/secret-answers.ts | the sweep removed a text that was not stale yet | `a secret answer's hand-over > a left-over answer is removed once it is stale, by a sweep and when serve starts` |
+
+## T-0823 — a lost secret answer, and the sweep of a running serve
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0823-M1 | packages/engine/src/runner/ask.ts | a step whose claimed text was gone got the redacted answer, as before the fix | `a secret answer's hand-over > a step whose claimed answer is gone fails instead of reading it as skipped` |
+| T-0823-M2 | packages/engine/src/loop/serve.ts | `serve` removed left-over texts only when it started, as before the fix | `a secret answer's hand-over > a running serve removes a left-over answer within a sweep of it turning stale` |
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0824-M1 | packages/engine/src/runner/step-worker.ts | a worker's question did not tell the runner it has a `recheck`, as before the fix | `step worker in this process > runs a question's recheck when the parent asks and sends back what it says`; `pi/login > a login program that ends while the key question is open closes it and gives its reason` (packages/harness/pi, timed out) |
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0825-M1 | packages/engine/src/runner/runner.ts | any message from a settled step's worker ended the worker, as before the fix | `a cancelled step in a worker > finishes its cleanup while it withdraws a question and gives a place back` |
+| T-0825-M2 | packages/engine/src/runner/runner.ts | a settled step's worker was not served the place its cleanup gives back | `a cancelled step in a worker > finishes its cleanup while it withdraws a question and gives a place back` |
+
 ## T-0816 — every shipped plugin on in a new home
 
 | id | file | mutation | failing test |

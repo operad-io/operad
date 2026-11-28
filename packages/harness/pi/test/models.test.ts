@@ -1,5 +1,16 @@
 import { afterAll, describe, expect, test } from "bun:test";
-import { chmodSync, existsSync, mkdirSync, readFileSync, utimesSync, writeFileSync } from "node:fs";
+import {
+  chmodSync,
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  readlinkSync,
+  rmSync,
+  symlinkSync,
+  utimesSync,
+  writeFileSync,
+} from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadPluginRegistry, MemoryPluginStore, PluginRegistry } from "@operad-io/engine";
@@ -13,6 +24,7 @@ import {
   PI_LIST_CACHE_MS,
   piModelListPath,
   refreshPiModelList,
+  relink,
 } from "../src/model-list.ts";
 
 afterAll(cleanupTempRoots);
@@ -78,6 +90,8 @@ function registryFor(
 ): PluginRegistry {
   const plugin = createPiHarnessPlugin({
     piSettingsPath: env.settingsPath,
+    // pi's own folder, so no test reaches the user's.
+    piAgentDir: env.root,
     ...(extra.now === undefined ? {} : { now: extra.now }),
     ...(extra.listTimeoutMs === undefined ? {} : { listTimeoutMs: extra.listTimeoutMs }),
     ...(extra.readFile === undefined ? {} : { readFile: extra.readFile }),
@@ -87,7 +101,12 @@ function registryFor(
     cwd: env.root,
     store: new MemoryPluginStore({ root: join(env.root, "store") }),
     settings: {
-      pi: { command: env.fake, modelsPath: join(env.root, "models.json"), ...settings },
+      pi: {
+        command: env.fake,
+        authPath: join(env.root, "auth.json"),
+        modelsPath: join(env.root, "models.json"),
+        ...settings,
+      },
     },
     onLog: extra.log ?? (() => undefined),
   });
@@ -190,6 +209,136 @@ describe("the models pi declares", () => {
     expect(askedTimes(env)).toBe(0);
     expect(registry.loadedModels().pi?.list).toEqual(["kept/one"]);
     expect(askedTimes(env)).toBe(0);
+  });
+
+  test("a configured credentials file is read with pi's other files, and none of them is changed", async () => {
+    const env = await fakePi("");
+    const seen = join(env.root, "seen");
+    const read = 'for f in auth.json models.json models-store.json settings.json; do echo "$f=$(cat "$PI_CODING_AGENT_DIR/$f" 2>/dev/null)"; done';
+    writeFileSync(env.fake, `#!/bin/sh\n${read} > "${seen}"\n`);
+    const own = join(env.root, "agent");
+    const other = join(env.root, "other");
+    mkdirSync(own);
+    mkdirSync(other);
+    writeFileSync(join(own, "auth.json"), "own-auth");
+    writeFileSync(join(own, "settings.json"), "own-settings");
+    writeFileSync(join(other, "creds.json"), "other-auth");
+    writeFileSync(join(other, "my-models.json"), "other-models");
+    const files = { agentDir: own, authPath: join(other, "creds.json"), modelsPath: join(other, "my-models.json") };
+    let now = 0;
+    const ask = () => refreshPiModelList({ home: env.root, command: env.fake, now: () => now, files });
+
+    await ask();
+    expect(readFileSync(seen, "utf8")).toBe(
+      "auth.json=other-auth\nmodels.json=other-models\nmodels-store.json=\nsettings.json=own-settings\n",
+    );
+    // A later ask sees what changed since, in the same folder.
+    writeFileSync(join(other, "models-store.json"), "other-store");
+    rmSync(join(other, "my-models.json"));
+    now = PI_LIST_CACHE_MS;
+    await ask();
+    expect(readFileSync(seen, "utf8")).toBe(
+      "auth.json=other-auth\nmodels.json=\nmodels-store.json=other-store\nsettings.json=own-settings\n",
+    );
+    expect(readFileSync(join(own, "auth.json"), "utf8")).toBe("own-auth");
+    expect(readFileSync(join(other, "creds.json"), "utf8")).toBe("other-auth");
+  });
+
+  /** The agent folder `pi --list-models` was given under these settings. */
+  async function folderGiven(settings: (env: Env) => Record<string, unknown>) {
+    const env = await fakePi("");
+    const seen = join(env.root, "seen");
+    writeFileSync(env.fake, `#!/bin/sh\necho "\${PI_CODING_AGENT_DIR-unset}" > "${seen}"\n`);
+    await registryFor(env, settings(env)).loadedModelsReady();
+    const operads = join(env.root, "harness", "pi", "list-agent");
+    return { given: readFileSync(seen, "utf8").trim(), operads };
+  }
+
+  test("when pi's own folder holds both files, pi is left to find that folder", async () => {
+    const { given } = await folderGiven(() => ({}));
+    expect(given).toBe(process.env.PI_CODING_AGENT_DIR ?? "unset");
+  });
+
+  test("a models file of its own is given to pi, beside pi's own credentials file", async () => {
+    const { given, operads } = await folderGiven((env) => ({
+      modelsPath: join(env.root, "other", "models.json"),
+    }));
+    expect(given).toBe(operads);
+  });
+
+  test("default files outside the folder pi was told to use are still the ones it lists from", async () => {
+    // As with `PI_CODING_AGENT_DIR` set: a login writes the default files.
+    const { given, operads } = await folderGiven(() => ({
+      authPath: "~/.pi/agent/auth.json",
+      modelsPath: "~/.pi/agent/models.json",
+    }));
+    expect(given).toBe(operads);
+  });
+
+  /** A fake pi that runs `body`, with its own folder and another for the configured files. */
+  async function listFolder(body: string) {
+    const env = await fakePi(body);
+    const own = join(env.root, "agent");
+    const other = join(env.root, "other");
+    mkdirSync(own);
+    mkdirSync(other);
+    const files = { agentDir: own, authPath: join(other, "auth.json"), modelsPath: join(other, "models.json") };
+    let now = 0;
+    const ask = async () => {
+      await refreshPiModelList({ home: env.root, command: env.fake, now: () => now, files });
+      now += PI_LIST_CACHE_MS;
+    };
+    return { own, other, ask, dir: join(env.root, "harness", "pi", "list-agent") };
+  }
+
+  const names = (dir: string): string[] => readdirSync(dir).sort();
+
+  test("the list folder drops links to entries that left pi's folder, and links no lock", async () => {
+    const { own, ask, dir } = await listFolder("");
+    writeFileSync(join(own, "settings.json"), "{}");
+    writeFileSync(join(own, "extra.json"), "{}");
+    mkdirSync(join(own, "settings.json.lock"));
+    await ask();
+    expect(names(dir)).toEqual(["auth.json", "extra.json", "models-store.json", "models.json", "settings.json"]);
+    rmSync(join(own, "extra.json"));
+    // A lock pi holds in the list folder itself is not operad's to remove.
+    mkdirSync(join(dir, "held.lock"));
+    await ask();
+    expect(names(dir)).toEqual(["auth.json", "held.lock", "models-store.json", "models.json", "settings.json"]);
+  });
+
+  test("a configured file pi creates appears at its configured place and stays", async () => {
+    const store = '"$PI_CODING_AGENT_DIR/models-store.json"';
+    const { other, ask } = await listFolder(`[ -f ${store} ] || echo made > ${store}`);
+    await ask();
+    await ask();
+    expect(readFileSync(join(other, "models-store.json"), "utf8")).toBe("made\n");
+  });
+
+  test("a configured file whose folder is missing is not linked", async () => {
+    const { other, ask, dir } = await listFolder("");
+    rmSync(other, { recursive: true });
+    await ask();
+    expect(names(dir)).toEqual([]);
+  });
+
+  test("a link another process made first does not fail the relink", async () => {
+    const root = await tempRoot();
+    const at = join(root, "link");
+    const wanted = join(root, "wanted");
+    // The other process may lead it to the same place or to another one.
+    for (const theirs of [wanted, join(root, "theirs")]) {
+      rmSync(at, { force: true });
+      let raced = false;
+      relink(wanted, at, (target, path) => {
+        if (!raced) {
+          raced = true;
+          symlinkSync(theirs, path);
+        }
+        symlinkSync(target, path);
+      });
+      expect(readlinkSync(at)).toBe(wanted);
+    }
   });
 
   test("first use with no kept file waits for one refresh", async () => {

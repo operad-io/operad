@@ -170,6 +170,7 @@ export async function openHome(options: OpenHomeOptions): Promise<OpenedHome> {
       if (run === undefined) throw new StateError(`no run "${runId}"`);
       await recordAnswer({
         log,
+        home,
         runId,
         choice,
         ...(note === undefined ? {} : { note }),

@@ -37,6 +37,7 @@ import {
   childProgress,
   displayChildren,
   rowDetail,
+  type TuiAnswer,
   rowName,
   activeTab,
   formatElapsed,
@@ -886,10 +887,13 @@ function inputContent(state: TuiState, palette: TuiPalette): StyledText | undefi
     return styled(chunks);
   }
   if (input.kind === "answer") {
-    const chunks: TextChunk[] = [
-      chunk(`${input.answer.prompt}\n`, palette.accent, TextAttributes.BOLD),
-    ];
-    const rows = choiceRows(state, 2);
+    const head = answerHead(state, input.answer);
+    const chunks: TextChunk[] = head.prompt.map((line) =>
+      chunk(`${line}\n`, palette.accent, TextAttributes.BOLD),
+    );
+    for (const line of head.command) chunks.push(chunk(`${line}\n`, palette.text));
+    for (const line of head.hint) chunks.push(chunk(`${line}\n`, palette.weak));
+    const rows = choiceRows(state, head.lines + 1);
     const start = Math.max(
       0,
       Math.min(input.cursor - Math.floor(rows / 2), input.answer.choices.length - rows),
@@ -1048,7 +1052,7 @@ export interface OverlayBox {
 export function overlayBox(state: TuiState): OverlayBox | undefined {
   const kind = state.keys ? "keys" : state.input?.kind;
   if (kind === undefined) return undefined;
-  const width = Math.max(10, Math.min(OVERLAY_WIDTH, state.width - 4));
+  const width = overlayWidth(state);
   const lines = kind === "keys" ? HELP_LINES : kind === "confirm" || kind === "setting-confirm" ? 2 : inputLines(state);
   // Border (2) and a one-cell margin of background (2) around the text.
   const wanted = lines + 4;
@@ -1059,6 +1063,50 @@ export function overlayBox(state: TuiState): OverlayBox | undefined {
   }
   const height = Math.max(5, Math.min(wanted, state.height));
   return { left, top: Math.max(0, Math.floor((state.height - height) / 2)), width, height };
+}
+
+/** What an overlay says when it had to break a command over several lines. */
+const COMMAND_BROKEN = "operad pending prints this command on one line";
+
+/** The lines an answer's overlay draws above its choices. */
+interface AnswerHead {
+  readonly prompt: readonly string[];
+  readonly command: readonly string[];
+  readonly hint: readonly string[];
+  /** All of them together. */
+  readonly lines: number;
+}
+
+/**
+ * The prompt and the command, wrapped so that all of both shows in the box
+ * (ADR 0008 D9). A short terminal cuts the prompt, never the command, to keep
+ * one choice and the key line in the box.
+ */
+function answerHead(state: TuiState, answer: TuiAnswer): AnswerHead {
+  const width = Math.max(1, overlayWidth(state) - 4);
+  const command = answer.command === undefined ? [] : wrapText(sanitize(answer.command), width);
+  const hint = command.length > 1 ? wrapText(COMMAND_BROKEN, width) : [];
+  const whole = sanitize(answer.prompt)
+    .split("\n")
+    .flatMap((line) => wrapText(line, width));
+  // The frame takes four lines, one choice and the key line two more.
+  const room = Math.max(1, state.height - 6 - command.length - hint.length);
+  const prompt =
+    whole.length <= room
+      ? whole
+      : [...whole.slice(0, room - 1), `${fit(whole[room - 1] ?? "", Math.max(1, width - 1))}…`];
+  return { prompt, command, hint, lines: prompt.length + command.length + hint.length };
+}
+
+/**
+ * The width of an overlay's box, its frame included. A question's command widens
+ * it, up to the terminal, to stay on one line.
+ */
+function overlayWidth(state: TuiState): number {
+  const usual = Math.max(10, Math.min(OVERLAY_WIDTH, state.width - 4));
+  const command = !state.keys && state.input?.kind === "answer" ? state.input.answer.command : undefined;
+  if (command === undefined) return usual;
+  return Math.max(usual, Math.min(displayWidth(sanitize(command)) + 4, state.width));
 }
 
 /** The line count the box needs for the input it draws. */
@@ -1082,7 +1130,8 @@ function inputLines(state: TuiState): number {
     return entries.length === 0 ? 3 : 2 + paletteDisplayLines(entries).length;
   }
   if (input?.kind === "answer") {
-    return Math.min(input.answer.choices.length, choiceRows(state, 2)) + 2;
+    const reserved = answerHead(state, input.answer).lines + 1;
+    return Math.min(input.answer.choices.length, choiceRows(state, reserved)) + reserved;
   }
   if (input?.kind === "form") {
     const question = input.answer.questions?.[input.question];

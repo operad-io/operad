@@ -359,6 +359,30 @@ _The second "## T-0766" section above repeats the rows of the first; the rows of
 |---|---|---|---|
 | T-0817-M32 | packages/harness/pi/src/index.ts | a person's command ignored the pi operad installed | `pi's command for a person > is the pi operad installed when PATH has none, the setting's otherwise, and none for a pi on PATH` |
 
+## T-0820 — the login question says its command once
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0820-M1 | packages/harness/pi/src/login.ts | the prompt said the command inline again | `pi/login > the first question offers API-key routes only and tells where a ChatGPT plan logs in` |
+| T-0820-M2 | packages/harness/pi/src/login.ts | the provider question carried no command | `pi/login > the first question offers API-key routes only and tells where a ChatGPT plan logs in` |
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0822-M13 | packages/harness/pi/src/login.ts | the model choice read the list kept from before the login | `pi/login > the model choice asks pi again, not the list kept from before the login` |
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0824-M2 | packages/harness/pi/src/model-list.ts | `pi --list-models` was not given the configured credentials file, as before the fix | `pi/login > with its own credentials file, the list after the login has the new provider`; `the models pi declares > a configured credentials file is read with pi's other files, and none of them is changed` |
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0825-M3 | packages/harness/pi/src/model-list.ts | a name taken between the removal and the link failed the relink | `the models pi declares > a link another process made first does not fail the relink` |
+| T-0825-M4 | packages/harness/pi/src/model-list.ts | links to entries that left pi's folder were kept | `the models pi declares > the list folder drops links to entries that left pi's folder, and links no lock` |
+| T-0825-M5 | packages/harness/pi/src/model-list.ts | pi's lock entries were linked | `the models pi declares > the list folder drops links to entries that left pi's folder, and links no lock` |
+| T-0825-M6 | packages/harness/pi/src/model-list.ts | a configured file that did not exist yet was not linked, as before the fix | `the models pi declares > a configured file pi creates appears at its configured place and stays` |
+| T-0825-M7 | packages/harness/pi/src/index.ts | a models file of its own was not given to `pi --list-models` | `the models pi declares > a models file of its own is given to pi, beside pi's own credentials file` |
+| T-0825-M8 | packages/harness/pi/src/index.ts | the default credentials file left pi to find its folder, whatever that folder was, as before the fix | `the models pi declares > default files outside the folder pi was told to use are still the ones it lists from` |
+
 ## T-0816 — every shipped plugin on in a new home
 
 | id | file | mutation | failing test |

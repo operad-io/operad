@@ -1744,6 +1744,7 @@ export class Views {
     try {
       await recordAnswer({
         log: this.log,
+        home: this.registry.home,
         runId: options.runId,
         waitId: options.waitId,
         choice: options.choice,

@@ -596,3 +596,22 @@ The rows above reused ids that other packages hold for T-0790 (T-0790-M1); they 
 | T-0811-M3 | packages/tui/src/autostart.ts | the wait for a started serve probed only the first address | `a serve that another start won is waited for on every address` |
 | T-0811-M4 | packages/tui/src/app.ts | the screen read the address from the configuration instead of using the one that answered | `the screen uses the address that answered, not the configuration again` |
 | T-0811-M12 | packages/tui/src/autostart.ts | a non-operad answer was recorded only for the first address | `another service on a later address fails naming that address, and starts nothing` |
+
+## T-0820 — the login question says its command once
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0820-M4 | packages/tui/src/state.ts | the answer did not carry the command | `a question that carries a command > shows all of it under the prompt, wrapped to the box, with every choice still in the box` |
+| T-0820-M5 | packages/tui/src/view/index.ts | the command was drawn on one line, clipped by the box | `a question that carries a command > shows all of it under the prompt, wrapped to the box, with every choice still in the box` |
+| T-0820-M6 | packages/tui/src/view/index.ts | the box's height did not count the command's lines | `a question that carries a command > shows all of it under the prompt, wrapped to the box, with every choice still in the box` |
+
+## T-0821 — follow-ups of the login question's command
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0821-M6 | packages/tui/src/state.ts | the Pending row did not say where the command is read | `the Pending row says first where the command is read` |
+| T-0821-M7 | packages/tui/src/state.ts | the row named `a` for a command `a` does not show | `a Pending row whose command `a` does not show names operad pending` |
+| T-0821-M8 | packages/tui/src/view/index.ts | a command did not widen the box | `a terminal wide enough widens the box and keeps the command on one line` |
+| T-0821-M9 | packages/tui/src/view/index.ts | a wrapped command came with no word of `operad pending` | `a command wider than the terminal is wrapped whole, and the box says where it is on one line` |
+| T-0821-M10 | packages/tui/src/view/index.ts | the prompt was not wrapped | `a long question is wrapped to the box, not clipped` |
+| T-0821-M11 | packages/tui/src/view/index.ts | a short terminal did not cut the prompt | `a short terminal cuts the question, and keeps the command, a choice and the keys in the box` |

@@ -728,8 +728,8 @@ export interface AskRequest {
   /**
    * One command line the person runs themselves, such as another program's
    * login. The kernel checks it is one bounded line, carries it to the pending
-   * item and never runs it (ADR 0008 D9). The prompt still says it, for a
-   * client that does not read this field.
+   * item and never runs it (ADR 0008 D9). The prompt need not repeat it: a
+   * client shows this field on a line of its own with the prompt.
    */
   readonly command?: string | undefined;
   /**

@@ -105,6 +105,22 @@ before anyone sees it otherwise. An answer to a secret question whose step has
 ended is refused like any other late answer, and the person is asked again. A
 client masks the input and never echoes the value.
 
+The process that takes an answer (`serve` for an answer over HTTP) is usually
+not the process that runs the step, so the text crosses between them in a file
+under the home's `secrets/` directory, where the engine already keeps secrets:
+`secrets/answers/`, mode 0700, one file of mode 0600 per answer. The file is
+written before the answer is claimed, and the claim carries only the file's
+random name, so whoever sees the claim finds the text, and a second answer that
+loses the claim removes its own file and no other. The step removes the file as
+it reads it. The file of a refused answer is removed at once, and a step that
+stops waiting removes whatever is left for its question. A file a dead process
+left is removed once it is ten minutes old: when `serve` starts, once a minute
+while it runs, or when the next secret answer is written. A step that finds the
+text of a claimed answer gone (it runs again after it read it, or the file was
+removed as stale) fails with an error that says so; it is never given the
+question as skipped. A caller that cannot name the home cannot answer a secret
+question.
+
 An address is the plugin's to validate, not the kernel's: the kernel checks the
 scheme and length, and the plugin checks the host and path of a login address
 before it puts it on a question. A client opens only an address that passed
@@ -122,5 +138,15 @@ the MCP `pending` tool, and a question that runs out of grace keeps it on the
 wait that follows. `operad pending` prints it on a line of its own, so it can be
 copied whole. `operad bot login` prints it the same way: after starting the
 login it waits for the login's first question while a `serve` runs it, at most
-30 seconds. The question's text still says the command, for a client that does
-not read the field. A flow's `wait_person` step takes no command.
+30 seconds. The question's text does not repeat the command, so the command
+line, the MCP `pending` tool, the terminal UI and Telegram each show `command`
+on a line of its own where they show the question. `history` keeps it with the
+question: the entries `asked you` and `waiting for you` show it on a line of its
+own, whole, and `--json` carries it as `command`.
+
+The terminal UI's `Pending` row is cut to one line, so it says first where the
+command is read: the overlay `a` opens, or `operad pending` when that overlay
+does not show it. The overlay wraps the question's text and widens past its usual
+box, up to the terminal's width, to keep the command on one line. A command wider
+than that is wrapped, and the overlay says `operad pending` prints it on one
+line. A flow's `wait_person` step takes no command.

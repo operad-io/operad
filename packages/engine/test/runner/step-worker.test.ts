@@ -196,6 +196,30 @@ describe("step worker in this process", () => {
     });
   });
 
+  test("runs a question's recheck when the parent asks and sends back what it says", async () => {
+    const root = await tempRoot();
+    const port = new FakePort();
+    const run = runStepWorker(request(root, "worker/ask-recheck"), port);
+    const ask = await port.next("ask");
+    expect(ask.recheck).toBe(true);
+    for (const recheck of [{ ask: true }, { ask: false, note: "no longer needed" }]) {
+      port.send({ kind: "ask-recheck", id: ask.id });
+      expect(await port.next("ask-rechecked")).toEqual({ kind: "ask-rechecked", id: ask.id, ok: true, recheck });
+    }
+    port.send({ kind: "ask-recheck", id: ask.id });
+    expect(await port.next("ask-rechecked")).toEqual({
+      kind: "ask-rechecked",
+      id: ask.id,
+      ok: false,
+      error: "the check broke",
+    });
+    port.send({ kind: "ask-result", id: ask.id, ok: false, error: "the check broke" });
+    expect(await resultOf(port, run)).toMatchObject({
+      ok: true,
+      result: { result: "failed", data: { error: "the check broke" } },
+    });
+  });
+
   test("a form and its Markdown body reach the parent", async () => {
     const root = await tempRoot();
     const port = new FakePort();

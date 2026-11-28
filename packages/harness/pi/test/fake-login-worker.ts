@@ -5,6 +5,8 @@
  * not offer it. The only login it runs is an API key.
  */
 
+import { writeFileSync } from "node:fs";
+import { join, sep } from "node:path";
 import { createInterface } from "node:readline";
 
 const providers = [
@@ -63,7 +65,7 @@ async function readAnswer(id: number): Promise<string> {
   }
 }
 
-process.argv[2];
+const start = JSON.parse(process.argv[2] ?? "{}") as { home?: string; authPath?: string };
 write({ type: "providers", providers });
 const first = await next();
 if (first["type"] !== "login") {
@@ -83,6 +85,11 @@ if (auth === "api_key") {
   if (value.length === 0) {
     write({ type: "failed", message: "the login was cancelled" });
     process.exit(1);
+  }
+  // As pi does, the credential goes to its auth file; only a file inside the
+  // test's home is ever written.
+  if (start.home !== undefined && start.authPath?.startsWith(join(start.home, sep)) === true) {
+    writeFileSync(start.authPath, JSON.stringify({ [provider]: { type: "api_key", key: value } }));
   }
   write({ type: "done", provider, auth });
   process.exit(0);

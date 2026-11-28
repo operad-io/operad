@@ -13,6 +13,10 @@ import type { TriggerRule } from "../trigger/types.ts";
 import { acquireLock, lockHeld, runLockPath, serveLockPath } from "../runner/lock.ts";
 import type { LockHandle } from "../runner/lock.ts";
 import { StepLimits } from "../runner/limits.ts";
+import {
+  SECRET_ANSWER_SWEEP_MS,
+  sweepSecretAnswers,
+} from "../runner/secret-answers.ts";
 import { applyInput, parseObjectKey, readState } from "../runner/service.ts";
 import { isBusy } from "../platform/index.ts";
 import { reapStale } from "../platform/step-reap.ts";
@@ -493,7 +497,20 @@ export async function serve(options: ServeOptions): Promise<void> {
     } catch (error) {
       options.onLog?.(`serve start: could not end kept workers: ${messageOf(error)}`);
     }
+    let sweptAt: number | undefined;
+    const sweepAnswers = async (): Promise<void> => {
+      const now = clock();
+      if (sweptAt !== undefined && now - sweptAt < SECRET_ANSWER_SWEEP_MS) return;
+      sweptAt = now;
+      try {
+        await sweepSecretAnswers(options.home, now);
+      } catch (error) {
+        options.onLog?.(`serve: could not remove left-over answers: ${messageOf(error)}`);
+      }
+    };
+    await sweepAnswers();
     while (!stopped) {
+      await sweepAnswers();
       inPass = true;
       const result = await serveOnce({
         ...options,

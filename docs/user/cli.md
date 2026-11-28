@@ -290,7 +290,9 @@ starts each new day.
 
 `operad show <id> --section history --full` keeps each detail whole.
 `operad history <id>` prints every step with a UTC time; `--json` prints one
-object per step, or one object per run when the id names several runs.
+object per step, or one object per run when the id names several runs. A
+question that asked you to run a command shows it on a line of its own under
+`asked you` or `waiting for you`, never cut; `--json` carries it as `command`.
 
 ## Levels
 

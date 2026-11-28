@@ -225,6 +225,12 @@ T-0588 added the `bot-tidy` type, which stores one object per bot under the bot'
 
 | T-0779-M7 | packages/telegram/src/replies.ts | the line for a stretch was sent again for a change made from Telegram | `sending a reply > a stretch that is not remembered sends a line when another client starts and ends it, and none for Telegram's own command` |
 
+## T-0820 — the login question says its command once
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0820-M3 | packages/telegram/src/pending.ts | the item's message left the command out | `pending items go to Telegram > a question's command is a paragraph of its own under the prompt` |
+
 ## T-0816 — every shipped plugin on in a new home
 
 | id | file | mutation | failing test |
