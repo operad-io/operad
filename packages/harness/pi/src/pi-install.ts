@@ -126,6 +126,14 @@ export function homePiPackageDir(home: string): string {
   return join(home, HOME_PLUGIN_PROJECT, "node_modules", PI_PACKAGE);
 }
 
+/** True when there is a pi to look at: the command on PATH, or the home's install. */
+export function piPresent(home: string, path: string = process.env.PATH ?? ""): boolean {
+  return (
+    Bun.which(DEFAULT_PI_COMMAND, { PATH: path }) !== null ||
+    existsSync(join(homePiPackageDir(home), "package.json"))
+  );
+}
+
 /** The `pi` command of an installed package, for `pi --list-models`. */
 function packageCommand(packageDir: string, manifest: Record<string, unknown>): string {
   const bin = join(dirname(dirname(packageDir)), ".bin", "pi");

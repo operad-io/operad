@@ -60,13 +60,13 @@ A folder needs no git and no remote to be added and chatted with; git is needed 
 
 The agent needs a model. When it is not signed in to one, `operad doctor` and `operad pending` say so and name the command to type next: `operad bot:login default` takes an API key, and a ChatGPT plan logs in with pi's own `pi auth login openai-codex`.
 
-A new home starts as the personal assistant: it turns on `chat`, `bot` and `memory`, and each of `radian`, `claude` and `pi` whose command is on your `PATH`. `shell`, `dev` and `pool` are off until you turn on `dev`, which turns on the other two. When no agent is found it turns on `pi` and installs operad's own copy, so a first run needs no agent installed beforehand.
+A new home turns every shipped plugin on, except `claude` when `claude` is not on your `PATH`: it needs a download, so you turn it on with `operad plugin enable claude`. A plugin you have not set up stays quiet. When no agent is found operad installs its own pi, so a first run needs no agent installed beforehand.
 
 ## Quickstart
 
 ```sh
 operad init                 # create the home and check the plugins
-operad plugin enable dev    # also turns on pool and shell, which dev needs and a new home leaves off
+operad plugin enable dev    # only for a home made earlier with dev off; also turns on pool and shell
 operad dev repo add .       # register this repository
 operad dev plan add --slug hello --title "Add a greeting" < request.md
 operad dev task add --plan P-0001-hello --slug greet --title "Print the greeting" < task.md

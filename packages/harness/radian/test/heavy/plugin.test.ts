@@ -1094,7 +1094,7 @@ describe("radian check", () => {
     expect(check?.message).toContain("radian is available");
   });
 
-  test("names a missing radian as a failed check", async () => {
+  test("reports a missing radian as not set up", async () => {
     const root = await testRoot();
     const empty = join(root, "empty");
     await mkdir(empty, { recursive: true });
@@ -1112,8 +1112,8 @@ describe("radian check", () => {
 
     const [check] = await registry.checks();
     expect(check?.plugin).toBe("radian");
-    expect(check?.ok).toBe(false);
-    expect(check?.message).toContain("radian was not found on PATH");
+    expect(check?.ok).toBe(true);
+    expect(check?.message).toContain("not set up: radian is not on PATH");
   });
 });
 

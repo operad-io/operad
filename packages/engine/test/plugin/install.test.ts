@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   addPackage,
@@ -242,6 +242,7 @@ function packFixture(
   const packed = Bun.spawnSync({
     cmd: ["bun", "pm", "pack", "--destination", destination, "--quiet"],
     cwd: directory,
+    env: process.env,
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
@@ -280,6 +281,25 @@ describe("adding a package to the home project", () => {
       dependencies: Record<string, string>;
     };
     expect(manifest.dependencies["@operad-io/add-fixture"]).toContain("file:");
+  });
+
+  test("the install uses the cache the process names when it runs", async () => {
+    const root = await tempRoot();
+    const tarball = packFixture(root, {
+      name: "@operad-io/cache-fixture",
+      version: "1.0.0",
+      declaration: "export default {};",
+    });
+    const cache = await tempRoot("operad-bun-named-cache-");
+    const named = process.env.BUN_INSTALL_CACHE_DIR;
+    process.env.BUN_INSTALL_CACHE_DIR = cache;
+    try {
+      await addPackage({ home: join(root, "home"), specifier: `file:${tarball}` });
+    } finally {
+      process.env.BUN_INSTALL_CACHE_DIR = named;
+    }
+
+    expect(readdirSync(cache)).not.toEqual([]);
   });
 
   test("asks Bun for the exact version, or the latest, with scripts off", async () => {
@@ -392,6 +412,7 @@ describe("adding a package to the home project", () => {
     const packed = Bun.spawnSync({
       cmd: ["bun", "pm", "pack", "--destination", destination, "--quiet"],
       cwd: directory,
+      env: process.env,
       stdin: "ignore",
       stdout: "pipe",
       stderr: "pipe",

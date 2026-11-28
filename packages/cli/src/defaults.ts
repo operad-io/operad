@@ -6,11 +6,12 @@ import {
   type OperadConfig,
   type PluginOffer,
 } from "@operad-io/engine";
+import { join } from "node:path";
 
 /**
- * Plugins shipped with operad that `plugin enable <name>` can add, including
- * those a new home leaves off (`shell`, `dev`, `pool`, `terminal`) and those a home made
- * before the current defaults may still need (`bot`, `memory`, the harnesses).
+ * Plugins shipped with operad that `plugin enable <name>` can add: the one a
+ * new home may leave off (`claude`, with no `claude` on `PATH`) and those a
+ * home made before the current defaults may still need.
  */
 export const OPTIONAL_PLUGINS: readonly string[] = ["shell", "cron", "pi", "claude", "codex", "pool", "bot", "telegram", "memory", "dev", "terminal"];
 
@@ -21,6 +22,17 @@ export const PLUGIN_NEEDS: Readonly<Record<string, readonly string[]>> = {
 
 /** The plugins whose package is installed into the home rather than shipped with the CLI. */
 export const INSTALL_ON_ENABLE: readonly string[] = ["claude", "terminal"];
+
+/**
+ * The installed plugins no start waits for (ADR 0012 D4): `operad init` leaves
+ * them, and `operad serve` installs them once it is serving.
+ */
+export const INSTALL_AFTER_START: readonly string[] = ["terminal"];
+
+/** What loads in place of each of those packages until it is installed, by module name. */
+export function standInPlugins(): Readonly<Record<string, string>> {
+  return { "@operad-io/terminal": join(import.meta.dir, "stand-in", "terminal", "plugin.ts") };
+}
 
 /** The pi library operad installs into the home when no agent is on `PATH` (ADR 0023 D9). */
 export const PI_CODING_AGENT_PACKAGE = "@earendil-works/pi-coding-agent";
@@ -44,25 +56,48 @@ export function defaultPluginModule(name: string): string {
   return HARNESS_PLUGINS.includes(name) ? `@operad-io/harness-${name}` : `@operad-io/${name}`;
 }
 
-/** The actions `operad init` lets a lead run: only actions of the plugins a new home enables. */
+/** The actions `operad init` lets a lead run; any other is added by hand. */
 export const DEFAULT_LEAD_ACTIONS: readonly string[] = ["chat:close"];
 
 /** The allowed actions that also need the confirmation. */
 export const DEFAULT_CONFIRM_ACTIONS: readonly string[] = ["chat:close"];
 
-/** The plugins of a new home: the assistant's fixed ones plus its harnesses. */
-export function defaultPluginsFor(harnesses: readonly string[]): readonly string[] {
-  return ["chat", "bot", "memory", "cron", ...harnesses];
+/** The plugins of every new home; a plugin comes after the ones it needs. */
+const NEW_HOME_PLUGINS: readonly string[] = [
+  "chat",
+  "bot",
+  "memory",
+  "cron",
+  "shell",
+  "pool",
+  "dev",
+  "telegram",
+  "terminal",
+];
+
+/**
+ * The harnesses every new home turns on: each loads without its agent. `claude`
+ * is not one: without a `claude` on the machine its download would serve nothing
+ * (ADR 0012 D2).
+ */
+const NEW_HOME_HARNESSES: readonly string[] = ["pi", "codex", "radian"];
+
+/**
+ * The plugins of a new home. `found` names the agents on this machine: their
+ * harnesses come first, so a new chat's default agent is one that is there.
+ */
+export function defaultPluginsFor(found: readonly string[]): readonly string[] {
+  return [...NEW_HOME_PLUGINS, ...new Set([...found, ...NEW_HOME_HARNESSES])];
 }
 
-/** The config a new home starts with, with the harness plugins passed in place of the fallback. */
+/** The config a new home starts with; `found` names the agents on this machine. */
 export function distributionConfig(
   home: string,
-  harnesses: readonly string[] = ["radian"],
+  found: readonly string[] = [],
 ): OperadConfig {
   return {
     ...defaultConfig(home),
-    plugins: defaultPluginsFor(harnesses).map((name) => ({
+    plugins: defaultPluginsFor(found).map((name) => ({
       name,
       module: defaultPluginModule(name),
       enabled: true,

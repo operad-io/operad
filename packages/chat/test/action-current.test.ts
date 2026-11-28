@@ -21,7 +21,8 @@ async function rig(piSettings: Record<string, unknown>) {
   const registry = new PluginRegistry(
     [
       createChatPlugin(),
-      createPiHarnessPlugin({ piSettingsPath: settingsPath }),
+      // A replaced worker program: the test needs no pi on the machine.
+      createPiHarnessPlugin({ piSettingsPath: settingsPath, command: process.execPath }),
     ],
     {
       home: root,

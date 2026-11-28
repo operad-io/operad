@@ -11,13 +11,20 @@ what a terminal does; its routes and events are on [the HTTP page](http.md#termi
 
 ## Turn it on
 
-The `terminal` plugin is off until you enable it:
+A new home has the `terminal` plugin on. In a home made earlier, enable it:
 
 ```sh
 operad plugin enable terminal
 ```
 
-Restart `serve` if it does not reload by itself. A client opens terminals over
+Restart `serve` if it does not reload by itself. In an installed operad the
+plugin's package is downloaded into the home: `operad serve` does it in the
+background once it is serving, then reloads, so no start waits for it. Until
+then `terminal` is not set up (`/setup terminal`, Setup Terminal). A download
+that fails is written to `<home>/store/logs/terminal/install.log` and tried
+again at the next start of `serve`; `operad plugin enable terminal` tries at
+once and says why it fails. To turn terminals off:
+`operad plugin disable terminal`. A client opens terminals over
 HTTP, so [`http.enabled`](http.md#the-http-section) must be true. There is no
 `operad` command that opens one.
 
@@ -27,11 +34,11 @@ HTTP, so [`http.enabled`](http.md#the-http-section) must be true. There is no
   so it sees the `PATH` and the variables your shell sets up. `TERM` is
   `xterm-256color`.
 - **A shell.** An empty command line opens the login shell itself.
-- **An agent.** For each enabled harness among `claude`, `codex` and `pi`, a
-  client may offer a command line to fill in: the one in the harness's `command`
-  setting, the pi operad installed when your `PATH` has none, else the agent's
-  name. It is an ordinary command: it uses the agent's own screen and login, not
-  an access profile. Flows and chats do not use terminals.
+- **An agent.** For each enabled harness among `claude`, `codex` and `pi` whose
+  agent is on the machine, a client may offer a command line to fill in: the one
+  in the harness's `command` setting, the pi operad installed when your `PATH` has
+  none, else the agent's name. It is an ordinary command: it uses the agent's own
+  screen and login, not an access profile. Flows and chats do not use terminals.
 
 The folder is any existing folder on the machine `serve` runs on, your home
 folder included, given as an absolute path (`~` is not expanded). A folder that

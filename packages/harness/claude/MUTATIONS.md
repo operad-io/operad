@@ -355,3 +355,12 @@ setup it depends on, in the order they were recorded. The root
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0817-M30 | packages/harness/claude/src/index.ts | the command setting was not quoted for a shell | `claude's command for a person > is the command setting as one shell word, and none without it` |
+
+## T-0816 — every shipped plugin on in a new home
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0816-M15 | packages/harness/claude/src/index.ts | claude never said its agent was missing | `whether claude's agent is on this machine > with no claude on PATH it says how to set it up` |
+| T-0816-M21 | packages/harness/claude/src/index.ts | claude declared no setup guide | ``a harness's setup guide > a harness whose agent is missing shows a guide and the missing item `agent` `` |
+| T-0816-M22 | packages/harness/claude/skills/setup/SKILL.md | claude's guide lost its step for `agent` | `a harness's setup guide > each guide has a step for every item and its package ships it` |
+| T-0816-M23 | packages/harness/claude/package.json | claude's package did not ship the guide | `a harness's setup guide > each guide has a step for every item and its package ships it` |

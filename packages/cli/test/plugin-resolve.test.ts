@@ -1,8 +1,17 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { INSTALL_ON_ENABLE, OPTIONAL_PLUGINS, defaultPluginModule, defaultPluginsFor, distributionConfig } from "../src/defaults.ts";
+import {
+  INSTALL_AFTER_START,
+  INSTALL_ON_ENABLE,
+  OPTIONAL_PLUGINS,
+  PLUGIN_NEEDS,
+  defaultPluginModule,
+  defaultPluginsFor,
+  distributionConfig,
+  standInPlugins,
+} from "../src/defaults.ts";
 
 const cliDir = dirname(dirname(fileURLToPath(import.meta.url)));
 const manifest = JSON.parse(readFileSync(`${cliDir}/package.json`, "utf8")) as {
@@ -30,14 +39,40 @@ describe("plugins the CLI offers", () => {
 });
 
 describe("the distribution's defaults", () => {
-  test("a fresh home's config lists the assistant's plugins and the lead actions explicitly", () => {
+  // Every shipped plugin; `claude` joins only a home whose machine has it.
+  const shipped = [...new Set([...OPTIONAL_PLUGINS, "chat", "radian"])].filter((name) => name !== "claude");
+  const fixed = ["chat", "bot", "memory", "cron", "shell", "pool", "dev", "telegram", "terminal"];
+
+  test("a fresh home turns every shipped plugin on, and lists the lead actions explicitly", () => {
     const config = distributionConfig("/h");
-    expect(config.plugins.map((entry) => entry.name)).toEqual(["chat", "bot", "memory", "cron", "radian"]);
+    expect(config.plugins.map((entry) => entry.name)).toEqual([...fixed, "pi", "codex", "radian"]);
+    expect(config.plugins.map((entry) => entry.name ?? "").sort()).toEqual([...shipped].sort());
+    expect(config.plugins.every((entry) => entry.enabled)).toBe(true);
     expect(config.mcp.actions).toEqual(["chat:close"]);
     expect(config.mcp.confirmActions).toEqual(["chat:close"]);
   });
 
-  test("a fresh home adds the harnesses it finds after the assistant's plugins", () => {
-    expect(defaultPluginsFor(["claude", "pi"])).toEqual(["chat", "bot", "memory", "cron", "claude", "pi"]);
+  test("no start waits only for packages that are installed on enable, and each has a stand-in", () => {
+    for (const name of INSTALL_AFTER_START) {
+      expect(INSTALL_ON_ENABLE).toContain(name);
+      expect(existsSync(standInPlugins()[defaultPluginModule(name)] ?? "")).toBe(true);
+    }
+    expect(INSTALL_AFTER_START).toEqual(["terminal"]);
+  });
+
+  test("a fresh home puts the agents it finds first among the harnesses", () => {
+    expect(defaultPluginsFor(["claude", "pi"])).toEqual([...fixed, "claude", "pi", "codex", "radian"]);
+    expect(defaultPluginsFor(["radian"])).toEqual([...fixed, "radian", "pi", "codex"]);
+  });
+
+  test("every plugin a plugin of a fresh home needs is on and listed before it", () => {
+    const names = defaultPluginsFor([]);
+    for (const [name, needed] of Object.entries(PLUGIN_NEEDS)) {
+      expect(names).toContain(name);
+      for (const other of needed) {
+        expect(names).toContain(other);
+        expect(names.indexOf(other)).toBeLessThan(names.indexOf(name));
+      }
+    }
   });
 });

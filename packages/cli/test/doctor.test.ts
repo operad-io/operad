@@ -49,6 +49,18 @@ describe("operad doctor", () => {
     );
   });
 
+  test("an agent that is not set up is no problem, unless no agent is set up", async () => {
+    const missing = { name: "codex", notSetUp: "codex is not on PATH" };
+    const some = await runDoctor(
+      healthy({ agents: async () => [{ name: "claude", signedIn: true }, missing] }),
+    );
+    expect(some.ok).toBe(true);
+    expect(formatDoctor(some)).toContain("ok       agent codex is not set up: codex is not on PATH\n");
+    const none = await runDoctor(healthy({ agents: async () => [missing] }));
+    expect(none.ok).toBe(false);
+    expect(formatDoctor(none)).toContain("problem  no agent is set up -> operad plugin enable pi\n");
+  });
+
   test("a listen address this machine lacks is warned about, and is a problem only when none is left", async () => {
     const some = await runDoctor(
       healthy({ listenAddresses: async () => ({ present: ["127.0.0.1"], missing: ["100.71.164.8"] }) }),

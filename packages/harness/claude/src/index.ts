@@ -184,6 +184,9 @@ export const PLUGIN_SETTINGS = {
 /** The spelling of this harness's step `args`. */
 const STEP_FLAGS = { levelFlag: "--effort", levels: EFFORT_LEVELS, modelHint: "<name>" } as const;
 
+/** The `SKILL.md` a bot follows to set this agent up (ADR 0010 D7). */
+const SETUP_GUIDE = fileURLToPath(new URL("../skills/setup/SKILL.md", import.meta.url));
+
 /**
  * Creates the claude harness plugin. Its worker is `worker.ts` under the
  * running Bun; a test replaces the program with a fake that prints fixed lines.
@@ -218,8 +221,17 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
     efforts: claudeEfforts,
     capabilities: { backgroundModel: "haiku", loadsSkills: true, takesMessagesMidRun: true, accessLevels: ["plan", "ask", "edits", "full"] },
     signedIn: (settings) => claudeSignedInCached(settings),
+    // A command the owner set, or a replaced worker, is the check's to judge.
+    agentMissing: (settings) =>
+      options.command !== undefined ||
+      (settings.command !== undefined && settings.command !== DEFAULT_CLAUDE_COMMAND) ||
+      Bun.which(DEFAULT_CLAUDE_COMMAND, { PATH: process.env.PATH ?? "" }) !== null
+        ? undefined
+        : "claude is not on PATH; install Claude Code, then run `claude auth login`",
     interactiveCommand: (settings) =>
       typeof settings.command === "string" && settings.command !== "" ? shellWord(settings.command) : undefined,
+    // Setup Claude (ADR 0022 D14): the guide a bot follows for what the check reports missing.
+    guide: SETUP_GUIDE,
     settings: PLUGIN_SETTINGS,
     steps: [
       {

@@ -153,6 +153,7 @@ export type InstallRunner = (
   cwd: string,
   args: readonly string[],
   onProgress?: InstallProgress,
+  signal?: AbortSignal,
 ) => InstallRun | Promise<InstallRun>;
 
 /** The most characters of one progress line kept for a client. */
@@ -194,10 +195,15 @@ async function runWithBun(
   cwd: string,
   args: readonly string[],
   onProgress?: InstallProgress,
+  signal?: AbortSignal,
 ): Promise<InstallRun> {
   const child = Bun.spawn({
     cmd: [process.execPath, ...args],
     cwd,
+    ...(signal === undefined ? {} : { signal }),
+    // Without this Bun gives a child the environment the process started with,
+    // so a cache or registry set since then would not reach the install.
+    env: process.env,
     stdin: "ignore",
     stdout: "pipe",
     stderr: "pipe",
@@ -281,6 +287,10 @@ export interface EnsureInstalledOptions {
   readonly onProgress?: InstallProgress | undefined;
   /** A test replaces the command; defaults to Bun. */
   readonly run?: InstallRunner | undefined;
+  /** Ends the install command when aborted. */
+  readonly signal?: AbortSignal | undefined;
+  /** Called when something has to be installed, before the command runs. */
+  readonly onInstall?: (() => void) | undefined;
 }
 
 /**
@@ -326,7 +336,8 @@ export async function ensureInstalledPackage(options: EnsureInstalledOptions): P
   writeFileSync(path, `${JSON.stringify(manifest, null, 2)}\n`);
 
   const args = ["install", ...(options.omitOptional === true ? ["--omit=optional"] : []), "--no-summary"];
-  const run = await (options.run ?? runWithBun)(directory, args, options.onProgress);
+  options.onInstall?.();
+  const run = await (options.run ?? runWithBun)(directory, args, options.onProgress, options.signal);
   if (run.exitCode !== 0) {
     throw failedInstall(specifier, args, directory, run);
   }

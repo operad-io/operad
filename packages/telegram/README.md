@@ -2,8 +2,9 @@
 
 The Telegram plugin: the first channel and the first outside source.
 
-It is an optional plugin. `operad plugin enable telegram` adds it to the home's
-`config.json`, and `operad serve` starts it.
+A new home turns it on; a home made before needs
+`operad plugin enable telegram`. `operad serve` starts it; without a token it
+is not set up and does nothing.
 
 ```json
 {

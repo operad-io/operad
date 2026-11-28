@@ -644,7 +644,7 @@ the answer is `403` with the kind `refused` and the reason in `message`.
 
 | Method and path | What it does |
 |---|---|
-| `GET /v1/terminal` | `{ "terminals": [...], "groups": [{ "id", "name", "terminals": ["<id>"] }], "presets": [{ "name": "claude", "command": "claude" }] }`. `presets` are command lines a client may offer, one for each enabled harness among `claude`, `codex` and `pi`; `command` is what that harness runs its agent with. Groups are in name order. |
+| `GET /v1/terminal` | `{ "terminals": [...], "groups": [{ "id", "name", "terminals": ["<id>"] }], "presets": [{ "name": "claude", "command": "claude" }] }`. `presets` are command lines a client may offer, one for each enabled harness among `claude`, `codex` and `pi` whose agent is on the machine; `command` is what that harness runs its agent with. Groups are in name order. |
 | `POST /v1/terminal` | Starts a terminal. The body is `{ "folder": "/path", "cols": 80, "rows": 24, "command"?: "bun run dev", "group"?: "<group id>" }`; an empty or absent `command` opens the login shell. The answer is `201` and `{ "terminal": { ... } }`. `folder` is any existing directory on the machine `serve` runs on, as an absolute path (`~` is not expanded); the terminal keeps its real path. A relative path, a folder that does not exist and a file are `422`, with the reason in `message`; an unknown `group` is `404`. |
 | `POST /v1/terminal/<id>/input` | Types into it: `{ "data": "ls\r" }`. An ended terminal is `409`. |
 | `POST /v1/terminal/<id>/resize` | `{ "cols": 100, "rows": 30 }`, each from 1 to 1000. An ended terminal is `409`. |

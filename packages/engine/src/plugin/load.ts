@@ -34,6 +34,14 @@ export interface LoadPluginRegistryOptions extends PluginRegistryOptions {
    * by name and module. Their setup guides are readable while they are off.
    */
   readonly optional?: Readonly<Record<string, string>> | undefined;
+  /**
+   * What loads in place of a package the distribution has not installed yet,
+   * by the package's module name, each the path of a plugin module. It stands
+   * only for a package that neither resolves nor is in the home's project, so
+   * an installed package that fails to load is still reported. Empty by
+   * default: the engine names no plugin.
+   */
+  readonly standIns?: Readonly<Record<string, string>> | undefined;
 }
 
 let loadCount = 0;
@@ -115,6 +123,27 @@ export async function loadPlugin(
   return module.default;
 }
 
+/** True when nothing provides the module `specifier`: it is not installed. */
+function absent(specifier: string, installed: string | undefined): boolean {
+  if (installed !== undefined) return false;
+  try {
+    Bun.resolveSync(specifier, import.meta.dir);
+    return false;
+  } catch {
+    return true;
+  }
+}
+
+/** The stand-in for `specifier` when its package is not installed. */
+function standInFor(
+  specifier: string,
+  installed: string | undefined,
+  standIns: Readonly<Record<string, string>>,
+): string | undefined {
+  const standIn = standIns[specifier];
+  return standIn !== undefined && absent(specifier, installed) ? standIn : undefined;
+}
+
 /** One configured plugin and the definition it resolved to, if any. */
 export interface ConfiguredPlugin {
   readonly entry: PluginConfigEntry;
@@ -181,7 +210,8 @@ export async function loadConfiguredPlugins(
     const source = installed !== undefined && !runningFromWorkspace() ? installed : entry.module;
     let definition: unknown;
     try {
-      definition = await loadPlugin(source, home, installed);
+      const standIn = standInFor(entry.module, installed, options.standIns ?? {});
+      definition = await loadPlugin(standIn ?? source, home, installed);
     } catch (error) {
       if (
         entry.name !== undefined &&
@@ -229,6 +259,7 @@ function offGuideReader(
   entries: readonly PluginConfigEntry[],
   optional: Readonly<Record<string, string>>,
   home: string,
+  standIns: Readonly<Record<string, string>>,
 ): (name: string) => Promise<string | undefined> {
   const seen = new Map<string, Promise<string | undefined>>();
   return (name) => {
@@ -240,7 +271,10 @@ function offGuideReader(
     const read =
       module === undefined
         ? Promise.resolve(undefined)
-        : loadPlugin(module, home).then(definitionGuide, () => undefined);
+        : loadPlugin(standInFor(module, installedPackageFile(home, module), standIns) ?? module, home).then(
+            definitionGuide,
+            () => undefined,
+          );
     seen.set(name, read);
     return read;
   };
@@ -278,7 +312,7 @@ export async function loadPluginRegistry(
     settings: options.settings ?? settings,
     disabled: options.disabled ?? config.disabled,
     off: offNames(config.entries, options.optional ?? {}),
-    disabledGuide: options.disabledGuide ?? offGuideReader(config.entries, options.optional ?? {}, home),
+    disabledGuide: options.disabledGuide ?? offGuideReader(config.entries, options.optional ?? {}, home, options.standIns ?? {}),
   });
   // The person's own flows load once every plugin's steps are known; a file
   // that does not load is reported and the rest still load.

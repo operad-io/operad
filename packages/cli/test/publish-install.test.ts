@@ -14,6 +14,9 @@ import {
 import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
+import { ENGINE_VERSION } from "@operad-io/engine";
+import { waitForChange } from "@operad-io/engine/platform";
+import { freePort } from "@operad-io/engine/testing";
 
 const root = dirname(dirname(dirname(dirname(fileURLToPath(import.meta.url)))));
 const roots: string[] = [];
@@ -275,9 +278,9 @@ describe("publishing and installing the packages", () => {
     expect(config.plugins.chat?.enabled).toBe(true);
     expect(config.plugins.bot?.enabled).toBe(true);
     expect(config.plugins.memory?.enabled).toBe(true);
-    expect(config.plugins.shell).toBeUndefined();
-    expect(config.plugins.dev).toBeUndefined();
-    expect(config.plugins.pool).toBeUndefined();
+    expect(config.plugins.shell?.enabled).toBe(true);
+    expect(config.plugins.dev?.enabled).toBe(true);
+    expect(config.plugins.pool?.enabled).toBe(true);
     expect(config.plugins.claude?.enabled).toBe(true);
 
     const check = run([binary, "plugin", "check", "claude"], scratchRoot, env);
@@ -465,4 +468,189 @@ describe("publishing and installing the packages", () => {
     },
     180_000,
   );
+});
+
+// A `serve` process; `until` ends when what it printed satisfies the question.
+function startServe(binary: string, cwd: string, env: Record<string, string>) {
+  const child = Bun.spawn({
+    cmd: [binary, "serve"],
+    cwd,
+    env: { ...process.env, ...env },
+    stdin: "ignore",
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  const errors = new Response(child.stderr).text();
+  const reader = child.stdout.getReader();
+  const decoder = new TextDecoder();
+  let seen = "";
+  return {
+    child,
+    errors,
+    // `serve stop`, without blocking: a serve this process started stays alive to
+    // another until this process has taken its exit.
+    async stop(): Promise<number[]> {
+      const stop = Bun.spawn({
+        cmd: [binary, "serve", "stop"],
+        cwd,
+        env: { ...process.env, ...env },
+        stdin: "ignore",
+        stdout: "ignore",
+        stderr: "ignore",
+      });
+      return [await stop.exited, await child.exited];
+    },
+    async until(found: (out: string) => boolean): Promise<string> {
+      while (!found(seen)) {
+        const read = await reader.read();
+        if (read.done) throw new Error(`serve ended first: ${seen}${await errors}`);
+        seen += decoder.decode(read.value, { stream: true });
+      }
+      return seen;
+    },
+  };
+}
+
+const times = (text: string, part: string): number => text.split(part).length - 1;
+
+// A new home of the packed CLI whose plugin project can be told where `terminal` comes from.
+async function newTerminalHome(prefix: string) {
+  const scratchRoot = scratch(prefix);
+  const tarballs = packAll(join(scratchRoot, "tarballs"));
+  const binary = cliPrefix(scratchRoot, tarballs);
+  const home = join(scratchRoot, "home");
+  const project = join(home, "plugins");
+  mkdirSync(project, { recursive: true });
+  const source = join(root, "packages", "terminal");
+  const addon = dirname(Bun.resolveSync("@xterm/addon-serialize/package.json", source));
+  const overrides = {
+    ...overridesOf(tarballs, ["@operad-io/terminal"]),
+    "@xterm/headless": `file:${installedTarball(scratchRoot, "@xterm/headless", source)}`,
+    "@xterm/addon-serialize": `file:${installedTarball(scratchRoot, "@xterm/addon-serialize", source)}`,
+    "@xterm/xterm": `file:${installedTarball(scratchRoot, "@xterm/xterm", addon)}`,
+  };
+  const name = (dependency: string): void => {
+    writeFileSync(
+      join(project, "package.json"),
+      JSON.stringify({
+        name: "operad-plugins",
+        private: true,
+        type: "module",
+        dependencies: { "@operad-io/terminal": dependency },
+        overrides,
+      }),
+    );
+  };
+  const bin = join(scratchRoot, "bin");
+  fakeRadian(bin);
+  const env = {
+    OPERAD_HOME: home,
+    HOME: scratchRoot,
+    PATH: [bin, dirname(process.execPath), "/usr/bin", "/bin"].join(delimiter),
+    BUN_INSTALL_CACHE_DIR: join(scratchRoot, "bun-cache"),
+    // Cannot answer: everything but what a test serves is a local tarball.
+    BUN_CONFIG_REGISTRY: "http://127.0.0.1:9/",
+  };
+  const port = await freePort();
+  // Runs `init` and gives the home's `serve` a port of its own.
+  const init = (extra: Record<string, string> = {}): Ran => {
+    const ran = run([binary, "init"], scratchRoot, { ...env, ...extra });
+    const path = join(home, "config.json");
+    const config = JSON.parse(readFileSync(path, "utf8")) as { http: { port: number } };
+    config.http.port = port;
+    writeFileSync(path, JSON.stringify(config));
+    return ran;
+  };
+  return { scratchRoot, tarballs, binary, home, name, env, init };
+}
+
+describe("terminal in a new home of the packed CLI", () => {
+  test("no start fails with a download that does, and the next start installs and loads it", async () => {
+    const made = await newTerminalHome("operad-publish-new-terminal-");
+    const { binary, scratchRoot, env, home } = made;
+    made.name(`file:${join(scratchRoot, "missing.tgz")}`);
+
+    const init = made.init();
+    expect({ code: init.code, err: init.err }).toEqual({ code: 0, err: "" });
+    expect(init.out).toContain("terminal: not set up: the terminal package is not installed");
+
+    const log = join(home, "store", "logs", "terminal", "install.log");
+    const first = startServe(binary, scratchRoot, env);
+    try {
+      await first.until((out) => out.includes("serving "));
+      while (!existsSync(log) || !readFileSync(log, "utf8").includes("\n")) {
+        await waitForChange(dirname(log), "install.log", 100);
+      }
+      const lines = readFileSync(log, "utf8").trim().split("\n");
+      expect(lines).toHaveLength(1);
+      expect(lines[0]).toStartWith("not set up: ");
+      expect(lines[0]).toContain("missing.tgz");
+      const pending = run([binary, "pending"], scratchRoot, env);
+      expect({ out: pending.out, err: pending.err }).toEqual({ out: "nothing is waiting\n", err: "" });
+      const guide = run([binary, "bot", "setup", "default", "terminal"], scratchRoot, env);
+      expect({ code: guide.code, err: guide.err }).toEqual({ code: 0, err: "" });
+      expect(guide.out).toContain("- install: the terminal package is not installed");
+      expect(await first.stop()).toEqual([0, 0]);
+      expect(await first.errors).toBe("");
+    } finally {
+      first.child.kill("SIGKILL");
+    }
+
+    made.name(`file:${made.tarballs.get("@operad-io/terminal") ?? ""}`);
+    const second = startServe(binary, scratchRoot, env);
+    try {
+      const out = await second.until((text) => times(text, "serving ") === 2);
+      expect(out).toContain("reloading: installed terminal");
+      const check = run([binary, "plugin", "check", "terminal"], scratchRoot, env);
+      expect({ code: check.code, err: check.err }).toEqual({ code: 0, err: "" });
+      const again = run([binary, "init"], scratchRoot, env);
+      // The package itself is loaded: the stand-in no longer says it is not set up.
+      expect({ code: again.code, standIn: again.out.includes("terminal: not set up") }).toEqual({ code: 0, standIn: false });
+      expect(run([binary, "bot", "setup", "default", "terminal"], scratchRoot, env).err).toContain("has no setup guide");
+      expect(await second.stop()).toEqual([0, 0]);
+      expect(await second.errors).toBe("");
+    } finally {
+      second.child.kill("SIGKILL");
+    }
+  }, 180_000);
+
+  test("init does not wait for the download, and a stop of serve ends it", async () => {
+    const made = await newTerminalHome("operad-publish-slow-terminal-");
+    const { binary, scratchRoot } = made;
+    let asked = (): void => undefined;
+    let dropped = (): void => undefined;
+    const requested = new Promise<void>((resolve) => (asked = resolve));
+    const abandoned = new Promise<void>((resolve) => (dropped = resolve));
+    // A registry that takes the request and never answers it.
+    const registry = Bun.serve({
+      hostname: "127.0.0.1",
+      port: 0,
+      idleTimeout: 0,
+      fetch: (request) => {
+        request.signal.addEventListener("abort", () => dropped());
+        asked();
+        return new Promise<Response>(() => undefined);
+      },
+    });
+    const env = { ...made.env, BUN_CONFIG_REGISTRY: `http://127.0.0.1:${String(registry.port)}/` };
+    made.name(ENGINE_VERSION);
+    try {
+      // `init` blocks this process, so the registry cannot answer it: it returns only if it asks for nothing.
+      const init = made.init({ BUN_CONFIG_REGISTRY: env.BUN_CONFIG_REGISTRY });
+      expect({ code: init.code, err: init.err }).toEqual({ code: 0, err: "" });
+      const serve = startServe(binary, scratchRoot, env);
+      try {
+        await serve.until((out) => out.includes("serving "));
+        await requested;
+        expect(await serve.stop()).toEqual([0, 0]);
+        await abandoned;
+        expect(await serve.errors).toBe("");
+        expect(existsSync(join(made.home, "store", "logs", "terminal", "install.log"))).toBe(false);
+      } finally {
+        serve.child.kill("SIGKILL");
+      }
+    } finally {
+      await registry.stop(true);
+    }
+  }, 180_000);
 });

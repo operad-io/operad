@@ -382,3 +382,19 @@ _The second "## T-0766" section above repeats the rows of the first; the rows of
 | T-0825-M6 | packages/harness/pi/src/model-list.ts | a configured file that did not exist yet was not linked, as before the fix | `the models pi declares > a configured file pi creates appears at its configured place and stays` |
 | T-0825-M7 | packages/harness/pi/src/index.ts | a models file of its own was not given to `pi --list-models` | `the models pi declares > a models file of its own is given to pi, beside pi's own credentials file` |
 | T-0825-M8 | packages/harness/pi/src/index.ts | the default credentials file left pi to find its folder, whatever that folder was, as before the fix | `the models pi declares > default files outside the folder pi was told to use are still the ones it lists from` |
+
+## T-0816 — every shipped plugin on in a new home
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0816-M17 | packages/harness/pi/src/index.ts | pi never said its agent was missing, so a claude home asked for a pi login | `serve on a new home with nothing set up > with only a signed-in claude, nothing waits: the pi that is not there asks for no login` |
+| T-0816-M18 | packages/harness/pi/src/pi-install.ts | the pi installed in the home did not count | `whether pi's agent is on this machine > the pi operad installed in the home counts` |
+| T-0816-M27 | packages/harness/pi/src/index.ts | pi declared no setup guide | ``a harness's setup guide > a harness whose agent is missing shows a guide and the missing item `agent` `` |
+| T-0816-M28 | packages/harness/pi/skills/setup/SKILL.md | pi's guide lost its step for `agent` | `a harness's setup guide > each guide has a step for every item and its package ships it` |
+| T-0816-M29 | packages/harness/pi/package.json | pi's package did not ship the guide | `a harness's setup guide > each guide has a step for every item and its package ships it` |
+
+## T-0816 — a replaced login worker
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0816-M45 | packages/harness/pi/src/index.ts | a replaced login worker did not count, so on a machine with no pi it was not offered as an agent | `the pi login over HTTP saves the key and ends logged in`, `whether pi's agent is on this machine > a replaced login program needs no pi on PATH` |

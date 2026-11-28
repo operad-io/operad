@@ -41,3 +41,25 @@ export function sharedOptionalPlugins(
 ): Readonly<Record<string, string>> | undefined {
   return parseOptionalPlugins(env[OPTIONAL_PLUGINS_ENV]);
 }
+
+/**
+ * The variable that carries the stand-ins of packages not installed yet, as a
+ * JSON object of module name to path, so a tools server loads what its parent
+ * loads.
+ */
+export const STAND_IN_PLUGINS_ENV = "OPERAD_STAND_IN_PLUGINS";
+
+/** Makes this process and the ones it starts hold the stand-ins. */
+export function shareStandInPlugins(
+  standIns: Readonly<Record<string, string>>,
+  env: Record<string, string | undefined> = process.env,
+): void {
+  env[STAND_IN_PLUGINS_ENV] = JSON.stringify(standIns);
+}
+
+/** The stand-ins this process was handed; undefined when none were. */
+export function sharedStandInPlugins(
+  env: Readonly<Record<string, string | undefined>> = process.env,
+): Readonly<Record<string, string>> | undefined {
+  return parseOptionalPlugins(env[STAND_IN_PLUGINS_ENV]);
+}

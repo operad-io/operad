@@ -230,3 +230,10 @@ T-0588 added the `bot-tidy` type, which stores one object per bot under the bot'
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0820-M3 | packages/telegram/src/pending.ts | the item's message left the command out | `pending items go to Telegram > a question's command is a paragraph of its own under the prompt` |
+
+## T-0816 — every shipped plugin on in a new home
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0816-M13 | packages/telegram/src/index.ts | start threw without a token | `serve on a new home with nothing set up > with no agent but operad's pi and no token, only the bot's login waits` |
+| T-0816-M14 | packages/telegram/src/index.ts | the check passed without a token | `the telegram source > the check reports a missing token as not set up, and passes with one` |

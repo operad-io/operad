@@ -1761,3 +1761,9 @@ the row fields.
 | T-0817-M1 | packages/dev/src/integrate.ts | a hook that runs `git worktree remove` without the variable released nothing | `a removed folder > dev's cleanup stops both worktrees' terminals before a hook that runs git worktree remove` |
 | T-0817-M2 | packages/dev/src/integrate.ts | cleanup did not release the checking worktree | `a removed folder > dev's cleanup stops both worktrees' terminals before a hook that names $OPERAD_WORKTREE`, `a removed folder > dev's cleanup stops both worktrees' terminals before a hook that runs git worktree remove` |
 | T-0817-M3 | packages/dev/src/gate.ts | the checking worktree was made again without releasing it | `a removed folder > dev making a checking worktree again stops its terminals first` |
+
+## T-0816 — every shipped plugin on in a new home
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0816-M20 | packages/dev/src/settings.ts | the default worker ignored which agent is on the machine | `the agent of a repository that names no worker > passes over an enabled harness whose agent is not on the machine` |
