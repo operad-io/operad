@@ -7,6 +7,12 @@ the same version.
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-27
+
+The release adds terminals that `operad serve` keeps, turns every shipped plugin
+on in a new home, keeps a plugin that is not set up quiet and gives each agent a
+setup guide, and starts a flow of your home by hand.
+
 ### Changed
 
 - A new home turns every shipped plugin on: `chat`, `bot`, `memory`, `cron`, `shell`, `pool`, `dev`, `telegram`, `terminal`, `pi`, `codex` and `radian`, and `claude` when `claude` is on your `PATH` (it needs a download).
@@ -14,12 +20,26 @@ the same version.
 - A plugin that is not set up is quiet. A harness whose agent is not on the machine is not offered as an agent and asks for no login; `operad init` and `operad doctor` say it is not set up, and its setup guide (`/setup codex`, Setup Codex) walks you through it. Telegram without a token no longer logs a failure at each start of `serve`.
 - A repository that names no worker uses the first enabled agent that is on the machine.
 - `operad init` installs operad's own pi only when it finds no `claude`, `pi` or `radian`.
-- operad's own pi is now 1.7.0 (was 1.6.0). A home that has the older copy and no `pi` on `PATH` gets the new one from `operad serve`, once it is serving, or sooner from `operad plugin enable pi` or `operad init`. The oldest pi accepted is still 1.5.0.
+- operad's own pi is now 1.7.0 (was 1.6.0). A home that has the older copy and no `pi` on `PATH` gets the new one from `operad serve`, once it is serving, or sooner from `operad plugin enable pi` or `operad init`. The oldest pi accepted is still 1.5.0. A download that fails is tried again.
+- pi 1.7.0 no longer has a telemetry setting, so an opt-out in your own pi settings (`enableInstallTelemetry` or `PI_TELEMETRY`) no longer applies. pi dropped its install and update report, and now always names itself in requests to providers that accept an app name, such as OpenRouter.
 - A `claude`, `codex` or `pi` that is signed out or too old is `not set up:` in `operad init` and no longer fails it, and `operad doctor` names the next command instead of `operad init`. An enabled plugin that does not load fails `operad init`.
+- Creating a plan or a task is faster.
+- `operad serve` skips an `http.listen` address the machine does not have, such as one on a network that is down, with a warning, and listens on the others; restart it once the address is back. `operad doctor` reports each such address, the terminal client passes over it, and `operad pair` does not offer it. An address that cannot be opened is reported with its port.
+- A question that asks you to run a command, such as pi's ChatGPT login, gives the command on its own, so you can copy it whole: `operad pending`, history, the terminal client, Telegram and the MCP `pending` tool show it that way, and `operad bot login` waits for the question and prints it. The terminal client also wraps a long question.
 
 ### Added
 
 - Terminals, the `terminal` plugin (on in a new home; elsewhere `operad plugin enable terminal`): `operad serve` runs any command or your login shell in any folder, keeps it when a client disconnects, and replays its screen to a client that comes back. A terminal in a registered repository or one of its worktrees says which repository. Starting and using one works only from the machine `serve` runs on. See [terminals](docs/user/terminal.md).
+- A setup guide for each of `claude`, `codex`, `pi` and `radian`. The guide of a shipped plugin is readable also while your config does not name it, and the `claude` guide before `claude` is installed.
+- `operad plugin list` says in one line what each plugin gives. A client of `operad serve` also lists the shipped plugins your config does not name, as off, so you can turn one on there.
+- `operad start home:<name>` runs a [flow of your home](docs/user/home-flows.md) once, now, with optional `--params`, and history says who started it. `operad flows --json` shows each flow's steps, and a client can list flows and start one over [HTTP](docs/user/http.md#flows).
+
+### Fixed
+
+- A run of a home flow added or renamed while `operad serve` runs no longer fails as not loaded.
+- A pi login answered from a client no longer ends as cancelled, and a first login no longer fails with no model to choose.
+- With `authPath` set for pi, the model list after a login includes the new provider.
+- pi's API key question closes once its login has ended.
 
 ## [0.4.1] - 2026-11-24
 
@@ -450,7 +470,8 @@ The first public release. Install it with `bun add -g @operad-io/cli`; it needs
   `operad http token rotate` replaces it. The app itself is not in this
   repository.
 
-[Unreleased]: https://github.com/operad-io/operad/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/operad-io/operad/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/operad-io/operad/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/operad-io/operad/compare/49eb3b93...v0.4.1
 [0.4.0]: https://github.com/operad-io/operad/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/operad-io/operad/compare/v0.3.0...v0.3.1
