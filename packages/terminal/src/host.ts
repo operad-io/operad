@@ -3,7 +3,7 @@
 import { randomBytes } from "node:crypto";
 import type { ObjectStore, SettingsRepository } from "@operad-io/engine";
 import type { Clock } from "@operad-io/engine/platform";
-import { knownFolder } from "./folders.ts";
+import { repositoryOf, startFolder } from "./folders.ts";
 import { Session, type Send, type TerminalInfo } from "./session.ts";
 
 /** The type a group is stored as. */
@@ -115,14 +115,10 @@ export class TerminalHost {
   }
 
   async start(input: StartInput): Promise<TerminalInfo> {
-    const folder = await knownFolder(input.folder, await this.options.repositories());
-    if (folder === undefined) {
-      throw new TerminalError(
-        422,
-        "refused",
-        `a terminal starts only in a registered repository or one of its worktrees, and "${input.folder}" is neither`,
-      );
-    }
+    const found = startFolder(input.folder);
+    if ("refusal" in found) throw new TerminalError(422, "refused", found.refusal);
+    const folder = found.path;
+    const repository = await repositoryOf(folder, await this.options.repositories());
     if (input.group !== undefined) await this.storedGroup(input.group);
     if (this.stopping) throw new TerminalError(503, "unavailable", "the server is stopping");
     const id = this.newId("t");
@@ -132,6 +128,7 @@ export class TerminalHost {
         id,
         command: input.command.trim() === "" ? "" : input.command,
         folder,
+        repository: repository ?? null,
         cols: input.cols,
         rows: input.rows,
         group: input.group ?? null,

@@ -1,5 +1,5 @@
 ---
-description: Terminals that operad serve keeps: any command or a shell in a repository or a worktree, from this Mac only.
+description: Terminals that operad serve keeps: any command or a shell in any folder, from this Mac only.
 ---
 
 # Terminals
@@ -40,8 +40,12 @@ HTTP, so [`http.enabled`](http.md#the-http-section) must be true. There is no
   none, else the agent's name. It is an ordinary command: it uses the agent's own
   screen and login, not an access profile. Flows and chats do not use terminals.
 
-The folder must be a repository you registered with `dev`, or one of its git
-worktrees, such as a task's. A folder inside one is refused.
+The folder is any existing folder on the machine `serve` runs on, your home
+folder included, given as an absolute path (`~` is not expanded). A folder that
+does not exist and a file are refused. When it is a repository you registered
+with `dev`, or one of its git worktrees, such as a task's, the terminal says
+which repository, so a client can group terminals by project. A terminal in any
+other folder, also one inside a repository, has no repository.
 
 Two worktrees running the same dev server will compete for its port.
 

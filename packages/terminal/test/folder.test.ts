@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { createChatPlugin } from "@operad-io/chat";
 import {
@@ -128,6 +128,49 @@ describe("a removed folder", () => {
     await job.gone;
     expect(await served.ended(terminal.id)).toMatchObject({ reason: FOLDER_REMOVED_REASON });
     expect((await served.list()).terminals.find((t) => t.id === inMain.id)?.state).toBe("running");
+  });
+
+  test("a folder outside every repository removed is noticed and its terminals stopped", async () => {
+    const world = await makeWorld();
+    const outside = join(world.root, "outside");
+    const kept = join(world.root, "kept");
+    mkdirSync(outside);
+    mkdirSync(kept);
+    const checks = manualRepeat();
+    const served = await serve(world, { plugin: { repeat: checks.repeat } });
+    const job = lingering(world, "outside");
+    const terminal = await served.start({ command: job.command, folder: outside });
+    const beside = await served.start({ command: "read x", folder: kept });
+    await job.up;
+    checks.run();
+    expect(job.ended()).toBe(false);
+
+    rmSync(outside, { recursive: true });
+    checks.run();
+
+    await job.gone;
+    expect(await served.ended(terminal.id)).toMatchObject({ reason: FOLDER_REMOVED_REASON });
+    expect((await served.list()).terminals.find((t) => t.id === beside.id)?.state).toBe("running");
+  });
+
+  test("releasing a worktree stops the terminals in folders inside it, and no others", async () => {
+    const world = await makeWorld();
+    const worktree = addWorktree(world, "TK7");
+    const inside = join(worktree, "src");
+    const outside = join(world.root, "outside");
+    mkdirSync(inside);
+    mkdirSync(outside);
+    const served = await serve(world, { plugin: { repeat: manualRepeat().repeat } });
+    const job = lingering(world, "inside");
+    const within = await served.start({ command: job.command, folder: inside });
+    const beside = await served.start({ command: "read x", folder: outside });
+    await job.up;
+
+    expect(await releaseFolder(world.home, worktree)).toBe(1);
+
+    await job.gone;
+    expect(await served.ended(within.id)).toMatchObject({ reason: FOLDER_REMOVED_REASON });
+    expect((await served.list()).terminals.find((t) => t.id === beside.id)?.state).toBe("running");
   });
 
   test("dev making a checking worktree again stops its terminals first", async () => {

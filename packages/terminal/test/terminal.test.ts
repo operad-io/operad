@@ -1,9 +1,10 @@
 import { afterEach, describe, expect, test } from "bun:test";
-import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
+import { chmodSync, mkdirSync, realpathSync, symlinkSync, writeFileSync } from "node:fs";
+import { homedir } from "node:os";
 import { join } from "node:path";
 import { definePlugin } from "@operad-io/engine";
 import { loginShell, REMOTE_REFUSAL, Session, type TerminalInfo, type TerminalList } from "../src/index.ts";
-import { addWorktree, closeAll, lingering, makeWorld, render, serve, type Refusal } from "./support.ts";
+import { addWorktree, closeAll, git, lingering,makeWorld, render, serve, type Refusal } from "./support.ts";
 
 afterEach(closeAll);
 
@@ -68,20 +69,80 @@ describe("starting a terminal", () => {
     expect(loginShell({ SHELL: "" }, "linux")).toBe("/bin/sh");
   });
 
-  test("accepts a repository and its worktrees, and no other folder", async () => {
+  test("starts in the home folder and in a folder outside every repository, which name none", async () => {
     const world = await makeWorld();
-    const worktree = addWorktree(world, "TK1");
+    const outside = join(world.root, "outside");
     const inside = join(world.repository, "src");
+    mkdirSync(outside);
     mkdirSync(inside);
     const served = await serve(world);
-    expect((await served.start({ folder: world.repository })).folder).toBe(world.repository);
-    expect((await served.start({ folder: worktree })).folder).toBe(worktree);
-    for (const folder of [inside, world.root, join(world.root, "nothing"), "repository"]) {
+    for (const folder of [realpathSync(homedir()), outside, inside]) {
+      const terminal = await served.start({ command: 'echo "at:$PWD:"; read x', folder });
+      expect(terminal).toMatchObject({ folder, repository: null });
+      const stream = await served.stream(terminal.id);
+      await stream.shows(terminal.id, new RegExp(`at:${folder}:`));
+      const screen = await stream.until((event) => event.name === "screen");
+      expect(screen.data.repository).toBeNull();
+    }
+    expect((await served.list()).terminals.map((t) => t.repository)).toEqual([null, null, null]);
+  });
+
+  test("in a repository or one of its worktrees names that repository", async () => {
+    const world = await makeWorld();
+    const worktree = addWorktree(world, "TK1");
+    // A worktree outside the repository's folder is its worktree too.
+    const apart = join(world.root, "apart");
+    git(world.repository, "worktree", "add", "-q", "--detach", apart);
+    const served = await serve(world);
+    for (const folder of [world.repository, worktree, apart]) {
+      const terminal = await served.start({ command: "read x", folder });
+      expect(terminal).toMatchObject({ folder, repository: "repository" });
+    }
+    const listed = (await served.list()).terminals;
+    expect(listed.map((t) => t.repository)).toEqual(["repository", "repository", "repository"]);
+    const stream = await served.stream(listed[1]?.id ?? "");
+    const screen = await stream.until((event) => event.name === "screen");
+    expect(screen.data.repository).toBe("repository");
+  });
+
+  test("keeps the real path of a folder reached through a link", async () => {
+    const world = await makeWorld();
+    const link = join(world.root, "link");
+    symlinkSync(world.repository, link);
+    const served = await serve(world);
+    expect(await served.start({ command: "read x", folder: link })).toMatchObject({
+      folder: world.repository,
+      repository: "repository",
+    });
+  });
+
+  test("refuses a missing folder, a file, a relative path and ~, saying why", async () => {
+    const world = await makeWorld();
+    const file = join(world.root, "file");
+    writeFileSync(file, "");
+    const missing = join(world.root, "nothing");
+    const under = join(file, "under");
+    const loop = join(world.root, "loop");
+    symlinkSync(loop, loop);
+    const served = await serve(world);
+    const relative = (folder: string) =>
+      `the folder must be an absolute path, with no "~", and "${folder}" is not one`;
+    for (const [folder, message] of [
+      [missing, `there is no folder at "${missing}"`],
+      [under, `there is no folder at "${under}"`],
+      [file, `"${file}" is not a folder`],
+      ["repository", relative("repository")],
+      ["~", relative("~")],
+      ["", relative("")],
+    ] as const) {
       const refused = await served.request("POST", "/v1/terminal", { folder, cols: 80, rows: 24 });
       expect(refused.status).toBe(422);
-      expect(refused.body.error.message).toContain("registered repository or one of its worktrees");
+      expect(refused.body.error).toEqual({ kind: "refused", message });
     }
-    expect((await served.list()).terminals).toHaveLength(2);
+    const looping = await served.request("POST", "/v1/terminal", { folder: loop, cols: 80, rows: 24 });
+    expect(looping.status).toBe(422);
+    expect(looping.body.error.message).toStartWith(`the folder "${loop}" cannot be opened: `);
+    expect((await served.list()).terminals).toEqual([]);
   });
 
   test("refuses a size outside 1 to 1000 and a body without a folder", async () => {
@@ -339,6 +400,7 @@ describe("a client that is joining when the terminal closes", () => {
       id: "t-1",
       command: "exit 0",
       folder: world.repository,
+      repository: null,
       cols: 80,
       rows: 24,
       group: null,
