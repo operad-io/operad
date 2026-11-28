@@ -398,3 +398,9 @@ _The second "## T-0766" section above repeats the rows of the first; the rows of
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0816-M45 | packages/harness/pi/src/index.ts | a replaced login worker did not count, so on a machine with no pi it was not offered as an agent | `the pi login over HTTP saves the key and ends logged in`, `whether pi's agent is on this machine > a replaced login program needs no pi on PATH` |
+
+## T-0831 — review findings of the offered shipped plugins
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0831-M13 | packages/harness/pi/skills/setup/SKILL.md | the guide named bare `pi auth login` | `the setup guide names no bare pi command for the ChatGPT login, which operad's own pi is not` |

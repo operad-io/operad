@@ -77,3 +77,9 @@ the row fields.
 | T-0817-M21 | packages/terminal/src/session.ts | no reader was told to answer when the first left | `several readers > one is told to answer the program, and the next when it leaves` |
 | T-0817-M22 | packages/terminal/src/host.ts | a preset ignored the harness's command | `starting a terminal > offers the loaded agents as command lines` |
 | T-0817-M26 | packages/terminal/src/index.ts | the plugin did not say it starts without trigger rules | `serve without trigger rules > still serves terminals` |
+
+## T-0831 — review findings of the offered shipped plugins
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0831-M8 | packages/terminal/src/host.ts | the terminal kept the first answer about agents | `starting a terminal > offers an agent installed while it runs` |

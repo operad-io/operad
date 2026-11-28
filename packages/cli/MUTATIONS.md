@@ -595,3 +595,14 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 | T-0816-M37 | packages/cli/src/after-start.ts | a failed install failed serve instead of being reported | `installing after the start > reports a failure as one line and goes on, without failing` |
 | T-0816-M38 | packages/cli/src/after-start.ts | the next install started after a stop | `installing after the start > a stop ends it quietly: no report, and nothing more starts` |
 | T-0816-M39 | packages/cli/src/stand-in/terminal/plugin.ts | the stand-in said it was set up | `terminal in a new home of the packed CLI > no start fails with a download that does, and the next start installs and loads it` |
+
+## T-0831 — review findings of the offered shipped plugins
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0831-M1 | packages/cli/src/plugin-description.ts | a `file:` module that names no file threw again | `plugin descriptions > a file: module that names no file here has no description` |
+| T-0831-M2 | packages/cli/src/main.ts | an install over HTTP kept no progress line | `plugins over HTTP > turning on claude from its offered row installs it, shows the line it is on and adds it` |
+| T-0831-M4 | packages/cli/src/main.ts | init skipped pi whenever another agent was there | ``operad init` finds the agent on PATH > a home with another agent still moves the pi it already names, and retries it` |
+| T-0831-M5 | packages/cli/src/main.ts | a missing agent kept its access levels | `plugins over HTTP > a harness whose agent is not on the machine carries no access levels` |
+| T-0831-M12 | packages/cli/src/defaults.ts | claude had no guide stand-in | `the claude guide operad carries is the package's own` |
+| T-0831-M18 | packages/cli/src/main.ts | the plugin list loaded without the stand-in | `plugins over HTTP > a plugin whose package is not installed is listed with its stand-in's version` |

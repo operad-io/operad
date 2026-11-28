@@ -1767,3 +1767,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0816-M20 | packages/dev/src/settings.ts | the default worker ignored which agent is on the machine | `the agent of a repository that names no worker > passes over an enabled harness whose agent is not on the machine` |
+
+## T-0831 — review findings of the offered shipped plugins
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0831-M9 | packages/dev/src/settings.ts | the agent's own name as `command` counted as present | `the agent of a repository that names no worker > the agent's own name as `command` does not make claude or pi count as there` |
