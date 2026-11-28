@@ -372,3 +372,10 @@ setup it depends on, in the order they were recorded. The root
 | T-0826-M1 | packages/harness/claude/src/claude-install.ts | a claude that is not logged in was a failed check again | `claude check > is not set up, and no failure, when claude is not logged in` |
 | T-0826-M2 | packages/harness/claude/src/claude-install.ts | a claude below the floor was a failed check again | `claude check > is not set up, and no failure, when claude is below the floor` |
 | T-0826-M3 | packages/harness/claude/src/index.ts | the check reported every error as not set up | `claude check > fails when claude's login answer cannot be read` |
+
+## T-0835 — an unreadable login answer fails the check
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0835-M3 | packages/harness/claude/src/claude-install.ts | any answer but a clean `loggedIn: true` was "not logged in" | `claude check > fails when claude's login answer has no loggedIn` (and the two beside it) |
+| T-0835-M7 | packages/harness/claude/src/index.ts | the worker program was asserted after claude was inspected | `claude check > a missing worker program fails the check with a claude that is too old` (and signed out) |

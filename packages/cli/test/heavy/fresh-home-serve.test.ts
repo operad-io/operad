@@ -118,4 +118,25 @@ describe("serve on a new home with nothing set up", () => {
     expect(started.doctor).toContain("ok       agent pi is not set up: ");
     expect(started.doctor).not.toContain("problem  agent");
   });
+
+  for (const [title, version, loggedIn, next] of [
+    ["signed-out", "2.1.319", false, "claude auth login"],
+    ["too old", "2.1.318", true, "claude update"],
+  ] as const) {
+    test(`with only a ${title} claude, serve starts with nothing waiting and doctor names the next command`, async () => {
+      const claude = [
+        "#!/bin/sh",
+        `if [ "$1" = "--version" ]; then echo "${version} (Claude Code)"; exit 0; fi`,
+        `if [ "$1" = "auth" ]; then printf '{"loggedIn":${loggedIn},"authMethod":"claude.ai"}\\n'; exit ${loggedIn ? 0 : 1}; fi`,
+        "exit 1",
+        "",
+      ].join("\n");
+      const started = await freshHome({ claude }, () => undefined);
+      expect(started.serveErrors).toBe("");
+      // claude declares no login step, so not even a bot's login waits.
+      expect(started.pending).toEqual([]);
+      const agent = started.doctor.split("\n").find((line) => line.startsWith("problem  agent claude "));
+      expect(agent).toEndWith(` -> ${next}`);
+    });
+  }
 });

@@ -83,6 +83,8 @@ export interface ClaudeHarnessOptions {
   readonly command?: string | undefined;
   /** The arguments before the worker input; defaults to `worker.ts`. */
   readonly args?: readonly string[] | undefined;
+  /** Test seam: where the worker program is; defaults to this package's `worker.ts`. */
+  readonly workerPath?: string | undefined;
   /** The time now in milliseconds; defaults to `Date.now`. It ages the login cache. */
   readonly now?: (() => number) | undefined;
   /** Test seam: how long a chat's worker is kept after a reply. */
@@ -203,7 +205,8 @@ const SETUP_GUIDE = fileURLToPath(new URL("../skills/setup/SKILL.md", import.met
 export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
   const clock = options.clock ?? systemClock;
   const command = options.command ?? process.execPath;
-  const commandArgs = options.args ?? [WORKER_PATH];
+  const workerPath = options.workerPath ?? WORKER_PATH;
+  const commandArgs = options.args ?? [workerPath];
   const now = options.now ?? Date.now;
   // `claude auth status` runs a child process, so its answer is kept for a
   // short time and asked without blocking serve. A failed answer is kept too,
@@ -362,7 +365,7 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
       // The user's own claude: found, version-checked and asked who is logged
       // in. Only the login kind is reported.
       // A missing worker program fails the check whatever the claude says.
-      assertWorkerAvailable({ command: options.command, args: options.args, workerPath: WORKER_PATH });
+      assertWorkerAvailable({ command: options.command, args: options.args, workerPath });
       let claude: ClaudeInstall;
       try {
         claude = inspectClaude(claudeCommand);

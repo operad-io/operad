@@ -103,6 +103,8 @@ export interface PiHarnessOptions {
   readonly command?: string | undefined;
   /** The arguments before the worker input; defaults to `worker.ts`. */
   readonly args?: readonly string[] | undefined;
+  /** Test seam: where the worker program is; defaults to this package's `worker.ts`. */
+  readonly workerPath?: string | undefined;
   /** Test seam: the executable of a login; defaults to the running Bun. */
   readonly loginCommand?: string | undefined;
   /** Test seam: the arguments before a login's input; defaults to `login-worker.ts`. */
@@ -274,7 +276,8 @@ const SETUP_GUIDE = fileURLToPath(new URL("../skills/setup/SKILL.md", import.met
 export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
   const clock = options.clock ?? systemClock;
   const command = options.command ?? process.execPath;
-  const commandArgs = options.args ?? [WORKER_PATH];
+  const workerPath = options.workerPath ?? WORKER_PATH;
+  const commandArgs = options.args ?? [workerPath];
   const now = options.now ?? Date.now;
   const loginOptions: LoginRunOptions = {
     command: options.loginCommand ?? process.execPath,
@@ -659,7 +662,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
       // The user's own pi, or the one operad installed in the home: found and
       // version-checked, not loaded.
       // A missing worker program fails the check whatever the pi is.
-      assertWorkerAvailable({ command: options.command, args: options.args, workerPath: WORKER_PATH });
+      assertWorkerAvailable({ command: options.command, args: options.args, workerPath });
       let pi: PiInstall;
       try {
         pi = findPi(piCommand ?? DEFAULT_PI_COMMAND, { home: ctx.home });

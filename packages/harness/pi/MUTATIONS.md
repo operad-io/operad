@@ -404,3 +404,9 @@ _The second "## T-0766" section above repeats the rows of the first; the rows of
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0826-M7 | packages/harness/pi/src/pi-install.ts | a pi below the floor was a failed check again | `pi check > a pi below the floor is not set up, with both versions, and no failure` |
+
+## T-0835 — a missing worker fails before pi is judged
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0835-M8 | packages/harness/pi/src/index.ts | the worker program was asserted after pi was found | `pi check > a missing worker program fails the check with a pi below the floor` |

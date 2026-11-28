@@ -10,7 +10,8 @@
  * `FAKE_CODEX_TURN_START_ERROR` (the message the held or immediate `turn/start`
  * answers with instead of a turn);
  * `FAKE_CODEX_VERSION` (what `--version` prints); `FAKE_CODEX_LOGIN` (`out`:
- * `login status` exits 1); `FAKE_CODEX_COMMAND` and `FAKE_CODEX_PATH` (the
+ * `login status` says it is signed out and exits 1; `broken`: it fails with no
+ * login answer); `FAKE_CODEX_COMMAND` and `FAKE_CODEX_PATH` (the
  * call a permission mode asks about); `FAKE_CODEX_MODELS` (`empty`: no choices;
  * `silent`: no answer to
  * `model/list`; `error`: an error answer; `exit`: the process exits when
@@ -43,6 +44,10 @@ if (args.includes("--version")) {
 if (args.includes("login")) {
   if (process.env.FAKE_CODEX_LOGIN === "out") {
     console.error("Not logged in");
+    process.exit(1);
+  }
+  if (process.env.FAKE_CODEX_LOGIN === "broken") {
+    console.error("error: could not read config.toml");
     process.exit(1);
   }
   console.log("Logged in using ChatGPT");
