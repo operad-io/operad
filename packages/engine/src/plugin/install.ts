@@ -293,6 +293,13 @@ export interface EnsureInstalledOptions {
   readonly onInstall?: (() => void) | undefined;
 }
 
+/** True when the installed package is the one `wanted` names; a tarball names no version to compare. */
+function holdsWanted(home: string, specifier: string, wanted: string): boolean {
+  if (wanted.startsWith("file:")) return true;
+  const directory = join(pluginProjectPath(home), "node_modules", packageNameOf(specifier));
+  return packageManifest(directory)?.version === wanted;
+}
+
 /**
  * Makes sure `specifier` is available from the home project and returns its
  * file. In a workspace checkout, where the package already resolves from the
@@ -328,7 +335,9 @@ export async function ensureInstalledPackage(options: EnsureInstalledOptions): P
       ? existing
       : version;
   const found = installedPackageFile(home, specifier);
-  if (existing === wanted && found !== undefined) return found;
+  // The manifest names the new version before the install runs, so after a
+  // failed upgrade only the installed package says what the home holds.
+  if (existing === wanted && found !== undefined && holdsWanted(home, specifier, wanted)) return found;
 
   dependencies[specifier] = wanted;
   manifest.dependencies = dependencies;
@@ -344,6 +353,10 @@ export async function ensureInstalledPackage(options: EnsureInstalledOptions): P
   const installed = installedPackageFile(home, specifier);
   if (installed === undefined) {
     throw new Error(`${specifier}: was installed into ${directory}, but its entry does not resolve`);
+  }
+  // `serve` reloads after an install, so one that changed nothing must not count.
+  if (!holdsWanted(home, specifier, wanted)) {
+    throw new Error(`${specifier}: was installed into ${directory}, but it is not version ${wanted}`);
   }
   return installed;
 }

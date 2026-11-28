@@ -323,6 +323,46 @@ describe("`operad init` finds the agent on PATH", () => {
     expect(output.text()).toContain("pi: pi 1.7.0");
   });
 
+  test("a bare operad leaves an older copy for serve to move", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    const plugins = join(home, "plugins");
+    const name = "@earendil-works/pi-coding-agent";
+    const dir = join(plugins, "node_modules", name);
+    mkdirSync(join(dir, "dist"), { recursive: true });
+    writeFileSync(
+      join(dir, "package.json"),
+      JSON.stringify({ name, version: "1.6.0", exports: { ".": "./dist/index.js" } }),
+    );
+    writeFileSync(join(dir, "dist", "index.js"), "export {};\n");
+    writeFileSync(
+      join(plugins, "package.json"),
+      JSON.stringify({ name: "operad-plugins", private: true, dependencies: { [name]: "1.6.0" } }),
+    );
+    mkdirSync(join(root, "bin"), { recursive: true });
+    const calls: string[] = [];
+    const previous = process.env.PATH;
+    process.env.PATH = join(root, "bin");
+    try {
+      const output = capture();
+      const code = await main([], {
+        home,
+        io: output.io,
+        tui: async () => 0,
+        pluginInstall: (_cwd, args) => {
+          calls.push(args.join(" "));
+          return { exitCode: 1, stdout: "", stderr: "" };
+        },
+      });
+      expect(output.errors()).toBe("");
+      expect(code).toBe(0);
+      expect(calls).toEqual([]);
+    } finally {
+      if (previous === undefined) delete process.env.PATH;
+      else process.env.PATH = previous;
+    }
+  });
+
   test("a new home with another agent installs no pi", async () => {
     const root = await tempRoot();
     const calls: string[] = [];

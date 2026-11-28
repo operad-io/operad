@@ -125,6 +125,40 @@ describe("ensuring a package is installed in the home", () => {
     expect(runs).toBe(1);
   });
 
+  test("a failed upgrade is tried again, though the project already names the new version", async () => {
+    const root = await tempRoot();
+    const fixture = installFixture(root, "@operad-io/plugin-fixture");
+    let runs = 0;
+    const upgrade = (exitCode: number): Promise<string | undefined> =>
+      ensureInstalledPackage({
+        home: fixture.home,
+        specifier: fixture.specifier,
+        version: "0.0.2",
+        run: () => {
+          runs += 1;
+          // Writes the new version over the old one, in the same home.
+          if (exitCode === 0) installFixture(root, fixture.specifier, "0.0.2");
+          return { exitCode, stdout: "", stderr: "" };
+        },
+      });
+    await expect(upgrade(1)).rejects.toThrow("failed with exit code 1");
+    await upgrade(0);
+    expect(runs).toBe(2);
+  });
+
+  test("an install that leaves another version behind fails", async () => {
+    const root = await tempRoot();
+    const fixture = installFixture(root, "@operad-io/plugin-fixture");
+    await expect(
+      ensureInstalledPackage({
+        home: fixture.home,
+        specifier: fixture.specifier,
+        version: "0.0.2",
+        run: () => ({ exitCode: 0, stdout: "", stderr: "" }),
+      }),
+    ).rejects.toThrow("it is not version 0.0.2");
+  });
+
   test("a tarball dependency a person pinned is kept", async () => {
     const root = await tempRoot();
     const fixture = installFixture(root, "@operad-io/plugin-fixture");

@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { loadTui, main, type CliIo, type TuiCommand, type TuiRunner } from "../src/main.ts";
-import type { InstallRunner } from "@operad-io/engine";
+import { ENGINE_VERSION, type InstallRunner } from "@operad-io/engine";
 
 const roots: string[] = [];
 afterAll(() => {
@@ -63,7 +63,7 @@ describe("operad tui", () => {
         mkdirSync(directory, { recursive: true });
         writeFileSync(
           join(directory, "package.json"),
-          JSON.stringify({ name: "@operad-io/tui", version: "0.0.1", exports: { ".": "./index.ts" } }),
+          JSON.stringify({ name: "@operad-io/tui", version: ENGINE_VERSION, exports: { ".": "./index.ts" } }),
         );
         writeFileSync(
           join(directory, "index.ts"),
