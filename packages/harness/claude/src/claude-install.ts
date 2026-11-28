@@ -128,21 +128,22 @@ function word(value: unknown): string | undefined {
   return typeof value === "string" && /^[A-Za-z0-9_. -]{1,40}$/.test(value) ? value : undefined;
 }
 
-/**
- * The login kind from `claude auth status`. Only the kind is read: the e-mail,
- * the organisation and everything else in that output are left alone.
- */
-function loginKind(stdout: string): string | undefined {
+/** The object `claude auth status` printed, when it printed one. */
+function statusOf(stdout: string): object | undefined {
   let value: unknown;
   try {
     value = JSON.parse(stdout);
   } catch {
-    throw new ClaudeInstallError("`claude auth status` printed something this check cannot read");
+    return undefined;
   }
-  if (typeof value !== "object" || value === null || Array.isArray(value)) {
-    throw new ClaudeInstallError("`claude auth status` printed something this check cannot read");
-  }
-  if (Reflect.get(value, "loggedIn") !== true) return undefined;
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value : undefined;
+}
+
+/**
+ * The login kind from `claude auth status`. Only the kind is read: the e-mail,
+ * the organisation and everything else in that output are left alone.
+ */
+function loginKind(value: object): string {
   const method = word(Reflect.get(value, "authMethod")) ?? "unknown login";
   const plan = word(Reflect.get(value, "subscriptionType"));
   const provider = word(Reflect.get(value, "apiProvider"));
@@ -156,14 +157,8 @@ function loginKind(stdout: string): string | undefined {
  * The `loggedIn` answer of `claude auth status`, when the output carries a
  * boolean; undefined when it cannot be read. Only this field is read.
  */
-function loggedInOf(stdout: string): boolean | undefined {
-  let value: unknown;
-  try {
-    value = JSON.parse(stdout);
-  } catch {
-    return undefined;
-  }
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
+function loggedInOf(value: object | undefined): boolean | undefined {
+  if (value === undefined) return undefined;
   const answer = Reflect.get(value, "loggedIn");
   return typeof answer === "boolean" ? answer : undefined;
 }
@@ -215,7 +210,7 @@ export async function claudeSignedIn(command: string | undefined): Promise<boole
   }
   const ran = await runClaudeAsync(path, ["auth", "status"]);
   if (ran === undefined) return undefined;
-  const loggedIn = loggedInOf(ran.stdout);
+  const loggedIn = loggedInOf(statusOf(ran.stdout));
   if (loggedIn === undefined) return undefined;
   // A failing exit with `loggedIn: true` contradicts itself; do not guess.
   if (ran.exitCode !== 0 && loggedIn) return undefined;
@@ -245,16 +240,21 @@ export function inspectClaude(
   const version = match[1];
   if (compareVersions(version, floor) < 0) {
     throw new ClaudeNotReadyError(
-      `claude ${version} at ${path} is older than the floor ${floor}; update claude (claude update)`,
+      `claude ${version} at ${path} is older than the floor ${floor}; update claude (\`claude update\`)`,
     );
   }
 
   const status = runClaude(path, ["auth", "status"]);
-  const login = loginKind(status.stdout);
-  if (login === undefined || status.exitCode !== 0) {
+  const answer = statusOf(status.stdout);
+  const loggedIn = loggedInOf(answer);
+  if (loggedIn === false) {
     throw new ClaudeNotReadyError("claude is not logged in; run `claude auth login`, then check again");
   }
-  return { path, version, login };
+  // No answer, or a failing exit beside `loggedIn: true`, does not say it is signed out.
+  if (answer === undefined || loggedIn === undefined || status.exitCode !== 0) {
+    throw new ClaudeInstallError("`claude auth status` gave no login answer this check can read");
+  }
+  return { path, version, login: loginKind(answer) };
 }
 
 /** The version of the Agent SDK this package imports, or undefined if it cannot be read. */

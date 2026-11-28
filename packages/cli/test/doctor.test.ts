@@ -152,6 +152,27 @@ describe("operad doctor", () => {
     );
   });
 
+  test("an agent that is not set up names the command its reason quotes, or says to set it up", async () => {
+    const report = await runDoctor(
+      healthy({
+        agents: async () => [
+          { name: "claude", notReady: true, problem: "claude is not logged in; run `claude auth login`" },
+          { name: "codex", notReady: true, loginBot: "work", problem: "not logged in; run `codex login` first" },
+          { name: "claude", notReady: true, loginBot: "work", problem: "too old; update claude (`claude update`)" },
+          { name: "pi", notReady: true, loginBot: "work", problem: "pi 1.2.0 is too old; upgrade pi" },
+          { name: "radian", problem: "`radian --help` did not run" },
+        ],
+      }),
+    );
+    expect(report.checks.filter((check) => check.id.startsWith("agent:")).map((check) => check.next)).toEqual([
+      "claude auth login",
+      "operad bot:login work",
+      "claude update",
+      "set up pi, then operad doctor",
+      "operad init",
+    ]);
+  });
+
   test("serve not answering names operad serve", async () => {
     const report = await runDoctor(healthy({ serve: async () => ({ answering: false }) }));
     expect(report.ok).toBe(false);

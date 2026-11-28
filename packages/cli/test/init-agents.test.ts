@@ -464,15 +464,17 @@ describe("`operad init` with an agent that needs the person", () => {
       title: "that is not signed in",
       answers: { loggedIn: false },
       says: "claude is not logged in; run `claude auth login`, then check again",
+      next: "claude auth login",
     },
     {
       title: "older than the floor",
       answers: { version: "2.1.318" },
-      says: "is older than the floor 2.1.319; update claude (claude update)",
+      says: "is older than the floor 2.1.319; update claude (`claude update`)",
+      next: "claude update",
     },
   ];
 
-  for (const { title, answers, says } of cases) {
+  for (const { title, answers, says, next } of cases) {
     test(`a claude ${title} is not set up, init passes, and doctor lists a problem`, async () => {
       const root = await tempRoot();
       claudeThat(root, answers);
@@ -492,6 +494,7 @@ describe("`operad init` with an agent that needs the person", () => {
       const agent = doctor.output.text().split("\n").find((text) => text.includes("agent claude"));
       expect(agent).toStartWith("problem  agent claude cannot be used: ");
       expect(agent).toContain(says);
+      expect(agent).toEndWith(` -> ${next}`);
     });
   }
 });

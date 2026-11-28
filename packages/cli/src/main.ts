@@ -961,6 +961,7 @@ function systemDoctorEnv(home: string, io: CliIo): DoctorEnv & { close(): Promis
           signedIn: await registry.signedInFor(name),
           ...(loginBot === undefined ? {} : { loginBot }),
           ...(problem === undefined ? {} : { problem }),
+          ...(check?.ok === true && problem !== undefined ? { notReady: true } : {}),
         });
       }
       for (const missing of registry.missingAgents()) {

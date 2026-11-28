@@ -761,7 +761,7 @@ export function createCodexHarnessPlugin(options: CodexHarnessOptions = {}) {
       const codex = options.codex ?? codexCommand(bun);
       let install: CodexInstall;
       try {
-        install = inspectCodex(command, codex);
+        install = inspectCodex(command, codex, { ownCommand: ctx.settings.command !== undefined });
       } catch (error) {
         if (error instanceof CodexNotReadyError) return agentNotSetUp(error.message);
         throw error;

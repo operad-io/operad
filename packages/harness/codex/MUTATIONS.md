@@ -210,3 +210,11 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 | T-0826-M4 | packages/harness/codex/src/install.ts | a Codex that is not logged in was a failed check again | `codex check > is not set up, and no failure, when Codex is not logged in` |
 | T-0826-M5 | packages/harness/codex/src/install.ts | a Codex below the floor was a failed check again | `codex check > is not set up, and no failure, with an installed Codex that is too old` |
 | T-0826-M6 | packages/harness/codex/src/install.ts | the app-server was proved before the version was read | `codex check > an old Codex with no app-server is not set up for its version` |
+
+## T-0835 — what codex's check cannot read fails it
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0835-M4 | packages/harness/codex/src/install.ts | any failing exit of `login status` was signed out | `codex check > fails when Codex's login answer cannot be read` |
+| T-0835-M5 | packages/harness/codex/src/install.ts | an unreadable version passed | `codex check > fails when Codex's version cannot be read` |
+| T-0835-M6 | packages/harness/codex/src/index.ts | an owner-set command was judged after the version | `codex check > a command the owner set with no app-server fails, though the codex asked is old` |

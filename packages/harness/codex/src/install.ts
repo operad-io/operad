@@ -202,35 +202,60 @@ export interface CodexInstall {
   readonly login: string | undefined;
 }
 
+/** The version `codex --version` prints; refused when it cannot be read or is below the floor. */
+function readVersion(codex: readonly string[]): string {
+  const ran = run(codex, ["--version"]);
+  const version = ran.exitCode === 0 ? versionOf(ran.stdout) : undefined;
+  if (version === undefined) {
+    throw new CodexInstallError(`\`${codex.join(" ")} --version\` did not print a version this check can read`);
+  }
+  if (!versionAtLeast(version, CODEX_FLOOR)) {
+    throw new CodexNotReadyError(
+      `Codex ${version} is too old; this harness needs codex-cli ${CODEX_FLOOR} or newer ` +
+        `(its app-server protocol was read from ${CODEX_FLOOR}); upgrade Codex`,
+    );
+  }
+  return version;
+}
+
+function proveAppServer(command: readonly string[]): void {
+  if (run(command, ["--help"]).exitCode === 0) return;
+  throw new CodexInstallError(
+    `\`${command.join(" ")} --help\` did not run; the installed Codex has no app-server ` +
+      `(this harness was built against codex-cli ${CODEX_FLOOR}); upgrade Codex or set the command setting`,
+  );
+}
+
+export interface InspectCodexOptions {
+  /** Whether the owner set `command`, which is then judged before the version of `codex`. */
+  readonly ownCommand?: boolean | undefined;
+}
+
 /**
  * Reads the installed Codex version and refuses one older than `CODEX_FLOOR`,
  * proves the configured command has an app-server, and asks the login kind.
  * Throws `CodexInstallError` with what to do; it is a `CodexNotReadyError` when
- * Codex is too old or not logged in. The version comes first, because an old
- * Codex may have no app-server to prove. A Codex that cannot be asked is
- * reported as unknown.
+ * Codex is too old or says it is not logged in. For the default command the
+ * version comes first, because an old Codex may have no app-server to prove. A
+ * command the owner set is proved first, so a wrong one is not taken for an old
+ * Codex. With no `codex` to ask, the version and the login are unknown.
  */
-export function inspectCodex(command: readonly string[], codex: readonly string[] | undefined): CodexInstall {
-  const version = codex === undefined ? undefined : run(codex, ["--version"]);
-  const codexVersion = version?.exitCode === 0 ? versionOf(version.stdout) : undefined;
-  if (codexVersion !== undefined && !versionAtLeast(codexVersion, CODEX_FLOOR)) {
-    throw new CodexNotReadyError(
-      `Codex ${codexVersion} is too old; this harness needs codex-cli ${CODEX_FLOOR} or newer ` +
-        `(its app-server protocol was read from ${CODEX_FLOOR}); upgrade Codex`,
-    );
-  }
-  const help = run(command, ["--help"]);
-  if (help.exitCode !== 0) {
-    throw new CodexInstallError(
-      `\`${command.join(" ")} --help\` did not run; the installed Codex has no app-server ` +
-        `(this harness was built against codex-cli ${CODEX_FLOOR}); upgrade Codex or set the command setting`,
-    );
-  }
+export function inspectCodex(
+  command: readonly string[],
+  codex: readonly string[] | undefined,
+  options: InspectCodexOptions = {},
+): CodexInstall {
+  if (options.ownCommand === true) proveAppServer(command);
+  const codexVersion = codex === undefined ? undefined : readVersion(codex);
+  if (options.ownCommand !== true) proveAppServer(command);
   if (codex === undefined) return { codexVersion: undefined, login: undefined };
   const status = run(codex, ["login", "status"]);
-  if (status.exitCode === null) return { codexVersion, login: undefined };
   if (status.exitCode !== 0) {
-    throw new CodexNotReadyError("Codex is not logged in; run `codex login` first");
+    // Codex exits 1 and says so when signed out; any other failure is no answer.
+    if (status.exitCode !== null && /^Not logged in\b/m.test(`${status.stdout}\n${status.stderr}`)) {
+      throw new CodexNotReadyError("Codex is not logged in; run `codex login` first");
+    }
+    throw new CodexInstallError(`\`${codex.join(" ")} login status\` did not give a login answer this check can read`);
   }
   // `codex login status` writes its line to stderr, not stdout.
   return { codexVersion, login: loginKind(`${status.stdout}${status.stderr}`) };

@@ -29,6 +29,8 @@ export interface DoctorAgent {
   readonly loginBot?: string | undefined;
   /** Why the agent cannot be used, when it cannot. */
   readonly problem?: string | undefined;
+  /** The check passed and reports `problem` as the person's next step: signed out, or too old. */
+  readonly notReady?: boolean | undefined;
   /** How to set the agent up, when it is not on this machine; not a problem while another agent is. */
   readonly notSetUp?: string | undefined;
 }
@@ -83,6 +85,28 @@ const SIGN_IN: Readonly<Record<string, string>> = {
   pi: "pi auth login <provider>",
   radian: "radian login",
 };
+
+/** The operad login of a bot when there is one, else the agent's own command. */
+function signInNext(agent: DoctorAgent): string {
+  if (agent.loginBot !== undefined) return `operad bot:login ${agent.loginBot}`;
+  return SIGN_IN[agent.name] ?? `sign in to ${agent.name}, then operad doctor`;
+}
+
+/** The first command a sentence quotes in backticks. */
+function quotedCommand(text: string): string | undefined {
+  return /`([^`]+)`/.exec(text)?.[1];
+}
+
+/**
+ * What to type for an agent its own check reports as not set up: the command
+ * the reason quotes, and `signInNext` when that command is the agent's own
+ * sign-in. `operad init` is never it, as it would only repeat the reason.
+ */
+function notReadyNext(agent: DoctorAgent, reason: string): string {
+  const named = quotedCommand(reason);
+  if (named === undefined) return `set up ${agent.name}, then operad doctor`;
+  return named === SIGN_IN[agent.name] ? signInNext(agent) : named;
+}
 
 function good(id: string, message: string): DoctorCheck {
   return { id, ok: true, message };
@@ -147,18 +171,11 @@ export async function runDoctor(env: DoctorEnv): Promise<DoctorReport> {
         if (agent.notSetUp !== undefined) {
           checks.push(good(id, `agent ${agent.name} is not set up: ${agent.notSetUp}`));
         } else if (agent.problem !== undefined) {
-          checks.push(
-            bad(id, `agent ${agent.name} cannot be used: ${agent.problem}`, "operad init"),
-          );
+          const next = agent.notReady === true ? notReadyNext(agent, agent.problem) : "operad init";
+          checks.push(bad(id, `agent ${agent.name} cannot be used: ${agent.problem}`, next));
         } else if (agent.signedIn === false) {
           checks.push(
-            bad(
-              id,
-              `agent ${agent.name}${version} is not signed in`,
-              agent.loginBot === undefined
-                ? (SIGN_IN[agent.name] ?? `sign in to ${agent.name}, then operad doctor`)
-                : `operad bot:login ${agent.loginBot}`,
-            ),
+            bad(id, `agent ${agent.name}${version} is not signed in`, signInNext(agent)),
           );
         } else {
           checks.push(
@@ -238,7 +255,7 @@ export async function runDoctor(env: DoctorEnv): Promise<DoctorReport> {
       }
       for (const item of await env.setup()) {
         // A standing item that already names a command: that is the next step.
-        const named = /`([^`]+)`/.exec(item.prompt)?.[1];
+        const named = quotedCommand(item.prompt);
         checks.push(
           named === undefined
             ? bad(`setup:${item.id}`, item.prompt, "operad pending")
