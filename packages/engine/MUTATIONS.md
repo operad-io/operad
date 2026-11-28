@@ -1657,3 +1657,10 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0816-M42 | packages/engine/src/plugin/load.ts | the stand-in hid an installed package that fails to load | `the stand-in of a package that is not installed > does not hide an installed package that fails to load` |
 | T-0816-M43 | packages/engine/src/plugin/load.ts | a plugin that is off had no guide from its stand-in | `the stand-in of a package that is not installed > gives its guide while the plugin is off` |
 | T-0833-M1 | packages/engine/test/views/plugin-http.test.ts | `readUntil` searched only the new chunk, without the end of what came before | `reading a response until a text > finds a text that arrives in several chunks, and reads no further` |
+
+## T-0836 — a failed upgrade is tried again
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0836-M2 | packages/engine/src/plugin/install.ts | a package counted as installed once the project named the wanted version | `ensuring a package is installed in the home > a failed upgrade is tried again, though the project already names the new version` |
+| T-0836-M3 | packages/engine/src/plugin/install.ts | an install that left another version behind passed | `ensuring a package is installed in the home > an install that leaves another version behind fails` |
