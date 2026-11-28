@@ -83,6 +83,29 @@ describe("serve on a home with operad's pi at an older pin", () => {
     expect(project.dependencies[PI_CODING_AGENT_PACKAGE]).toBe(PI_CODING_AGENT_VERSION);
   });
 
+  test("runs a move that was left part done again", async () => {
+    const { home, root } = await olderPiHome();
+    const project = join(home, "plugins");
+    // The new version arrived and one of its dependencies did not.
+    writeFileSync(
+      join(project, "node_modules", PI_CODING_AGENT_PACKAGE, "package.json"),
+      JSON.stringify({
+        name: PI_CODING_AGENT_PACKAGE,
+        version: PI_CODING_AGENT_VERSION,
+        exports: { ".": "./dist/index.js" },
+        dependencies: { "operad-test-needed": "1.0.0" },
+      }),
+    );
+    writeFileSync(
+      join(project, "package.json"),
+      JSON.stringify({ dependencies: { [PI_CODING_AGENT_PACKAGE]: PI_CODING_AGENT_VERSION } }),
+    );
+    const serve = startServe(home, root, "ok");
+    const [out, code] = await Promise.all([new Response(serve.stdout).text(), serve.exited]);
+    expect(code).toBe(75);
+    expect(out).toContain("reloading: installed pi");
+  });
+
   test("a failed move is logged, and serve goes on with the copy it has", async () => {
     const { home, root } = await olderPiHome();
     const serve = startServe(home, root, "fail");
