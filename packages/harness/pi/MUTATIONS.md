@@ -410,3 +410,8 @@ _The second "## T-0766" section above repeats the rows of the first; the rows of
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0835-M8 | packages/harness/pi/src/index.ts | the worker program was asserted after pi was found | `pi check > a missing worker program fails the check with a pi below the floor` |
+## T-0831 — review findings of the offered shipped plugins
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0831-M13 | packages/harness/pi/skills/setup/SKILL.md | the guide named bare `pi auth login` | `the setup guide names no bare pi command for the ChatGPT login, which operad's own pi is not` |

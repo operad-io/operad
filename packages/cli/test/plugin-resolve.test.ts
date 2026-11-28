@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   INSTALL_AFTER_START,
@@ -75,4 +75,10 @@ describe("the distribution's defaults", () => {
       }
     }
   });
+});
+
+test("the claude guide operad carries is the package's own", () => {
+  const carried = standInPlugins()["@operad-io/harness-claude"] ?? "";
+  const own = join(import.meta.dir, "../../harness/claude/skills/setup/SKILL.md");
+  expect(readFileSync(carried, "utf8")).toBe(readFileSync(own, "utf8"));
 });

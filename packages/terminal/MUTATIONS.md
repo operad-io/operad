@@ -99,3 +99,8 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0834-M1 | packages/terminal/src/folders.ts | another repository's worktree, listed first, named a repository's own folder | `starting a terminal > a repository's own folder names it before another repository's worktree` |
+## T-0831 — review findings of the offered shipped plugins
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0831-M8 | packages/terminal/src/host.ts | the terminal kept the first answer about agents | `starting a terminal > offers an agent installed while it runs` |

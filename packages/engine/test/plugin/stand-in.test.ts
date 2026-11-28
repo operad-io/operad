@@ -69,6 +69,38 @@ describe("the stand-in of a package that is not installed", () => {
     expect((await registry.setupReader().get("later"))?.text).toContain("standing in");
   });
 
+  test("a guide alone is the guide while the plugin is off", async () => {
+    const { registry, logs } = await load({ module: MODULE, enabled: false }, (root) => {
+      writeFileSync(join(root, "SKILL.md"), "# only a guide\n");
+      return { [MODULE]: join(root, "SKILL.md") };
+    });
+    expect(logs).toEqual([]);
+    expect(await registry.setupReader().list()).toEqual([{ plugin: "later", enabled: false }]);
+    expect((await registry.setupReader().get("later"))?.text).toContain("only a guide");
+  });
+
+  test("a guide alone loads as no plugin, so one that is on is still reported", async () => {
+    const { registry, logs } = await load({ module: MODULE }, (root) => {
+      writeFileSync(join(root, "SKILL.md"), "# only a guide\n");
+      return { [MODULE]: join(root, "SKILL.md") };
+    });
+    expect(registry.names()).toEqual([]);
+    expect(logs.join("\n")).toContain("import failed");
+    expect(logs.join("\n")).not.toContain("SKILL.md");
+  });
+
+  test("an installed package that is off gives its own guide from the home", async () => {
+    const { registry } = await load({ module: MODULE, enabled: false }, standing, (home) => {
+      const project = join(home, "plugins");
+      const directory = join(project, "node_modules", MODULE);
+      mkdirSync(directory, { recursive: true });
+      writeFileSync(join(project, "package.json"), "{}");
+      writeFileSync(join(directory, "package.json"), JSON.stringify({ name: MODULE, exports: "./index.ts" }));
+      pluginFile(join(directory, "index.ts"), "the installed one");
+    });
+    expect((await registry.setupReader().get("later"))?.text).toContain("the installed one");
+  });
+
   test("does not hide an installed package that fails to load", async () => {
     const { registry, logs } = await load({ module: MODULE }, standing, (home) => {
       const project = join(home, "plugins");

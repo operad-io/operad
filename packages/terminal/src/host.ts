@@ -61,8 +61,8 @@ export interface HostOptions {
   readonly home: string;
   readonly store: ObjectStore;
   readonly repositories: () => Promise<readonly SettingsRepository[]>;
-  /** The loaded harness plugin names. */
-  readonly harnesses: readonly string[];
+  /** The loaded harness plugin names, asked at each list. */
+  readonly harnesses: () => readonly string[];
   /** The command line a loaded harness's agent is run with by hand, when it says one. */
   readonly harnessCommand: (harness: string) => Promise<string | undefined>;
   readonly shell: string;
@@ -99,13 +99,14 @@ export class TerminalHost {
   }
 
   async list(): Promise<TerminalList> {
+    const harnesses = this.options.harnesses();
     const terminals = [...this.sessions.values()].map((session) => session.info());
     const groups = await this.storedGroups();
     return {
       terminals,
       groups: groups.map((group) => this.groupInfo(group)),
       presets: await Promise.all(
-        PRESET_AGENTS.filter((name) => this.options.harnesses.includes(name)).map(async (name) => ({
+        PRESET_AGENTS.filter((name) => harnesses.includes(name)).map(async (name) => ({
           name,
           command: (await this.options.harnessCommand(name)) ?? name,
         })),

@@ -610,3 +610,13 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 |---|---|---|---|
 | T-0835-M1 | packages/cli/src/doctor.ts | doctor told an agent not set up to run `operad init` | `operad doctor > an agent that is not set up names the command its reason quotes, or says to set it up` |
 | T-0835-M2 | packages/cli/src/main.ts | doctor did not mark an agent whose passing check reports it missing | `` `operad init` with an agent that needs the person ``; `serve on a new home with nothing set up > with only a signed-out claude, …` and `… a too old claude, …` |
+## T-0831 — review findings of the offered shipped plugins
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0831-M1 | packages/cli/src/plugin-description.ts | a `file:` module that names no file threw again | `plugin descriptions > a file: module that names no file here has no description` |
+| T-0831-M2 | packages/cli/src/main.ts | an install over HTTP kept no progress line | `plugins over HTTP > turning on claude from its offered row installs it, shows the line it is on and adds it` |
+| T-0831-M4 | packages/cli/src/main.ts | init skipped pi whenever another agent was there | ``operad init` finds the agent on PATH > a home with another agent still moves the pi it already names, and retries it` |
+| T-0831-M5 | packages/cli/src/main.ts | a missing agent kept its access levels | `plugins over HTTP > a harness whose agent is not on the machine carries no access levels` |
+| T-0831-M12 | packages/cli/src/defaults.ts | claude had no guide stand-in | `the claude guide operad carries is the package's own` |
+| T-0831-M18 | packages/cli/src/main.ts | the plugin list loaded without the stand-in | `plugins over HTTP > a plugin whose package is not installed is listed with its stand-in's version` |

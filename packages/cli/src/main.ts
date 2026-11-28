@@ -37,6 +37,8 @@ import {
   defaultOperadHome,
   ensureConfig,
   ensureInstalledPackage,
+  standInModule,
+  pluginProjectManifestPath,
   formatHistoryEntry,
   historyEntry,
   historyEntries,
@@ -711,6 +713,8 @@ interface PluginInstallOptions {
   readonly signal?: AbortSignal | undefined;
   /** Called when a plugin's package has to be installed. */
   readonly onInstall?: (() => void) | undefined;
+  /** Where the CLI's own packages resolve from; a test names another place. */
+  readonly from?: string | undefined;
 }
 
 /**
@@ -738,12 +742,14 @@ async function installPluginPackage(options: PluginInstallOptions): Promise<void
       home: options.home,
       specifier: defaultPluginModule(name),
       version: ENGINE_VERSION,
-      from: import.meta.dir,
+      from: options.from ?? import.meta.dir,
       omitOptional: true,
       ...(options.run === undefined ? {} : { run: options.run }),
       ...(report === undefined ? {} : { onProgress: report }),
       signal: options.signal,
       onInstall: options.onInstall,
+      // `init`, `serve` and `plugin enable` name it again when they retry.
+      forgetOnFailure: true,
     });
     return;
   }
@@ -764,6 +770,18 @@ async function installPluginPackage(options: PluginInstallOptions): Promise<void
       ...(report === undefined ? {} : { onProgress: report }),
     });
   }
+}
+
+/** True when the home's plugin project names `name` as a dependency. */
+function pluginProjectDependsOn(home: string, name: string): boolean {
+  let manifest: unknown;
+  try {
+    manifest = JSON.parse(readFileSync(pluginProjectManifestPath(home), "utf8"));
+  } catch {
+    // No project, or one that cannot be read.
+    return false;
+  }
+  return isRecord(manifest) && isRecord(manifest.dependencies) && Object.hasOwn(manifest.dependencies, name);
 }
 
 /**
@@ -805,10 +823,13 @@ async function ensureHomeConfig(
   const hasOtherAgent = ensured.config.plugins.some(
     (entry) => entry.enabled && entry.name !== "pi" && found.some((name) => name === entry.name),
   );
+  // A pi the home's project already names, installed or failed, is still moved
+  // to the pinned version or tried again.
+  const namesPi = pluginProjectDependsOn(home, PI_CODING_AGENT_PACKAGE);
   for (const entry of ensured.config.plugins) {
     // A home with another agent does not wait for pi's library: pi stays not
     // set up until `plugin enable pi` installs it (ADR 0023 D9).
-    if (entry.name === "pi" && hasOtherAgent) continue;
+    if (entry.name === "pi" && hasOtherAgent && !namesPi) continue;
     // `serve` installs these once it is serving, so no start waits for them.
     if (entry.name !== undefined && INSTALL_AFTER_START.includes(entry.name)) continue;
     await installPluginPackage({
@@ -2539,12 +2560,16 @@ function definitionVersion(value: unknown): string | undefined {
 /** What loading a plugin gave: the name and version it declares. */
 type PluginIdentity = { readonly name: string | undefined; readonly version: string | undefined };
 
+/** `loadPlugin`, or what a test puts in its place. */
+type PluginLoader = (module: string, home: string, installed?: string | undefined) => Promise<unknown>;
+
 /** One configured plugin as `plugin list` prints it, with the key `config.json` files it under. */
 async function pluginRows(
   home: string,
   plugins: OperadConfig["plugins"],
   loaded?: Map<string, PluginIdentity | null>,
-  load: (module: string, home: string) => Promise<unknown> = loadPlugin,
+  load: PluginLoader = loadPlugin,
+  standIns: Readonly<Record<string, string>> = standInPlugins(),
 ): Promise<(PluginInfo & { readonly key: string })[]> {
   const rows: (PluginInfo & { readonly key: string })[] = [];
   for (const entry of plugins) {
@@ -2557,7 +2582,8 @@ async function pluginRows(
       identity = loaded?.get(entry.module);
       if (identity === undefined) {
         try {
-          const definition = await load(entry.module, home);
+          const standIn = standInModule(home, entry.module, standIns);
+          const definition = await load(standIn ?? entry.module, home, installedPackageFile(home, entry.module));
           identity = { name: definitionName(definition), version: definitionVersion(definition) };
           loaded?.set(entry.module, identity);
         } catch {
@@ -2938,6 +2964,7 @@ async function changePlugin(
   options: {
     readonly run?: InstallRunner | undefined;
     readonly onProgress?: ((name: string, line: string) => void) | undefined;
+    readonly from?: string | undefined;
   } = {},
 ): Promise<readonly string[]> {
   await checkPluginChange(context, name, enable, refusals);
@@ -2960,6 +2987,7 @@ async function changePlugin(
       entry: target,
       ...(options.run === undefined ? {} : { run: options.run }),
       ...(options.onProgress === undefined ? {} : { onProgress: options.onProgress }),
+      from: options.from,
     });
   }
   await setPluginEnabled(context.home, name, enable, pluginOffer(context.home));
@@ -2973,8 +3001,13 @@ async function changePlugin(
  */
 export function pluginAdminFor(
   context: Context,
-  load: (module: string, home: string) => Promise<unknown> = loadPlugin,
+  load: PluginLoader = loadPlugin,
   installRun?: InstallRunner,
+  /** A test replaces where packages resolve from, or what stands in for them. */
+  places: {
+    readonly from?: string | undefined;
+    readonly standIns?: Readonly<Record<string, string>> | undefined;
+  } = {},
 ): PluginAdmin {
   const loaded = new Map<string, PluginIdentity | null>();
   /** The latest install line of a plugin being installed now, by plugin name. */
@@ -2982,7 +3015,7 @@ export function pluginAdminFor(
   /** The configured plugins, then the shipped optional ones the file does not name. */
   const rowsNow = async (): Promise<(PluginInfo & { readonly key: string })[]> => {
     const { plugins } = await readConfig(context.home);
-    const rows = await pluginRows(context.home, plugins, loaded, load);
+    const rows = await pluginRows(context.home, plugins, loaded, load, places.standIns);
     return [...rows, ...offeredRows(context.home, plugins, rows)];
   };
   const publicRow = ({ key: _key, ...row }: PluginInfo & { readonly key: string }): PluginInfo => row;
@@ -2992,7 +3025,9 @@ export function pluginAdminFor(
     if (!row.enabled) return row;
     const signedIn = await context.registry.signedInFor(row.name);
     const models = context.registry.loadedModels()[row.name];
-    const capabilities = context.registry.loadedCapabilities()[row.name];
+    // An agent that is not on the machine can carry no chat (ADR 0022 D14).
+    const missing = context.registry.missingAgents().some((item) => item.name === row.name);
+    const capabilities = missing ? undefined : context.registry.loadedCapabilities()[row.name];
     return {
       ...row,
       ...(signedIn === undefined ? {} : { signedIn }),
@@ -3065,6 +3100,7 @@ export function pluginAdminFor(
           },
           {
             ...(installRun === undefined ? {} : { run: installRun }),
+            from: places.from,
             onProgress: (_plugin, line) => installing.set(key, line),
           },
         );

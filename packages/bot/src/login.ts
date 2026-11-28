@@ -18,6 +18,7 @@ import {
   type StepContext,
 } from "@operad-io/engine";
 import { BOT_TYPE, BotError, readBots } from "./bot.ts";
+import { noAgent } from "./no-agent.ts";
 import { updateBotsFile, validateBots } from "./proposals.ts";
 
 /** The step that runs the agent's login and writes the chosen model. */
@@ -172,7 +173,9 @@ export const loginAction: ActionTypeDefinition = {
     ) !== undefined,
   async why(object, env) {
     if (object.data.removed === true) return `bot ${object.id} is no longer in the settings`;
-    if ((env.harnesses ?? []).length === 0) return `bot ${object.id}: no agent is loaded to log in with`;
+    if ((env.harnesses ?? []).length === 0) {
+      return `bot ${object.id}: ${noAgent(env.missingAgents, "no agent is loaded to log in with")}`;
+    }
     return undefined;
   },
   async run(ctx) {
