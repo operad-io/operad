@@ -305,14 +305,21 @@ describe("pi check", () => {
     expect(JSON.stringify(result)).toContain("1.5.0");
   });
 
-  test("refuses when there is no pi on PATH", async () => {
+  test("is not set up, and no failure, when there is no pi at all", async () => {
     const root = await fresh();
     const empty = join(root, "empty");
     mkdirSync(empty);
     const result = await checkWith(undefined, empty);
-    expect(result?.ok).toBe(false);
-    expect(JSON.stringify(result)).toContain("pi command");
+    expect(result?.ok).toBe(true);
+    expect(result?.missing?.map((item) => item.name)).toEqual(["agent"]);
     expect(dirname(empty)).toBe(root);
+  });
+
+  test("refuses a command the owner set that leads nowhere", async () => {
+    const root = await fresh();
+    const result = await checkWith(join(root, "no-pi"));
+    expect(result?.ok).toBe(false);
+    expect(JSON.stringify(result)).toContain("was found on PATH");
   });
 
   test("passes with the pi operad installed in the home when PATH has none", async () => {

@@ -62,7 +62,7 @@ import {
   readPiModelList,
   refreshPiModelList,
 } from "./model-list.ts";
-import { DEFAULT_PI_COMMAND, findPi, PI_FLOOR, PI_VERSION } from "./pi-install.ts";
+import { DEFAULT_PI_COMMAND, findPi, PI_FLOOR, PI_VERSION, piPresent } from "./pi-install.ts";
 import { runLoginStep, type LoginRunOptions } from "./login.ts";
 import {
   DEFAULT_BASH_TIMEOUT_SECS,
@@ -255,6 +255,9 @@ export interface PiDeclaredModels {
   info?: Readonly<Record<string, HarnessModelInfo>> | undefined;
 }
 
+/** The `SKILL.md` a bot follows to set this agent up (ADR 0010 D7). */
+const SETUP_GUIDE = fileURLToPath(new URL("../skills/setup/SKILL.md", import.meta.url));
+
 /**
  * Creates the pi harness plugin. Its worker is `worker.ts` under the running
  * Bun; a test replaces the program with a fake that prints fixed lines.
@@ -445,6 +448,14 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
       return command === DEFAULT_PI_COMMAND ? undefined : shellWord(command);
     },
     capabilities: { loadsSkills: true, takesMessagesMidRun: true, accessLevels: ["plan", "ask", "edits", "full"] },
+    // A command the owner set, or a replaced worker, is the check's to judge.
+    agentMissing: (settings, context) =>
+      options.command !== undefined ||
+      options.loginCommand !== undefined ||
+      (settings.command !== undefined && settings.command !== DEFAULT_PI_COMMAND) ||
+      piPresent(context.home)
+        ? undefined
+        : "pi is not installed; run `operad plugin enable pi` to install operad's own",
     signedIn: async (settings) => {
       const authPath = expandHome(
         typeof settings.authPath === "string" ? settings.authPath : DEFAULT_AUTH_PATH,
@@ -454,6 +465,8 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
         piProvider(settings.model, readPiSettings(piSettingsPath, readFile)),
       );
     },
+    // Setup Pi (ADR 0022 D14): the guide a bot follows for what the check reports missing.
+    guide: SETUP_GUIDE,
     settings: PLUGIN_SETTINGS,
     steps: [
       {

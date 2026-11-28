@@ -140,3 +140,9 @@ the row fields.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0820-M9 | packages/mcp/src/format.ts | the pending Markdown left the command out | `the pending Markdown > puts a question's command alone in a code block` |
+
+## T-0816 — terminal on in a new home
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0816-M44 | packages/mcp/src/stdio.ts | the stdio program ignored `--stand-ins` | `Setup Dev where config.json does not name dev > the tools server a harness starts loads the stand-in of a package that is not installed` |

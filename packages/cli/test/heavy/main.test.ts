@@ -16,7 +16,7 @@ import {
 } from "@operad-io/engine";
 import { answerRun, makeHome } from "@operad-io/engine/testing";
 import { addRepository } from "../../../dev/src/service.ts";
-import { distributionConfig } from "../../src/defaults.ts";
+import { defaultPluginsFor, distributionConfig } from "../../src/defaults.ts";
 import { main, type CliIo } from "../../src/main.ts";
 import { cleanupTempRoots, tempRoot } from "../../../engine/test/plugin/support.ts";
 import { fakeRadian } from "../../../harness/radian/test/support.ts";
@@ -166,8 +166,8 @@ describe("operad command", () => {
       expect(await main(["init"], { home: fresh, io: first.io })).toBe(0);
       expect(first.text()).toContain("created");
       expect(first.text()).toContain("radian: radian is available");
-      expect(first.text()).not.toContain("shell:");
-      expect(first.text()).not.toContain("dev:");
+      expect(first.text()).toContain("shell: ready");
+      expect(first.text()).toContain("dev: no repositories registered");
       expect(
         JSON.parse(readFileSync(join(fresh, "config.json"), "utf8")),
       ).toMatchObject({
@@ -270,7 +270,7 @@ describe("operad command", () => {
       store: { backend: string };
     };
     expect(config.plugins["pi"]?.enabled).toBe(true);
-    expect(config.plugins["radian"]).toBeUndefined();
+    expect(config.plugins["radian"]?.enabled).toBe(true);
     expect(config.store.backend).toBe("sqlite");
 
     const list = capture();
@@ -646,7 +646,7 @@ describe("operad command", () => {
         plugins: Record<string, unknown>;
         mcp: { actions: string[] };
       };
-      expect(Object.keys(written.plugins)).toEqual(["chat", "bot", "memory", "cron", "radian", "pool"]);
+      expect(Object.keys(written.plugins)).toEqual([...defaultPluginsFor([])]);
       expect(written.mcp.actions).toEqual(["chat:close"]);
       expect(written.mcp.actions.some((name) => name.startsWith("bot:"))).toBe(false);
     }

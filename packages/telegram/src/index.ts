@@ -28,6 +28,10 @@ export interface TelegramPluginOptions {
   readonly intervalMs?: number | undefined;
 }
 
+/** What the check reports, and the plugin's log says, when there is no token. */
+const NO_TOKEN =
+  "the telegram plugin has no token; set it with `operad secret set telegram token`, then restart serve";
+
 /** Builds the Telegram source plugin. */
 export function createTelegramPlugin(options: TelegramPluginOptions = {}) {
   /** The pending side of the running source, which `/pending` reads. */
@@ -38,12 +42,18 @@ export function createTelegramPlugin(options: TelegramPluginOptions = {}) {
     version: pkg.version,
     settings: TELEGRAM_SETTINGS,
     actions: [pendingCommandAction(() => pendingSender)],
+    async check(ctx) {
+      // No network: only whether the token is there.
+      if ((await ctx.secrets.get(TOKEN_SECRET)) !== undefined) return "the token is set";
+      return { note: `not set up: ${NO_TOKEN}`, missing: [{ name: "token", description: NO_TOKEN }] };
+    },
     async start(ctx): Promise<SourceHandle> {
       const token = await ctx.secrets.get(TOKEN_SECRET);
       if (token === undefined) {
-        throw new Error(
-          "the telegram plugin has no token; set it with `operad secret set telegram token`",
-        );
+        // A home that never set Telegram up is not broken: nothing starts, and
+        // only the plugin's own log says why (ADR 0033 D4).
+        await ctx.logger.write(`not set up: ${NO_TOKEN}\n`);
+        return { stop: async () => undefined };
       }
       const api = options.api ?? createBotApi({ token });
       const wait = options.wait ?? delay;

@@ -1636,3 +1636,23 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0827-M1 | packages/engine/src/plugin/install.ts | the install child got the environment the process started with, as before the fix | `adding a package to the home project > the install uses the cache the process names when it runs` |
+
+## T-0816 — every shipped plugin on in a new home
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0816-M7 | packages/engine/src/config/config.ts | init overwrote an existing `config.json` | ``operad init` finds the agent on PATH > a home with a config.json keeps its plugins and switches on upgrade` |
+| T-0816-M8 | packages/engine/src/plugin/registry.ts | a harness whose agent is missing was still offered | `a harness plugin whose agent is missing > is not offered as an agent, though its step stays loaded` |
+| T-0816-M9 | packages/engine/src/plugin/registry.ts | a missing agent was asked for its sign-in | `a harness plugin whose agent is missing > is not asked for its sign-in or its models` |
+| T-0816-M10 | packages/engine/src/plugin/registry.ts | a missing agent was asked for its models | `a harness plugin whose agent is missing > is not asked for its sign-in or its models` |
+| T-0816-M11 | packages/engine/src/plugin/registry.ts | a missing agent's own check ran | `a harness plugin whose agent is missing > passes its check as not set up, and the plugin's own check does not run` |
+| T-0816-M12 | packages/engine/src/plugin/validate.ts | any kind of plugin could declare `agentMissing` | `a harness plugin whose agent is missing > only a harness plugin declares it` |
+
+## T-0816 — terminal on in a new home
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0816-M40 | packages/engine/src/plugin/install.ts | a stop did not end the install command | `terminal in a new home of the packed CLI > init does not wait for the download, and a stop of serve ends it` |
+| T-0816-M41 | packages/engine/src/plugin/load.ts | the stand-in was not loaded for a package that is not installed | `the stand-in of a package that is not installed > loads in its place, with its check and guide and no load problem` |
+| T-0816-M42 | packages/engine/src/plugin/load.ts | the stand-in hid an installed package that fails to load | `the stand-in of a package that is not installed > does not hide an installed package that fails to load` |
+| T-0816-M43 | packages/engine/src/plugin/load.ts | a plugin that is off had no guide from its stand-in | `the stand-in of a package that is not installed > gives its guide while the plugin is off` |

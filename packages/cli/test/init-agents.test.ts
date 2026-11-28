@@ -35,6 +35,9 @@ function executable(path: string, text: string): void {
   chmodSync(path, 0o755);
 }
 
+// The plugins of every new home, before its harnesses.
+const FIXED = ["chat", "bot", "memory", "cron", "shell", "pool", "dev", "telegram", "terminal"];
+
 /** A fake `claude` that passes the harness check without a real agent. */
 function fakeClaude(bin: string, emptyFirst?: string): void {
   const lines = ["#!/bin/sh"];
@@ -193,10 +196,9 @@ describe("`operad init` finds the agent on PATH", () => {
     const root = await tempRoot();
     const { code, output, plugins } = await initWith(root, ["claude"]);
     expect(code).toBe(0);
-    expect(plugins).toEqual(["chat", "bot", "memory", "cron", "claude"]);
+    expect(plugins).toEqual([...FIXED, "claude", "pi", "codex", "radian"]);
     expect(output.text()).toContain("claude: claude 2.1.319");
-    expect(output.text()).not.toContain("radian:");
-    expect(output.text()).not.toContain("pi:");
+    for (const name of ["pi", "codex", "radian"]) expect(output.text()).toContain(`${name}: not set up: `);
   });
 
   test("an empty first probe answer is asked again, so claude still passes", async () => {
@@ -212,9 +214,9 @@ describe("`operad init` finds the agent on PATH", () => {
     const root = await tempRoot();
     const { code, output, plugins } = await initWith(root, ["pi"]);
     expect(code).toBe(0);
-    expect(plugins).toEqual(["chat", "bot", "memory", "cron", "pi"]);
+    expect(plugins).toEqual([...FIXED, "pi", "codex", "radian"]);
     expect(output.text()).toContain("pi: pi 1.5.0");
-    expect(output.text()).not.toContain("radian:");
+    for (const name of ["codex", "radian"]) expect(output.text()).toContain(`${name}: not set up: `);
     expect(output.text()).not.toContain("claude:");
   });
 
@@ -222,24 +224,25 @@ describe("`operad init` finds the agent on PATH", () => {
     const root = await tempRoot();
     const { code, plugins } = await initWith(root, ["radian", "claude", "pi"]);
     expect(code).toBe(0);
-    expect(plugins).toEqual(["chat", "bot", "memory", "cron", "claude", "pi", "radian"]);
+    expect(plugins).toEqual([...FIXED, "claude", "pi", "radian", "codex"]);
   });
 
   test("only radian is enabled", async () => {
     const root = await tempRoot();
     const { code, output, plugins } = await initWith(root, ["radian"]);
     expect(code).toBe(0);
-    expect(plugins).toEqual(["chat", "bot", "memory", "cron", "radian"]);
+    expect(plugins).toEqual([...FIXED, "radian", "pi", "codex"]);
     expect(output.text()).toContain("radian: radian is available");
+    expect(output.text()).toContain("pi: not set up: ");
     expect(output.text()).not.toContain("claude:");
-    expect(output.text()).not.toContain("pi:");
   });
 
-  test("no agent enables pi and installs operad's own copy, so init passes", async () => {
+  test("with no agent, init installs its own pi and passes", async () => {
     const root = await tempRoot();
     const { code, output, plugins } = await initWith(root, [], { piTarball: packPiFixture(root) });
     expect(code).toBe(0);
-    expect(plugins).toEqual(["chat", "bot", "memory", "cron", "pi"]);
+    expect(plugins).toEqual([...FIXED, "pi", "codex", "radian"]);
+    expect(output.text()).toContain("telegram: not set up: ");
     expect(output.text()).toContain("no agent found on PATH: installing operad's own pi");
     expect(output.text()).toContain("pi: pi 1.6.0");
     expect(output.errors()).toBe("");

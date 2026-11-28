@@ -193,3 +193,12 @@ recorded. The root [MUTATIONS.md](../../../MUTATIONS.md) explains the format and
 | id | file | mutation | failing test |
 |---|---|---|---|
 | T-0817-M31 | packages/harness/codex/src/index.ts | a person's command kept `app-server` | `codex's command for a person > is the command setting without app-server, and none without it` |
+
+## T-0816 — every shipped plugin on in a new home
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0816-M16 | packages/harness/codex/src/index.ts | codex never said its agent was missing | `whether codex's agent is on this machine > with no codex on PATH it says how to set it up` |
+| T-0816-M24 | packages/harness/codex/src/index.ts | codex declared no setup guide | ``a harness's setup guide > a harness whose agent is missing shows a guide and the missing item `agent` `` |
+| T-0816-M25 | packages/harness/codex/skills/setup/SKILL.md | codex's guide lost its step for `agent` | `a harness's setup guide > each guide has a step for every item and its package ships it` |
+| T-0816-M26 | packages/harness/codex/package.json | codex's package did not ship the guide | `a harness's setup guide > each guide has a step for every item and its package ships it` |

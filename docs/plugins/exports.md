@@ -153,6 +153,9 @@ Types (`StepContext`, `ActionTypeDefinition`, `ObjectRow`, ...) are exported too
 | `shareOptionalPlugins` | `shareOptionalPlugins(optional, env?)`: writes that list into the environment; the host that opens the home calls it | [Settings](settings.md#the-entry-in-configjson) |
 | `sharedOptionalPlugins` | `sharedOptionalPlugins(env?)`: the list this process was handed, or `undefined`; a harness passes it to the tools server it starts, so the setup guide of a plugin `config.json` does not name stays readable | [Settings](settings.md#the-entry-in-configjson) |
 | `parseOptionalPlugins` | `parseOptionalPlugins(text)`: reads the list from its JSON text, or `undefined` when the text is not a JSON object | [Settings](settings.md#the-entry-in-configjson) |
+| `STAND_IN_PLUGINS_ENV` | `"OPERAD_STAND_IN_PLUGINS"`: the variable that hands the stand-ins of packages not installed yet, by module name and path, to the processes `operad` starts | [Settings](settings.md#the-entry-in-configjson) |
+| `shareStandInPlugins` | `shareStandInPlugins(standIns, env?)`: writes the stand-ins into the environment; the host that opens the home calls it | [Settings](settings.md#the-entry-in-configjson) |
+| `sharedStandInPlugins` | `sharedStandInPlugins(env?)`: the stand-ins this process was handed, or `undefined`; a harness passes them to the tools server it starts, so it loads what its parent loads | [Settings](settings.md#the-entry-in-configjson) |
 | `isRangeSyntax` | Whether a version range is one of `^`, `~`, `>=` or exact | [`requires`](define-plugin.md#requires) |
 | `satisfiesRange` | Whether a version satisfies a range | [`requires`](define-plugin.md#requires) |
 | `readVersionText` | `readVersionText(text)`: a full `x.y.z` version with its prerelease parts, or `undefined`; a leading `v` and a build suffix are allowed | [`requires`](define-plugin.md#requires) |

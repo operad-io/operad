@@ -4,12 +4,12 @@ description: Setup Dev: have your bot read a repository and propose the settings
 
 # Setup Dev
 
-Setup Dev (配置开发流程) turns operad's dev on for one repository. A new home starts as the personal assistant and leaves `dev`, `shell` and `pool` off; Setup Dev has your bot read the repository's CI and scripts and propose what to turn on. Nothing changes until you approve it.
+Setup Dev (配置开发流程) turns operad's dev on for one repository. A new home has `dev`, `shell` and `pool` on (a home made earlier may not); Setup Dev has your bot read the repository's CI and scripts and propose the settings, and what to turn on. Nothing changes until you approve it.
 
 Start it in any of these ways:
 
 - Say it in a bot chat: "set up dev for ~/code/myrepo". The bot's agent knows how to propose it.
-- Type `/setup dev ~/code/myrepo` in a bot chat. Every plugin that ships a setup guide has its own Setup <name> this way; `dev` is the first.
+- Type `/setup dev ~/code/myrepo` in a bot chat. Every plugin that ships a setup guide has its own Setup <name> this way: `dev`, and the harnesses `claude`, `codex`, `pi` and `radian` (such as `/setup codex` for an agent that is not set up), and `terminal` while its package is not installed.
 - Run the bot's Setup Dev action from the new-object entry, giving the repository's directory, which opens a bot chat whose first message shows only its title, `Setup Dev (<folder>)`; the agent receives the prepared prompt below with it. On the command line: `operad bot:setup-dev <bot> --path <repository directory>`.
 
 The bot reads the repository and runs its checks under the chat's access level, so it asks as any chat does (see [access](access.md)); Setup Dev gives it no extra permission. It does not write `.operad/dev.json` itself. It proposes, and you see one pending item for the repository. `Review` shows the plugins that would be turned on (`dev`, `shell` and `pool`, those that are off), the `.operad/dev.json` that would be written and, when there is one, the file it replaces. `approve` turns the plugins on, writes the file and registers the repository, so `operad dev repo list` shows it a moment later, after `serve` reloads. `reject` changes nothing.

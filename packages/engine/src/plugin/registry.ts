@@ -1196,7 +1196,7 @@ export class PluginRegistry {
       settings: this.settingsFor(found.plugin.name),
       secrets: this.secretsFor(found.plugin.name),
       runId: options.runId,
-      harnesses: this.plugins.filter((plugin) => plugin.kind === "harness").map((plugin) => plugin.name),
+      harnesses: this.loadedHarnesses(),
       object: options.object,
       params: options.params ?? null,
       flow: options.flow,
@@ -1295,9 +1295,34 @@ export class PluginRegistry {
     return this.stepIndex.has(use);
   }
 
-  /** The names of the harness plugins loaded now. */
+  /** The names of the loaded harness plugins whose agent is on this machine. */
   loadedHarnesses(): readonly string[] {
-    return this.plugins.filter((item) => item.kind === "harness").map((item) => item.name);
+    return this.plugins
+      .filter((item) => item.kind === "harness" && this.agentMissing(item) === undefined)
+      .map((item) => item.name);
+  }
+
+  /** The loaded harnesses whose agent is not on this machine, each with how to set it up. */
+  missingAgents(): readonly { readonly name: string; readonly description: string }[] {
+    return this.plugins.flatMap((item) => {
+      const description = this.agentMissing(item);
+      return description === undefined ? [] : [{ name: item.name, description }];
+    });
+  }
+
+  /**
+   * How to set up a loaded harness's agent when it is not on this machine;
+   * undefined when it is, or when the harness does not say. Asked each time, so
+   * an agent installed while the process runs is found.
+   */
+  private agentMissing(plugin: LoadedPlugin): string | undefined {
+    if (plugin.agentMissing === undefined) return undefined;
+    try {
+      return plugin.agentMissing(this.settingsFor(plugin.name), this.modelContext());
+    } catch (error) {
+      this.log(`plugin "${plugin.name}": agentMissing failed: ${messageOf(error)}`);
+      return undefined;
+    }
   }
 
   private modelContext(): HarnessModelContext {
@@ -1310,6 +1335,8 @@ export class PluginRegistry {
     const context = this.modelContext();
     for (const item of this.plugins) {
       if (item.kind !== "harness" || item.models === undefined) continue;
+      // Reading a list asks the agent, which is not there to answer.
+      if (this.agentMissing(item) !== undefined) continue;
       found[item.name] =
         typeof item.models === "function"
           ? item.models(this.settingsFor(item.name), context)
@@ -1340,6 +1367,7 @@ export class PluginRegistry {
     for (const item of this.plugins) {
       if (item.kind !== "harness") continue;
       if (item.models === undefined && item.modelsReady === undefined) continue;
+      if (this.agentMissing(item) !== undefined) continue;
       found[item.name] =
         item.modelsReady !== undefined
           ? await item.modelsReady(this.settingsFor(item.name), context)
@@ -1397,6 +1425,8 @@ export class PluginRegistry {
     if (found === undefined || found.kind !== "harness" || found.signedIn === undefined) {
       return undefined;
     }
+    // An agent that is not there is not set up, which is not "signed out".
+    if (this.agentMissing(found) !== undefined) return undefined;
     try {
       return await found.signedIn(this.settingsFor(plugin));
     } catch {
@@ -1628,6 +1658,15 @@ export class PluginRegistry {
 
   /** Runs one loaded plugin's `check`; a throw is a failed check, not an error. */
   private async runCheck(plugin: LoadedPlugin): Promise<PluginCheck | undefined> {
+    const absent = this.agentMissing(plugin);
+    if (absent !== undefined) {
+      return {
+        plugin: plugin.name,
+        ok: true,
+        message: `not set up: ${absent}`,
+        missing: [{ name: "agent", description: absent }],
+      };
+    }
     if (plugin.check === undefined) return undefined;
     const ctx: PluginBaseContext = {
       plugin: plugin.name,
@@ -1877,7 +1916,7 @@ export class PluginRegistry {
           settings: this.settingsFor(plugin.name),
           secrets: this.secretsFor(plugin.name),
           loaded: this.plugins.map((item) => item.name),
-          harnesses: this.plugins.filter((item) => item.kind === "harness").map((item) => item.name),
+          harnesses: this.loadedHarnesses(),
           ...(lookup === undefined ? {} : { runLookup: lookup }),
           signedIn: (harness) => this.signedInFor(harness),
           stepLoaded: (use) => this.stepIndex.has(use),
@@ -2150,7 +2189,7 @@ export class PluginRegistry {
         signal: options.signal ?? new AbortController().signal,
         rules: options.rules,
         clock: options.clock,
-        harnesses: this.plugins.filter((item) => item.kind === "harness").map((item) => item.name),
+        harnesses: this.loadedHarnesses(),
         harnessCapabilities: (name) => this.loadedCapabilities()[name],
         settings: this.settingsFor(plugin.name),
         secrets: this.secretsFor(plugin.name),

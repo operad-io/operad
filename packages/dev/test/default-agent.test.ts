@@ -1,5 +1,5 @@
-import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, writeFileSync } from "node:fs";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { chmodSync, mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { cleanupTempRoots, tempRoot } from "./support.ts";
 import {
@@ -9,6 +9,22 @@ import {
 } from "../src/settings.ts";
 
 afterAll(cleanupTempRoots);
+
+// The agents of the machine that runs the tests must not change the choice.
+const machinePath = process.env.PATH;
+beforeAll(async () => {
+  process.env.PATH = await tempRoot();
+});
+afterAll(() => {
+  process.env.PATH = machinePath;
+});
+
+const every = {
+  radian: { module: "@operad-io/harness-radian" },
+  claude: { module: "@operad-io/harness-claude" },
+  pi: { module: "@operad-io/harness-pi" },
+  codex: { module: "@operad-io/harness-codex" },
+};
 
 function homeWith(
   root: string,
@@ -105,6 +121,42 @@ describe("the agent of a repository that names no worker", () => {
   test("keeps radian when the home enables no harness", async () => {
     const root = await tempRoot();
     expect(defaultAgentUse(join(root, "no-home"))).toBe(DEFAULT_WORKER_USE);
+  });
+
+  test("passes over an enabled harness whose agent is not on the machine", async () => {
+    const root = await tempRoot();
+    const home = homeWith(root, every);
+    const bin = join(root, "bin");
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(join(bin, "codex"), "#!/bin/sh\n");
+    chmodSync(join(bin, "codex"), 0o755);
+    const empty = process.env.PATH;
+    process.env.PATH = bin;
+    try {
+      expect(defaultAgentUse(home)).toBe("codex/agent");
+    } finally {
+      process.env.PATH = empty;
+    }
+  });
+
+  test("counts the pi operad installed in the home", async () => {
+    const root = await tempRoot();
+    const home = homeWith(root, every);
+    const dir = join(home, "plugins", "node_modules", "@earendil-works", "pi-coding-agent");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "package.json"), "{}");
+    expect(defaultAgentUse(home)).toBe("pi/agent");
+  });
+
+  test("counts a harness whose command the owner set", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    mkdirSync(home, { recursive: true });
+    writeFileSync(
+      join(home, "config.json"),
+      JSON.stringify({ plugins: { ...every, claude: { ...every.claude, settings: { command: "/opt/claude" } } } }),
+    );
+    expect(defaultAgentUse(home)).toBe("claude/agent");
   });
 
   test("an enabled codex is still a harness", async () => {

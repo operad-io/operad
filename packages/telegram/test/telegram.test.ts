@@ -391,14 +391,36 @@ describe("the telegram source", () => {
     await w.close();
   });
 
-  test("a plugin without the token says how to set it, without a token in the message", async () => {
+  test("without a token the plugin starts quietly and says once how to set it", async () => {
     const w = await world({ users: [42] });
     await w.ctx.secrets.delete(TOKEN_SECRET);
-    const plugin = createTelegramPlugin();
+    const api = new FakeApi();
+    let polls = 0;
+    api.getUpdates = async () => {
+      polls += 1;
+      return [];
+    };
+    const plugin = createTelegramPlugin({ api });
     const start = plugin.start;
     if (start === undefined) throw new Error("the plugin does not start");
-    const error = await Promise.resolve(start(w.ctx)).catch((caught: unknown) => caught);
-    expect(String(error)).toContain("operad secret set telegram token");
+    const handle = await start(w.ctx);
+    await handle.stop();
+    expect(polls).toBe(0);
+    const lines = readFileSync(w.ctx.logger.path, "utf8").trim().split("\n");
+    expect(lines).toHaveLength(1);
+    expect(lines[0]).toContain("not set up");
+    expect(lines[0]).toContain("operad secret set telegram token");
+    expect(w.logs).toEqual([]);
+    await w.close();
+  });
+
+  test("the check reports a missing token as not set up, and passes with one", async () => {
+    const w = await world({ users: [42] });
+    const check = createTelegramPlugin().check;
+    if (check === undefined) throw new Error("the plugin has no check");
+    expect(await check(w.ctx)).toBe("the token is set");
+    await w.ctx.secrets.delete(TOKEN_SECRET);
+    expect(await check(w.ctx)).toMatchObject({ missing: [{ name: "token" }] });
     await w.close();
   });
 

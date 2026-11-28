@@ -429,6 +429,9 @@ function radianArgs(
   return { args: argv, stdin };
 }
 
+/** The `SKILL.md` a bot follows to set this agent up (ADR 0010 D7). */
+const SETUP_GUIDE = fileURLToPath(new URL("../skills/setup/SKILL.md", import.meta.url));
+
 /**
  * Creates the radian harness plugin. The prompt flow uses the settings for
  * its limits; a direct `agent` step may override them.
@@ -472,6 +475,13 @@ export function createRadianHarnessPlugin(settings: RadianHarnessSettings = {}) 
     models: RADIAN_MODELS,
     efforts: RADIAN_EFFORTS,
     signedIn: (_settings: Readonly<Record<string, unknown>>) => radianSignedIn(authPath),
+    // A command the owner set is the check's to judge.
+    agentMissing: (settings) =>
+      settings.command !== undefined || Bun.which(defaults.command, { PATH: process.env.PATH ?? "" }) !== null
+        ? undefined
+        : `${defaults.command} is not on PATH; install it, then run \`${defaults.command} login\``,
+    // Setup Radian (ADR 0022 D14): the guide a bot follows for what the check reports missing.
+    guide: SETUP_GUIDE,
     settings: PLUGIN_SETTINGS,
     steps: [
       {

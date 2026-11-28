@@ -89,11 +89,11 @@ describe("a fresh home follows the Quickstart", () => {
     expect(names).toContain("chat");
     expect(names).toContain("bot");
     expect(names).toContain("memory");
-    expect(names).not.toContain("shell");
-    expect(names).not.toContain("dev");
-    expect(names).not.toContain("pool");
-    // Step 1: dev runs its workers through pool, so the Quickstart turns on the
-    // plugins a repository's work needs after the assistant-only home.
+    expect(names).toContain("shell");
+    expect(names).toContain("dev");
+    expect(names).toContain("pool");
+    // Step 1: dev runs its workers through pool; the Quickstart turns them on,
+    // which leaves a new home as it is and helps a home made earlier.
     for (const plugin of ["shell", "pool", "dev"]) {
       const enabled = await runOperad(home, repository, ["plugin", "enable", plugin]);
       expect(enabled.code).toBe(0);

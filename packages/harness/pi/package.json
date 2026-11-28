@@ -31,6 +31,7 @@
   "license": "MIT",
   "files": [
     "src",
+    "skills",
     "README.md",
     "LICENSE"
   ]

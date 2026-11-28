@@ -6,13 +6,13 @@ import { afterAll, afterEach, describe, expect, test } from "bun:test";
 import { execFileSync } from "node:child_process";
 import { mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
-import { OPTIONAL_PLUGINS_ENV, sharedOptionalPlugins } from "@operad-io/engine";
+import { OPTIONAL_PLUGINS_ENV, sharedOptionalPlugins, STAND_IN_PLUGINS_ENV } from "@operad-io/engine";
 import { makeHome } from "@operad-io/engine/testing";
 import { operad } from "@operad-io/test-support";
 import { cleanupTempRoots } from "../../../engine/test/plugin/support.ts";
 import { serverCommand } from "../../../harness/process/src/operad-tools.ts";
 import { openMcpTools } from "../../../mcp/src/index.ts";
-import { pluginOffer } from "../../src/defaults.ts";
+import { pluginOffer, standInPlugins } from "../../src/defaults.ts";
 import { openContext } from "../../src/main.ts";
 
 const before = process.env[OPTIONAL_PLUGINS_ENV];
@@ -43,12 +43,12 @@ const SETUP = { plugin: "bot", verb: "setup", args: ["default", "dev"] };
 const CALL = { jsonrpc: "2.0", id: 1, method: "tools/call", params: { name: "command", arguments: SETUP } };
 
 /** Sends one request to a tools server started as a program and returns its output. */
-async function ask(cmd: readonly string[], home: string): Promise<string> {
+async function ask(cmd: readonly string[], home: string, call: object = CALL): Promise<string> {
   const child = Bun.spawn({
     cmd: [...cmd],
     // As a harness that gives a server only its own variables.
     env: { PATH: process.env.PATH ?? "", HOME: process.env.HOME ?? "", OPERAD_HOME: home },
-    stdin: new TextEncoder().encode(`${JSON.stringify(CALL)}\n`),
+    stdin: new TextEncoder().encode(`${JSON.stringify(call)}\n`),
     stdout: "pipe",
     stderr: "pipe",
   });
@@ -91,6 +91,29 @@ describe("Setup Dev where config.json does not name dev", () => {
     process.env[OPTIONAL_PLUGINS_ENV] = JSON.stringify(pluginOffer(home).optional);
     const server = serverCommand({ home });
     expect(await ask([server.command, ...server.args], home)).toContain(MISSING_ENABLE);
+  });
+
+  test("the tools server a harness starts loads the stand-in of a package that is not installed", async () => {
+    const absent = "@operad-io/not-installed-anywhere";
+    const { home } = await makeHome({
+      plugins: {
+        chat: { module: "@operad-io/chat", enabled: true },
+        bot: { module: "@operad-io/bot", enabled: true },
+        terminal: { module: absent, enabled: true },
+      },
+      extra: { http: { enabled: false } },
+    });
+    delete process.env[OPTIONAL_PLUGINS_ENV];
+    const standIn = standInPlugins()["@operad-io/terminal"] ?? "";
+    process.env[STAND_IN_PLUGINS_ENV] = JSON.stringify({ [absent]: standIn });
+    try {
+      const server = serverCommand({ home });
+      const call = { ...CALL, params: { ...CALL.params, arguments: { ...SETUP, args: ["default", "terminal"] } } };
+      const answered = await ask([server.command, ...server.args], home, call);
+      expect(answered).toContain("- install: the terminal package is not installed");
+    } finally {
+      delete process.env[STAND_IN_PLUGINS_ENV];
+    }
   });
 
   test("`operad mcp` answers it", async () => {

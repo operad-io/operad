@@ -7,9 +7,17 @@ the same version.
 
 ## [Unreleased]
 
+### Changed
+
+- A new home turns every shipped plugin on: `chat`, `bot`, `memory`, `cron`, `shell`, `pool`, `dev`, `telegram`, `terminal`, `pi`, `codex` and `radian`, and `claude` when `claude` is on your `PATH` (it needs a download).
+- `terminal` no longer holds up a start: `operad serve` installs its package once it is serving and reloads. Until then it is not set up (Setup Terminal), and a failed download is tried again at the next start of `serve`. A home you already have is not rewritten: the plugins it lacks show as off in the plugin list and in their setup guides, and you turn one on there or with `operad plugin enable <name>`.
+- A plugin that is not set up is quiet. A harness whose agent is not on the machine is not offered as an agent and asks for no login; `operad init` and `operad doctor` say it is not set up, and its setup guide (`/setup codex`, Setup Codex) walks you through it. Telegram without a token no longer logs a failure at each start of `serve`.
+- A repository that names no worker uses the first enabled agent that is on the machine.
+- `operad init` installs operad's own pi only when it finds no `claude`, `pi` or `radian`.
+
 ### Added
 
-- Terminals, an optional plugin (`operad plugin enable terminal`): `operad serve` runs any command or your login shell in a repository or one of its worktrees, keeps it when a client disconnects, and replays its screen to a client that comes back. Starting and using one works only from the machine `serve` runs on. See [terminals](docs/user/terminal.md).
+- Terminals, the `terminal` plugin (on in a new home; elsewhere `operad plugin enable terminal`): `operad serve` runs any command or your login shell in a repository or one of its worktrees, keeps it when a client disconnects, and replays its screen to a client that comes back. Starting and using one works only from the machine `serve` runs on. See [terminals](docs/user/terminal.md).
 
 ## [0.4.1] - 2026-11-24
 
