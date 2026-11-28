@@ -41,6 +41,10 @@ describe("whether pi's agent is on this machine", () => {
     expect(missing(root, {}, createPiHarnessPlugin({ command: "bun" }))).toBeUndefined();
   });
 
+  test("a replaced login program needs no pi on PATH", () => {
+    expect(missing(root, {}, createPiHarnessPlugin({ loginCommand: "bun" }))).toBeUndefined();
+  });
+
   test("the pi operad installed in the home counts", () => {
     const dir = join(root, "home", "plugins", "node_modules", "@earendil-works", "pi-coding-agent");
     mkdirSync(dir, { recursive: true });

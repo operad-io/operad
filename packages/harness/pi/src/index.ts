@@ -451,6 +451,7 @@ export function createPiHarnessPlugin(options: PiHarnessOptions = {}) {
     // A command the owner set, or a replaced worker, is the check's to judge.
     agentMissing: (settings, context) =>
       options.command !== undefined ||
+      options.loginCommand !== undefined ||
       (settings.command !== undefined && settings.command !== DEFAULT_PI_COMMAND) ||
       piPresent(context.home)
         ? undefined

@@ -392,3 +392,9 @@ _The second "## T-0766" section above repeats the rows of the first; the rows of
 | T-0816-M27 | packages/harness/pi/src/index.ts | pi declared no setup guide | ``a harness's setup guide > a harness whose agent is missing shows a guide and the missing item `agent` `` |
 | T-0816-M28 | packages/harness/pi/skills/setup/SKILL.md | pi's guide lost its step for `agent` | `a harness's setup guide > each guide has a step for every item and its package ships it` |
 | T-0816-M29 | packages/harness/pi/package.json | pi's package did not ship the guide | `a harness's setup guide > each guide has a step for every item and its package ships it` |
+
+## T-0816 — a replaced login worker
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0816-M45 | packages/harness/pi/src/index.ts | a replaced login worker did not count, so on a machine with no pi it was not offered as an agent | `the pi login over HTTP saves the key and ends logged in`, `whether pi's agent is on this machine > a replaced login program needs no pi on PATH` |
