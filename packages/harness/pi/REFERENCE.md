@@ -29,7 +29,7 @@ commands or expanded as one of the owner's prompt templates.
 operad uses the pi you installed when a `pi` command is on `PATH`. Install it
 yourself with bun (`bun add -g @earendil-works/pi-coding-agent`) or npm
 (`npm i -g @earendil-works/pi-coding-agent`). When there is no `pi`, operad
-installs the pinned version (`1.6.0`) into the home's plugin project
+installs the pinned version (`1.7.0`) into the home's plugin project
 (`~/.operad/plugins`) and uses that copy. The worker resolves the real path of
 the `pi` command, walks up to the directory whose `package.json` is
 `@earendil-works/pi-coding-agent`, and imports the file its `exports["."]`

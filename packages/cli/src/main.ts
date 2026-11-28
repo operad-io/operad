@@ -878,12 +878,15 @@ async function commandInit(home: string, io: CliIo, installRun?: InstallRunner):
     onLog: (message) => io.error(`${message}\n`),
   });
 
+  // The load has said why on stderr; a plugin the home enables and does not
+  // load is a failure of the whole command. Each enabled entry loads one
+  // plugin, and an entry of a `plugins` list has no name to look for.
+  let failed = registry.names().length < config.plugins.filter((entry) => entry.enabled).length;
   const checks = await registry.checks();
   if (checks.length === 0) {
     io.write("no plugins loaded\n");
-    return 0;
+    return failed ? 1 : 0;
   }
-  let failed = false;
   for (const check of checks) {
     if (!check.ok) failed = true;
     io.write(`${check.plugin}: ${check.message}\n`);
@@ -945,12 +948,20 @@ function systemDoctorEnv(home: string, io: CliIo): DoctorEnv & { close(): Promis
         const check = checks.find((item) => item.plugin === name);
         const version = check?.message.match(/\d+\.\d+\.\d+[\w.-]*/)?.[0];
         const loginBot = loginBotOf(name);
+        // A check that passes and reports something missing still needs the person.
+        const missing = check?.missing ?? [];
+        const problem =
+          check !== undefined && !check.ok
+            ? check.message
+            : missing.length > 0
+              ? missing.map((item) => item.description).join("; ")
+              : undefined;
         agents.push({
           name,
           ...(version === undefined ? {} : { version }),
           signedIn: await registry.signedInFor(name),
           ...(loginBot === undefined ? {} : { loginBot }),
-          ...(check !== undefined && !check.ok ? { problem: check.message } : {}),
+          ...(problem === undefined ? {} : { problem }),
         });
       }
       for (const missing of registry.missingAgents()) {

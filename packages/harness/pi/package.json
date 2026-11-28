@@ -12,7 +12,7 @@
     "@operad-io/mcp": "workspace:*"
   },
   "peerDependencies": {
-    "@earendil-works/pi-coding-agent": "1.6.0"
+    "@earendil-works/pi-coding-agent": "1.7.0"
   },
   "peerDependenciesMeta": {
     "@earendil-works/pi-coding-agent": {
@@ -20,7 +20,7 @@
     }
   },
   "devDependencies": {
-    "@earendil-works/pi-coding-agent": "1.6.0"
+    "@earendil-works/pi-coding-agent": "1.7.0"
   },
   "description": "chats and tasks run by the pi coding agent",
   "repository": {

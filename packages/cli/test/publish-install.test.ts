@@ -358,7 +358,9 @@ describe("publishing and installing the packages", () => {
       }),
     );
     const second = run([binary, "init"], scratchRoot, env);
-    expect(second.code).toBe(0);
+    // The module it names is not there, so the plugin cannot load.
+    expect(second.code).toBe(1);
+    expect(second.err).toContain('plugin "claude": not installed');
     // An install of the default package would have added it to the home's project.
     const manifest = join(home, "plugins", "package.json");
     const text = existsSync(manifest) ? readFileSync(manifest, "utf8") : "";

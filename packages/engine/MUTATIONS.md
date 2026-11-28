@@ -1656,6 +1656,7 @@ resume window`. Rows are append-only, so the old lines stay as history.
 | T-0816-M41 | packages/engine/src/plugin/load.ts | the stand-in was not loaded for a package that is not installed | `the stand-in of a package that is not installed > loads in its place, with its check and guide and no load problem` |
 | T-0816-M42 | packages/engine/src/plugin/load.ts | the stand-in hid an installed package that fails to load | `the stand-in of a package that is not installed > does not hide an installed package that fails to load` |
 | T-0816-M43 | packages/engine/src/plugin/load.ts | a plugin that is off had no guide from its stand-in | `the stand-in of a package that is not installed > gives its guide while the plugin is off` |
+| T-0833-M1 | packages/engine/test/views/plugin-http.test.ts | `readUntil` searched only the new chunk, without the end of what came before | `reading a response until a text > finds a text that arrives in several chunks, and reads no further` |
 
 ## T-0831 — review findings of the offered shipped plugins
 

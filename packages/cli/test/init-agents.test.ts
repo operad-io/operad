@@ -39,7 +39,12 @@ function executable(path: string, text: string): void {
 const FIXED = ["chat", "bot", "memory", "cron", "shell", "pool", "dev", "telegram", "terminal"];
 
 /** A fake `claude` that passes the harness check without a real agent. */
-function fakeClaude(bin: string, emptyFirst?: string): void {
+function fakeClaude(
+  bin: string,
+  emptyFirst?: string,
+  answers: { readonly version?: string | undefined; readonly loggedIn?: boolean | undefined } = {},
+): void {
+  const { version = "2.1.319", loggedIn = true } = answers;
   const lines = ["#!/bin/sh"];
   if (emptyFirst !== undefined) {
     lines.push(
@@ -50,10 +55,11 @@ function fakeClaude(bin: string, emptyFirst?: string): void {
     );
   }
   lines.push(
-    'if [ "$1" = "--version" ]; then echo "2.1.319 (Claude Code)"; exit 0; fi',
+    `if [ "$1" = "--version" ]; then echo "${version} (Claude Code)"; exit 0; fi`,
     'if [ "$1" = "auth" ] && [ "$2" = "status" ]; then',
-    '  printf \'{"loggedIn":true,"authMethod":"claude.ai","subscriptionType":"max"}\\n\'',
-    "  exit 0",
+    `  printf '{"loggedIn":${loggedIn},"authMethod":"claude.ai","subscriptionType":"max"}\\n'`,
+    // The real command exits 1 when nobody is logged in.
+    `  exit ${loggedIn ? 0 : 1}`,
     "fi",
     "exit 1",
     "",
@@ -91,7 +97,7 @@ function packPiFixture(root: string): string {
     join(directory, "package.json"),
     JSON.stringify({
       name: "@earendil-works/pi-coding-agent",
-      version: "1.6.0",
+      version: "1.7.0",
       exports: { ".": { import: "./dist/index.js" } },
       bin: { pi: "dist/bundle/cli.js" },
     }),
@@ -244,7 +250,7 @@ describe("`operad init` finds the agent on PATH", () => {
     expect(plugins).toEqual([...FIXED, "pi", "codex", "radian"]);
     expect(output.text()).toContain("telegram: not set up: ");
     expect(output.text()).toContain("no agent found on PATH: installing operad's own pi");
-    expect(output.text()).toContain("pi: pi 1.6.0");
+    expect(output.text()).toContain("pi: pi 1.7.0");
     expect(output.errors()).toBe("");
   });
 
@@ -254,7 +260,10 @@ describe("`operad init` finds the agent on PATH", () => {
       piTarball: packPiFixture(root),
       config: JSON.stringify({ plugins: { pi: { enabled: true } } }),
     });
-    expect(code).toBe(0);
+    // The install runs, but an entry with no module names none that can be
+    // imported, so the plugin does not load and init says so.
+    expect(code).toBe(1);
+    expect(output.errors()).toContain('plugin "pi": import failed');
     expect(output.text()).toContain("pi: Saved lockfile");
   });
 
@@ -275,7 +284,43 @@ describe("`operad init` finds the agent on PATH", () => {
 
     const second = await initWith(root, [], { piTarball: tarball });
     expect(second.code).toBe(0);
-    expect(second.output.text()).toContain("pi: pi 1.6.0");
+    expect(second.output.text()).toContain("pi: pi 1.7.0");
+  });
+
+  test("a home with operad's pi at an older pin is moved to the new one", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    const plugins = join(home, "plugins");
+    const name = "@earendil-works/pi-coding-agent";
+    const writePi = (version: string): void => {
+      const dir = join(plugins, "node_modules", name);
+      mkdirSync(join(dir, "dist"), { recursive: true });
+      writeFileSync(
+        join(dir, "package.json"),
+        JSON.stringify({ name, version, exports: { ".": "./dist/index.js" } }),
+      );
+      writeFileSync(join(dir, "dist", "index.js"), "export {};\n");
+    };
+    writePi("1.6.0");
+    writeFileSync(
+      join(plugins, "package.json"),
+      JSON.stringify({ name: "operad-plugins", private: true, dependencies: { [name]: "1.6.0" } }),
+    );
+    const calls: string[] = [];
+    const { code, output } = await initWith(root, [], {
+      installRun: (_cwd, args) => {
+        calls.push(args.join(" "));
+        writePi("1.7.0");
+        return { exitCode: 0, stdout: "", stderr: "" };
+      },
+    });
+    expect(code).toBe(0);
+    expect(calls).toEqual(["install --no-summary"]);
+    const manifest = JSON.parse(readFileSync(join(plugins, "package.json"), "utf8")) as {
+      dependencies: Record<string, string>;
+    };
+    expect(manifest.dependencies[name]).toBe("1.7.0");
+    expect(output.text()).toContain("pi: pi 1.7.0");
   });
 
   test("a home with another agent still moves the pi it already names, and retries it", async () => {
@@ -372,5 +417,116 @@ describe("`operad init` finds the agent on PATH", () => {
     expect(config.plugins.shell?.enabled).toBe(true);
     expect(config.plugins.memory?.enabled).toBe(false);
     expect(config.mcp.actions).toEqual(["dev:rework", "chat:close"]);
+  });
+});
+
+/** Runs one command on the test's home, with only its `bin` on PATH. */
+async function runIn(root: string, command: string): Promise<{ readonly code: number; readonly output: Output }> {
+  const previous = process.env.PATH;
+  process.env.PATH = join(root, "bin");
+  try {
+    const output = capture();
+    const code = await main([command], { home: join(root, "home"), io: output.io });
+    return { code, output };
+  } finally {
+    if (previous === undefined) delete process.env.PATH;
+    else process.env.PATH = previous;
+  }
+}
+
+/** A claude on the test's PATH that answers as given; `initWith(root, [])` keeps it. */
+function claudeThat(root: string, answers: Parameters<typeof fakeClaude>[2]): void {
+  const bin = join(root, "bin");
+  mkdirSync(bin, { recursive: true });
+  fakeClaude(bin, undefined, answers);
+}
+
+describe("`operad init` with an agent that needs the person", () => {
+  const cases = [
+    {
+      title: "that is not signed in",
+      answers: { loggedIn: false },
+      says: "claude is not logged in; run `claude auth login`, then check again",
+    },
+    {
+      title: "older than the floor",
+      answers: { version: "2.1.318" },
+      says: "is older than the floor 2.1.319; update claude (claude update)",
+    },
+  ];
+
+  for (const { title, answers, says } of cases) {
+    test(`a claude ${title} is not set up, init passes, and doctor lists a problem`, async () => {
+      const root = await tempRoot();
+      claudeThat(root, answers);
+      const { code, output } = await initWith(root, []);
+      expect(output.errors()).toBe("");
+      expect(code).toBe(0);
+      const line = output.text().split("\n").find((text) => text.startsWith("claude: "));
+      expect(line).toStartWith("claude: not set up: ");
+      expect(line).toContain(says);
+      const config = JSON.parse(readFileSync(join(root, "home", "config.json"), "utf8")) as {
+        plugins: Record<string, { enabled: boolean }>;
+      };
+      expect(config.plugins.claude?.enabled).toBe(true);
+
+      const doctor = await runIn(root, "doctor");
+      expect(doctor.code).toBe(1);
+      const agent = doctor.output.text().split("\n").find((text) => text.includes("agent claude"));
+      expect(agent).toStartWith("problem  agent claude cannot be used: ");
+      expect(agent).toContain(says);
+    });
+  }
+});
+
+describe("`operad init` still fails on a real failure", () => {
+  test("a claude whose version cannot be read fails the check", async () => {
+    const root = await tempRoot();
+    claudeThat(root, { version: "unknown" });
+    const { code, output } = await initWith(root, []);
+    expect(code).toBe(1);
+    expect(output.text()).toContain("did not print a version this check can read");
+    expect(output.text()).not.toContain("claude: not set up: ");
+  });
+
+  test("a config.json that is not valid", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    mkdirSync(home, { recursive: true });
+    writeFileSync(join(home, "config.json"), "{");
+    const { code, output } = await runIn(root, "init");
+    expect(code).not.toBe(0);
+    expect(output.errors()).toContain("config.json");
+  });
+
+  for (const [title, others] of [
+    ["beside plugins that load", { shell: { module: "@operad-io/shell" } }],
+    ["as the only plugin", {}],
+  ] as const) {
+    test(`a plugin that cannot load, ${title}`, async () => {
+      const root = await tempRoot();
+      const home = join(root, "home");
+      mkdirSync(home, { recursive: true });
+      const broken = join(root, "broken.ts");
+      writeFileSync(broken, "export default (\n");
+      writeFileSync(
+        join(home, "config.json"),
+        JSON.stringify({ plugins: { ...others, broken: { module: broken } } }),
+      );
+      const { code, output } = await runIn(root, "init");
+      expect(code).toBe(1);
+      expect(output.errors()).toContain("import failed");
+    });
+  }
+
+  test("a plugin that is off and cannot load is no failure", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    mkdirSync(home, { recursive: true });
+    writeFileSync(
+      join(home, "config.json"),
+      JSON.stringify({ plugins: { broken: { module: join(root, "absent.ts"), enabled: false } } }),
+    );
+    expect((await runIn(root, "init")).code).toBe(0);
   });
 });

@@ -614,7 +614,7 @@ install of it failed, `operad init` brings it to the version this operad pins
 **Install pi.** operad uses the pi you installed when `pi` is on `PATH`, with
 bun (`bun add -g @earendil-works/pi-coding-agent`) or npm
 (`npm i -g @earendil-works/pi-coding-agent`). When there is none, operad
-installs `@earendil-works/pi-coding-agent` `1.6.0` into the home's plugin
+installs `@earendil-works/pi-coding-agent` `1.7.0` into the home's plugin
 project on first use; that needs the network once, and a failed download says so
 and is retried by running the enable or `operad init` again. The oldest pi it
 accepts is `1.5.0`. With neither a `pi` on `PATH` nor the one operad installed

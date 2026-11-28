@@ -45,7 +45,7 @@ export function standInPlugins(): Readonly<Record<string, string>> {
 export const PI_CODING_AGENT_PACKAGE = "@earendil-works/pi-coding-agent";
 
 /** The exact pi version operad installs; it moves with an operad release. */
-export const PI_CODING_AGENT_VERSION = "1.6.0";
+export const PI_CODING_AGENT_VERSION = "1.7.0";
 
 /**
  * The agent commands `operad init` looks for, in this order. The first one is

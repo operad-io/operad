@@ -73,7 +73,7 @@ function fakePiInstall(): InstallRunner {
     mkdirSync(join(dir, "dist"), { recursive: true });
     writeFileSync(
       join(dir, "package.json"),
-      JSON.stringify({ name, version: "1.6.0", exports: { ".": "./dist/index.js" }, bin: { pi: "dist/cli.js" } }),
+      JSON.stringify({ name, version: "1.7.0", exports: { ".": "./dist/index.js" }, bin: { pi: "dist/cli.js" } }),
     );
     writeFileSync(join(dir, "dist", "index.js"), "export {};\n");
     writeFileSync(join(dir, "dist", "cli.js"), "#!/bin/sh\nexit 1\n");
@@ -256,7 +256,7 @@ describe("operad command", () => {
       const output = capture();
       expect(await main(["init"], { home, io: output.io, pluginInstall: fakePiInstall() })).toBe(0);
       expect(output.text()).toContain("no agent found on PATH: installing operad's own pi");
-      expect(output.text()).toContain("pi: pi 1.6.0");
+      expect(output.text()).toContain("pi: pi 1.7.0");
     } finally {
       if (previous === undefined) delete process.env.PATH;
       else process.env.PATH = previous;

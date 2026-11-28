@@ -19,7 +19,7 @@ import { isRecord } from "@operad-io/engine";
 export const PI_PACKAGE = "@earendil-works/pi-coding-agent";
 
 /** The version operad installs into the home; it moves with an operad release (ADR 0023 D9). */
-export const PI_VERSION = "1.6.0";
+export const PI_VERSION = "1.7.0";
 
 /** The oldest pi the worker's calls are written for. */
 export const PI_FLOOR = "1.5.0";
@@ -32,6 +32,14 @@ export class PiInstallError extends Error {
   constructor(message: string) {
     super(message);
     this.name = "PiInstallError";
+  }
+}
+
+/** The pi is there, and the person has to upgrade it first. */
+export class PiTooOldError extends PiInstallError {
+  constructor(message: string) {
+    super(message);
+    this.name = "PiTooOldError";
   }
 }
 
@@ -154,7 +162,7 @@ function installAt(packageDir: string, command: string, realPath: string, floor:
     throw new PiInstallError(`${join(packageDir, "package.json")}: version is missing or not a version`);
   }
   if (compareVersions(version, floor) < 0) {
-    throw new PiInstallError(
+    throw new PiTooOldError(
       `pi ${version} at ${packageDir} is older than the floor ${floor}; upgrade pi (${PI_PACKAGE} ${floor} or newer)`,
     );
   }

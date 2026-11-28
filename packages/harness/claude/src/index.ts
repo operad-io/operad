@@ -17,6 +17,7 @@ import {
   type StepContext,
 } from "@operad-io/engine";
 import {
+  agentNotSetUp,
   assertWorkerAvailable,
   CONCURRENCY_SETTING,
   createCachedProbe,
@@ -46,7 +47,15 @@ import {
   type KeptRunOptions,
   shellWord,
 } from "@operad-io/harness-process";
-import { CLAUDE_FLOOR, DEFAULT_CLAUDE_COMMAND, claudeSignedIn, inspectClaude, sdkVersion } from "./claude-install.ts";
+import {
+  CLAUDE_FLOOR,
+  ClaudeNotReadyError,
+  DEFAULT_CLAUDE_COMMAND,
+  claudeSignedIn,
+  inspectClaude,
+  sdkVersion,
+  type ClaudeInstall,
+} from "./claude-install.ts";
 import { DEFAULT_BASH_TIMEOUT_SECS, CLAUDE_CONTEXT_WINDOWS, EFFORT_LEVELS } from "./protocol.ts";
 
 export {
@@ -352,8 +361,15 @@ export function createClaudeHarnessPlugin(options: ClaudeHarnessOptions = {}) {
       const claudeCommand = optionalText(ctx.settings.command, `${HARNESS}: settings.command`);
       // The user's own claude: found, version-checked and asked who is logged
       // in. Only the login kind is reported.
-      const claude = inspectClaude(claudeCommand);
+      // A missing worker program fails the check whatever the claude says.
       assertWorkerAvailable({ command: options.command, args: options.args, workerPath: WORKER_PATH });
+      let claude: ClaudeInstall;
+      try {
+        claude = inspectClaude(claudeCommand);
+      } catch (error) {
+        if (error instanceof ClaudeNotReadyError) return agentNotSetUp(error.message);
+        throw error;
+      }
       const sdk = await sdkVersion();
       return (
         `claude ${claude.version} at ${claude.path} (floor ${CLAUDE_FLOOR}); ` +

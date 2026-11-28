@@ -20,6 +20,7 @@ export * from "./fold-lines.ts";
 export * from "./jsonl-log.ts";
 export * from "./keep.ts";
 export * from "./lines.ts";
+export * from "./not-set-up.ts";
 export * from "./operad-tools.ts";
 export * from "./process.ts";
 export * from "./probe-cache.ts";
