@@ -3,8 +3,9 @@ import { chmodSync, mkdirSync, realpathSync, symlinkSync, writeFileSync } from "
 import { homedir } from "node:os";
 import { join } from "node:path";
 import { definePlugin } from "@operad-io/engine";
+import { repositoryOf } from "../src/folders.ts";
 import { loginShell, REMOTE_REFUSAL, Session, type TerminalInfo, type TerminalList } from "../src/index.ts";
-import { addWorktree, closeAll, git, lingering,makeWorld, render, serve, type Refusal } from "./support.ts";
+import { addWorktree, closeAll, git, lingering, makeWorld, render, serve, type Refusal } from "./support.ts";
 
 afterEach(closeAll);
 
@@ -103,6 +104,17 @@ describe("starting a terminal", () => {
     const stream = await served.stream(listed[1]?.id ?? "");
     const screen = await stream.until((event) => event.name === "screen");
     expect(screen.data.repository).toBe("repository");
+  });
+
+  test("a repository's own folder names it before another repository's worktree", async () => {
+    const world = await makeWorld();
+    const worktree = addWorktree(world, "TK1");
+    const outer = { name: "outer", path: world.repository };
+    const inner = { name: "inner", path: worktree };
+    // Listed first, "outer" would claim the folder as its worktree.
+    expect(await repositoryOf(worktree, [outer, inner])).toBe("inner");
+    // The worktree lists the main folder too, and does not claim it either.
+    expect(await repositoryOf(world.repository, [inner, outer])).toBe("outer");
   });
 
   test("keeps the real path of a folder reached through a link", async () => {
