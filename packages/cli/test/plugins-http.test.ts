@@ -65,6 +65,7 @@ async function withRig(
   body: (rig: Rig) => Promise<void>,
   installRun?: InstallRunner,
   extraPlugins: Record<string, { module: string; enabled: boolean; settings?: unknown }> = {},
+  places: Parameters<typeof pluginAdminFor>[3] = {},
 ): Promise<void> {
   const root = await tempRoot();
   const home = join(root, "home");
@@ -100,6 +101,7 @@ async function withRig(
           return loadPlugin(module, base);
         },
         installRun,
+        places,
       ),
       onLog: (message) => logs.push(message),
     });
@@ -305,13 +307,86 @@ describe("plugins over HTTP", () => {
     );
   });
 
-  test("turning on claude from its offered row adds it to the file", async () => {
-    await withRig(async (rig) => {
-      const response = await call(rig, "POST", { name: "claude", enabled: true });
-      expect(response.status).toBe(200);
-      const plugins = (JSON.parse(rig.configText()) as { plugins: Record<string, unknown> }).plugins;
-      expect(plugins.claude).toEqual({ module: "@operad-io/harness-claude", enabled: true });
+  test("turning on claude from its offered row installs it, shows the line it is on and adds it", async () => {
+    // A directory from which the package does not resolve, as in a published
+    // install; the empty node_modules keeps Bun from asking a registry.
+    const bare = await tempRoot();
+    mkdirSync(join(bare, "node_modules"), { recursive: true });
+    let started: () => void = () => undefined;
+    const began = new Promise<void>((resolve) => {
+      started = resolve;
     });
+    let release: () => void = () => undefined;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const installed: string[] = [];
+    const run: InstallRunner = async (cwd, args, onProgress) => {
+      installed.push(args.join(" "));
+      onProgress?.("Resolving dependencies");
+      started();
+      await gate;
+      const name = "@operad-io/harness-claude";
+      const directory = join(cwd, "node_modules", name);
+      mkdirSync(directory, { recursive: true });
+      writeFileSync(join(directory, "package.json"), JSON.stringify({ name, exports: "./index.ts" }));
+      writeFileSync(join(directory, "index.ts"), "export default {};\n");
+      return { exitCode: 0, stdout: "", stderr: "" };
+    };
+    await withRig(
+      async (rig) => {
+        const enabling = call(rig, "POST", { name: "claude", enabled: true });
+        await began;
+        const during = ((await (await call(rig, "GET")).json()) as { plugins: Row[] }).plugins;
+        expect(during.find((row) => row.name === "claude")?.progress).toBe("Resolving dependencies");
+        release();
+        expect((await enabling).status).toBe(200);
+        expect(installed).toEqual(["install --omit=optional --no-summary"]);
+        const plugins = (JSON.parse(rig.configText()) as { plugins: Record<string, unknown> }).plugins;
+        expect(plugins.claude).toEqual({ module: "@operad-io/harness-claude", enabled: true });
+      },
+      run,
+      {},
+      { from: bare },
+    );
+  });
+
+  test("a plugin whose package is not installed is listed with its stand-in's version", async () => {
+    const module = "@operad-io/not-installed-anywhere";
+    const standIn = join(await tempRoot(), "stand-in.ts");
+    writeFileSync(
+      standIn,
+      'export default { operadPlugin: 1, name: "later", kind: "domain", version: "3.2.1" };\n',
+    );
+    await withRig(
+      async (rig) => {
+        const rows = ((await (await call(rig, "GET")).json()) as { plugins: Row[] }).plugins;
+        expect(rows.find((row) => row.name === "later")?.version).toBe("3.2.1");
+      },
+      undefined,
+      { later: { module, enabled: true } },
+      { standIns: { [module]: standIn } },
+    );
+  });
+
+  test("a harness whose agent is not on the machine carries no access levels", async () => {
+    const previous = process.env.PATH;
+    process.env.PATH = await tempRoot();
+    try {
+      await withRig(
+        async (rig) => {
+          const rows = ((await (await call(rig, "GET")).json()) as { plugins: Row[] }).plugins;
+          const radian = rows.find((row) => row.name === "radian");
+          expect(radian?.enabled).toBe(true);
+          expect(radian).not.toHaveProperty("accessLevels");
+        },
+        undefined,
+        { radian: { module: "@operad-io/harness-radian", enabled: true } },
+      );
+    } finally {
+      if (previous === undefined) delete process.env.PATH;
+      else process.env.PATH = previous;
+    }
   });
 
   test("GET /v1/plugins carries a harness's signedIn answer, and leaves it out when it cannot tell", async () => {

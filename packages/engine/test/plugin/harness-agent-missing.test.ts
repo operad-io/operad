@@ -55,6 +55,36 @@ describe("a harness plugin whose agent is missing", () => {
     expect(registry.loadedHarnesses()).toEqual(["h"]);
   });
 
+  test("is seen by a source that is already running once the agent is there", async () => {
+    let there = false;
+    let seen: () => readonly string[] | undefined = () => undefined;
+    const source = definePlugin({
+      name: "watcher",
+      kind: "domain",
+      version: "0.0.0",
+      start(ctx) {
+        seen = () => ctx.harnesses;
+        return { stop: () => undefined };
+      },
+    });
+    const registry = load([harness("h", () => (there ? undefined : SENTENCE)), source as never]);
+    const running = await registry.startSources({
+      rules: [],
+      clock: () => 0,
+      client: {} as never,
+      emit: async () => undefined,
+    });
+    expect(seen()).toEqual([]);
+    there = true;
+    expect(seen()).toEqual(["h"]);
+    for (const item of running) await item.handle.stop();
+  });
+
+  test("is named to an action with how to set it up", () => {
+    const registry = load([harness("gone", () => SENTENCE)]);
+    expect(registry.actionEnv().missingAgents).toEqual({ gone: SENTENCE });
+  });
+
   test("is not asked for its sign-in or its models", async () => {
     const calls: string[] = [];
     const registry = load([harness("h", () => SENTENCE, calls)]);

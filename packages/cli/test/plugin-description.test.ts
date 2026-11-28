@@ -41,6 +41,11 @@ describe("plugin descriptions", () => {
     }
   });
 
+  test("a file: module that names no file here has no description", async () => {
+    const home = await tempRoot();
+    expect(pluginDescription("file://elsewhere/plugin.ts", home)).toBeUndefined();
+  });
+
   test("a package in the home's plugin project gives its description on one line", async () => {
     const home = await tempRoot();
     manifest(join(home, "plugins"), { name: "operad-plugins" });

@@ -4,6 +4,8 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Kernel, ViewError, defaultOperadHome, isRecord, listPending, loadTriggerRules, messageOf, openHome, type ActionInfo, type LogBackend, type OperadConfig, type PluginRegistry, type Views,
+  shareOptionalPlugins,
+  shareStandInPlugins,
   sharedOptionalPlugins,
   sharedStandInPlugins,
 } from "@operad-io/engine";
@@ -445,6 +447,10 @@ export async function runMcpServer(
   const log = logWriter(error);
   const send = lineWriter(write);
   const input = options.input ?? Bun.stdin.stream();
+
+  // A harness started from inside this process reads the same lists.
+  if (options.optional !== undefined) shareOptionalPlugins(options.optional);
+  if (options.standIns !== undefined) shareStandInPlugins(options.standIns);
 
   const opened = await openContext(
     home,

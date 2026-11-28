@@ -278,6 +278,29 @@ describe("`operad init` finds the agent on PATH", () => {
     expect(second.output.text()).toContain("pi: pi 1.6.0");
   });
 
+  test("a home with another agent still moves the pi it already names, and retries it", async () => {
+    const root = await tempRoot();
+    const home = join(root, "home");
+    mkdirSync(join(home, "plugins"), { recursive: true });
+    const manifest = join(home, "plugins", "package.json");
+    writeFileSync(manifest, JSON.stringify({ dependencies: { "@earendil-works/pi-coding-agent": "1.5.0" } }));
+    const asked: string[] = [];
+    await initWith(root, ["radian"], {
+      installRun: () => {
+        const read = JSON.parse(readFileSync(manifest, "utf8")) as { dependencies: Record<string, string> };
+        asked.push(read.dependencies["@earendil-works/pi-coding-agent"] ?? "");
+        return { exitCode: 1, stdout: "", stderr: "no network" };
+      },
+    });
+    await initWith(root, ["radian"], {
+      installRun: () => {
+        asked.push("again");
+        return { exitCode: 1, stdout: "", stderr: "no network" };
+      },
+    });
+    expect(asked).toEqual(["1.6.0", "again"]);
+  });
+
   test("a new home with another agent installs no pi", async () => {
     const root = await tempRoot();
     const calls: string[] = [];

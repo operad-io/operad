@@ -16,6 +16,7 @@ import { basename, isAbsolute, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { CHAT_TYPE, MESSAGE_EVENT, mainChatOf, levelRefusal, agentConditionals, type AgentChoices, type ScheduledChat, chatData, createChat, sendMessage, startingEffort, startingModel, titleFromMessage } from "@operad-io/chat";
 import { definePlugin, isRecord, modelIds, type ActionArgSchema, type ActionArgsSchema, type ActionTypeDefinition, type HarnessCapabilities, type HarnessModelInfo, type HarnessModels, type JsonValue, type ObjectRow, type ObjectStore, type ObjectViews, type PluginStepResult, type SectionContent, type StepContext, type StoredObject } from "@operad-io/engine";
+import { noAgent } from "./no-agent.ts";
 import {
   BOT_SETTINGS,
   DEFAULT_BOT,
@@ -201,6 +202,8 @@ export interface OpenChat {
   readonly home: string;
   readonly settings: Readonly<Record<string, JsonValue>>;
   readonly harnesses: readonly string[];
+  /** The harnesses whose agent is not on this machine, for a refusal. */
+  readonly missingAgents?: Readonly<Record<string, string>> | undefined;
   /** What each loaded agent can do; the level a chat starts at must be one its agent carries. */
   readonly capabilities?: Readonly<Record<string, HarnessCapabilities>> | undefined;
   readonly bot: string;
@@ -232,6 +235,21 @@ export function defaultAgent(
   return harnesses.find((name) => (capabilities[name]?.accessLevels ?? []).includes(level)) ?? harnesses[0];
 }
 
+/**
+ * Why `agent` is not among the ones offered: a loaded harness whose agent is
+ * not on this machine is not set up, and says how to set it up.
+ */
+export function agentRefusal(
+  agent: string,
+  harnesses: readonly string[],
+  missing: Readonly<Record<string, string>> | undefined,
+): string {
+  const setup = missing?.[agent];
+  return setup === undefined
+    ? `agent "${agent}" is not loaded; the loaded ones are: ${harnesses.join(", ") || "none"}`
+    : `agent "${agent}" is not set up: ${setup}`;
+}
+
 /** Opens a chat on a bot and returns its id. Refuses with a plain message. */
 export async function openChat(input: OpenChat): Promise<string> {
   const written = readBots(input.home, input.settings);
@@ -246,12 +264,10 @@ export async function openChat(input: OpenChat): Promise<string> {
   const harness =
     input.harness ?? bot.harness ?? defaultAgent(input.harnesses, input.capabilities, startingLevel);
   if (harness === undefined) {
-    throw new BotError("no agent is loaded; load one to chat with the bot");
+    throw new BotError(noAgent(input.missingAgents, "no agent is loaded; load one to chat with the bot"));
   }
   if (!input.harnesses.includes(harness)) {
-    throw new BotError(
-      `agent "${harness}" is not loaded; the loaded ones are: ${input.harnesses.join(", ") || "none"}`,
-    );
+    throw new BotError(agentRefusal(harness, input.harnesses, input.missingAgents));
   }
   // The bot's configured model and effort must be ones the agent lists; an unlisted one is refused by name.
   let model: string | undefined;
@@ -457,7 +473,9 @@ const createAction: ActionTypeDefinition = {
   when: (state, env) => state.removed !== true && (env.harnesses ?? []).length > 0,
   async why(object, env) {
     if (object.data.removed === true) return `bot ${object.id} is no longer in the settings`;
-    if ((env.harnesses ?? []).length === 0) return "no agent is loaded; load one to create a bot";
+    if ((env.harnesses ?? []).length === 0) {
+      return noAgent(env.missingAgents, "no agent is loaded; load one to create a bot");
+    }
     return undefined;
   },
   async run(ctx, args) {
@@ -473,9 +491,7 @@ const createAction: ActionTypeDefinition = {
     const name = input.name ?? "";
     const agent = input.agent ?? "";
     if (!ctx.harnesses.includes(agent)) {
-      throw new BotError(
-        `agent "${agent}" is not loaded; the loaded ones are: ${ctx.harnesses.join(", ") || "none"}`,
-      );
+      throw new BotError(agentRefusal(agent, ctx.harnesses, ctx.missingAgents));
     }
     try {
       if (input.model !== undefined) startingModel(agent, ctx.models?.[agent], input.model);
@@ -538,7 +554,9 @@ const chatAction: ActionTypeDefinition = {
   async why(object, env) {
     if (object.data.removed === true) return `bot ${object.id} is no longer in the settings`;
     if (typeof object.data.problem === "string") return `bot ${object.id}: ${object.data.problem}`;
-    if ((env.harnesses ?? []).length === 0) return `bot ${object.id}: no agent is loaded; load one to chat with it`;
+    if ((env.harnesses ?? []).length === 0) {
+      return `bot ${object.id}: ${noAgent(env.missingAgents, "no agent is loaded; load one to chat with it")}`;
+    }
     return undefined;
   },
   async run(ctx, args) {
@@ -559,6 +577,7 @@ const chatAction: ActionTypeDefinition = {
       home: ctx.home,
       settings: ctx.settings,
       harnesses: ctx.harnesses,
+      missingAgents: ctx.missingAgents,
       capabilities: ctx.capabilities,
       models: ctx.models,
       efforts: ctx.efforts,
@@ -610,7 +629,9 @@ const setupDevAction: ActionTypeDefinition = {
   async why(object, env) {
     if (object.data.removed === true) return `bot ${object.id} is no longer in the settings`;
     if (typeof object.data.problem === "string") return `bot ${object.id}: ${object.data.problem}`;
-    if ((env.harnesses ?? []).length === 0) return `bot ${object.id}: no agent is loaded; load one to chat with it`;
+    if ((env.harnesses ?? []).length === 0) {
+      return `bot ${object.id}: ${noAgent(env.missingAgents, "no agent is loaded; load one to chat with it")}`;
+    }
     return undefined;
   },
   async run(ctx, args) {
@@ -623,6 +644,7 @@ const setupDevAction: ActionTypeDefinition = {
       home: ctx.home,
       settings: ctx.settings,
       harnesses: ctx.harnesses,
+      missingAgents: ctx.missingAgents,
       capabilities: ctx.capabilities,
       models: ctx.models,
       efforts: ctx.efforts,
@@ -669,6 +691,7 @@ const setupAction: ActionTypeDefinition = {
       home: ctx.home,
       settings: ctx.settings,
       harnesses: ctx.harnesses,
+      missingAgents: ctx.missingAgents,
       capabilities: ctx.capabilities,
       models: ctx.models,
       efforts: ctx.efforts,

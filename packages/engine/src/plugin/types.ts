@@ -1180,6 +1180,8 @@ export interface ActionEnv {
   readonly home?: string | undefined;
   /** The harness plugins loaded now; the kernel always sets it. */
   readonly harnesses?: readonly string[] | undefined;
+  /** As `ActionContext.missingAgents`. */
+  readonly missingAgents?: Readonly<Record<string, string>> | undefined;
   /** The models each loaded harness plugin declares, by plugin name. */
   readonly models?: Readonly<Record<string, HarnessModels>> | undefined;
   /** The efforts each loaded harness plugin declares, by plugin name. */
@@ -1414,6 +1416,11 @@ export interface ActionEvent {
 export interface ActionContext extends PluginBaseContext {
   /** The names of the loaded plugins of kind `harness`. */
   readonly harnesses: readonly string[];
+  /**
+   * The loaded harnesses left out of `harnesses` because their agent is not on
+   * this machine, each with how to set it up (ADR 0022 D14).
+   */
+  readonly missingAgents?: Readonly<Record<string, string>> | undefined;
   /** What each loaded harness plugin declares it can do, by plugin name. */
   readonly capabilities?: Readonly<Record<string, HarnessCapabilities>> | undefined;
   /** The kernel's runs, when the host supplies them; a plugin can avoid starting a second one. */
@@ -1678,7 +1685,7 @@ export interface SourceContext extends PluginBaseContext {
   /** The routing rules, already checked. */
   readonly rules: readonly TriggerRule[];
   readonly clock: () => number;
-  /** The loaded harness plugin names, in load order. */
+  /** The loaded harness plugin names, in load order; read it again to see an agent installed since. */
   readonly harnesses?: readonly string[] | undefined;
   /** What a loaded harness plugin declares it can do; undefined when it is not loaded. */
   readonly harnessCapabilities?:

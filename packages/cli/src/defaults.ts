@@ -29,9 +29,16 @@ export const INSTALL_ON_ENABLE: readonly string[] = ["claude", "terminal"];
  */
 export const INSTALL_AFTER_START: readonly string[] = ["terminal"];
 
-/** What loads in place of each of those packages until it is installed, by module name. */
+/**
+ * What stands in for each of those packages until it is installed, by module
+ * name: a plugin for `terminal`, and for `claude` its setup guide alone, a copy
+ * of the package's own.
+ */
 export function standInPlugins(): Readonly<Record<string, string>> {
-  return { "@operad-io/terminal": join(import.meta.dir, "stand-in", "terminal", "plugin.ts") };
+  return {
+    "@operad-io/terminal": join(import.meta.dir, "stand-in", "terminal", "plugin.ts"),
+    "@operad-io/harness-claude": join(import.meta.dir, "stand-in", "claude", "SKILL.md"),
+  };
 }
 
 /** The pi library operad installs into the home when no agent is on `PATH` (ADR 0023 D9). */

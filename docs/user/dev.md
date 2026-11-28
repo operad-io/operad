@@ -95,7 +95,8 @@ refused with the field path in front, such as `workers.claude.fallback: ...`.
 A file that writes neither `worker` nor `workers` uses one worker whose `use` is
 the first harness enabled in the home's `config.json`, in the order `radian`,
 `claude`, `pi`, `codex`, whose agent is on the machine (its command on `PATH` or
-set in its settings, or operad's own pi in the home); with none there, the first
+set in its settings, or operad's own pi in the home; a `command` of `claude` or
+`pi` that is only the agent's own name does not count); with none there, the first
 enabled one. A file that leaves out `reviewer.use` uses the same harness. With no
 enabled harness both are `radian/agent`.
 
@@ -606,7 +607,9 @@ bound there.
 `pi` runs the pi coding agent instead of radian. A new home enables it; with no
 `claude`, `pi` or `radian` command on `PATH`, `operad init` also installs
 operad's own pi. In a home with another agent and no pi, it is not set up until
-`operad plugin enable pi` installs it.
+`operad plugin enable pi` installs it. Where operad's own pi was installed, or an
+install of it failed, `operad init` brings it to the version this operad pins
+(or tries again), whatever other agent the home has.
 
 **Install pi.** operad uses the pi you installed when `pi` is on `PATH`, with
 bun (`bun add -g @earendil-works/pi-coding-agent`) or npm
@@ -833,7 +836,7 @@ An alias or function from the user's own shell setup, such as `ls` defined as
 
 ### Why the pool plugin exists
 
-Agent runs cost an account, not a repository: one Claude or Codex login serves every repository on the machine. Two repositories that each allow three Claude runs at once leave nothing that limits the total, and the per-model `concurrency` of a harness (see [Limiting runs of one model](#limiting-runs-of-one-model)) limits a model, not how many runs of one harness the machine has. The `pool` plugin gives each repository and flow a set of named workers and gives the home one cap for each harness. It does not count runs that call a harness step directly, and it is off in a new home; turn it on with `operad plugin enable pool`.
+Agent runs cost an account, not a repository: one Claude or Codex login serves every repository on the machine. Two repositories that each allow three Claude runs at once leave nothing that limits the total, and the per-model `concurrency` of a harness (see [Limiting runs of one model](#limiting-runs-of-one-model)) limits a model, not how many runs of one harness the machine has. The `pool` plugin gives each repository and flow a set of named workers and gives the home one cap for each harness. It does not count runs that call a harness step directly, and it is on in a new home; a home made before needs `operad plugin enable pool`.
 
 ### How the pool plugin works
 

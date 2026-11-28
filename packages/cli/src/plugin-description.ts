@@ -40,9 +40,15 @@ function manifestNamed(name: string, file: string): Record<string, unknown> | un
  * the repository the file sits in.
  */
 function manifestOfPath(module: string, home: string): Record<string, unknown> | undefined {
-  const file = module.startsWith("file:")
-    ? fileURLToPath(module)
-    : resolve(home, module.startsWith("~") ? join(homedir(), module.slice(1)) : module);
+  let file: string;
+  try {
+    file = module.startsWith("file:")
+      ? fileURLToPath(module)
+      : resolve(home, module.startsWith("~") ? join(homedir(), module.slice(1)) : module);
+  } catch {
+    // A URL that names no file here: there is no description to read.
+    return undefined;
+  }
   const directory = dirname(file);
   return manifestIn(directory) ?? (basename(directory) === "src" ? manifestIn(dirname(directory)) : undefined);
 }

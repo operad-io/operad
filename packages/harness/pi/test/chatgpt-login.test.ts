@@ -78,3 +78,9 @@ describe("a login pi made elsewhere", () => {
     expect(await plugin.signedIn?.(settings)).toBe(true);
   });
 });
+
+test("the setup guide names no bare pi command for the ChatGPT login, which operad's own pi is not", async () => {
+  const guide = await Bun.file(new URL("../skills/setup/SKILL.md", import.meta.url)).text();
+  expect(guide).not.toContain("pi auth login");
+  expect(guide).toContain("operad bot:login <bot>");
+});

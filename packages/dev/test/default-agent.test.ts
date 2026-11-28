@@ -28,7 +28,7 @@ const every = {
 
 function homeWith(
   root: string,
-  plugins: Readonly<Record<string, { readonly module: string; readonly enabled?: boolean }>>,
+  plugins: Readonly<Record<string, { readonly module: string; readonly enabled?: boolean; readonly settings?: object }>>,
 ): string {
   const home = join(root, "home");
   mkdirSync(home, { recursive: true });
@@ -105,6 +105,27 @@ describe("the agent of a repository that names no worker", () => {
       }),
     );
     expect(defaultAgentUse(home)).toBe("pi/agent");
+  });
+
+  test("the agent's own name as `command` does not make claude or pi count as there", async () => {
+    const root = await tempRoot();
+    const bin = join(root, "bin");
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(join(bin, "codex"), "#!/bin/sh\n");
+    chmodSync(join(bin, "codex"), 0o755);
+    const home = homeWith(root, {
+      claude: { module: "@operad-io/harness-claude", settings: { command: "claude" } },
+      pi: { module: "@operad-io/harness-pi", settings: { command: "pi" } },
+      codex: { module: "@operad-io/harness-codex" },
+    });
+    const previous = process.env.PATH;
+    process.env.PATH = bin;
+    try {
+      expect(defaultAgentUse(home)).toBe("codex/agent");
+    } finally {
+      if (previous === undefined) delete process.env.PATH;
+      else process.env.PATH = previous;
+    }
   });
 
   test("reads the array of module names", async () => {
