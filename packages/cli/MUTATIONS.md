@@ -618,3 +618,4 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 | T-0836-M1 | packages/cli/src/main.ts | serve installed only the `INSTALL_AFTER_START` entries, not a pi the home holds | `serve on a home with operad's pi at an older pin > moves it once it is serving, and reloads` |
 | T-0836-M4 | packages/cli/src/main.ts | a bare operad moved the home's pi itself before it started | `` `operad init` finds the agent on PATH > a bare operad leaves an older copy for serve to move `` |
 | T-0836-M5 | packages/cli/src/main.ts | a failed move of pi was logged as `not set up` | `serve on a home with operad's pi at an older pin > a failed move is logged, and serve goes on with the copy it has` |
+| T-0836-M6 | packages/cli/src/main.ts | the pi install did not get the abort signal, so a stop of serve waited for the download | `serve on a home with operad's pi at an older pin > a stop of serve ends a move under way` (timed out) |
