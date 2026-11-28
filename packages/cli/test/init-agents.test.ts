@@ -1,6 +1,7 @@
 import { afterAll, describe, expect, test } from "bun:test";
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import { PI_CODING_AGENT_VERSION } from "../src/defaults.ts";
 import { main, type CliIo } from "../src/main.ts";
 import type { InstallRunner } from "@operad-io/engine";
 import { cleanupTempRoots, tempRoot } from "../../engine/test/plugin/support.ts";
@@ -343,7 +344,7 @@ describe("`operad init` finds the agent on PATH", () => {
         return { exitCode: 1, stdout: "", stderr: "no network" };
       },
     });
-    expect(asked).toEqual(["1.6.0", "again"]);
+    expect(asked).toEqual([PI_CODING_AGENT_VERSION, "again"]);
   });
 
   test("a new home with another agent installs no pi", async () => {
