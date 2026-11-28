@@ -603,3 +603,10 @@ Survived: replacing the `resolveCommand(...) === undefined` guard alone with `tr
 | T-0826-M9 | packages/cli/src/main.ts | doctor ignored what a passing check reports missing | `` `operad init` with an agent that needs the person > a claude older than the floor is not set up, init passes, and doctor lists a problem `` |
 | T-0826-M10 | packages/cli/src/main.ts | init passed with an enabled plugin that did not load | `` `operad init` still fails on a real failure > a plugin that cannot load, beside plugins that load `` |
 | T-0826-M11 | packages/cli/src/main.ts | init passed when no plugin at all loaded | `` `operad init` still fails on a real failure > a plugin that cannot load, as the only plugin `` |
+
+## T-0835 — doctor's next command for an agent not set up
+
+| id | file | mutation | failing test |
+|---|---|---|---|
+| T-0835-M1 | packages/cli/src/doctor.ts | doctor told an agent not set up to run `operad init` | `operad doctor > an agent that is not set up names the command its reason quotes, or says to set it up` |
+| T-0835-M2 | packages/cli/src/main.ts | doctor did not mark an agent whose passing check reports it missing | `` `operad init` with an agent that needs the person ``; `serve on a new home with nothing set up > with only a signed-out claude, …` and `… a too old claude, …` |
