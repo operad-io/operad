@@ -15,7 +15,7 @@
 <a href="https://x.com/zyinghai"><img alt="X: @zyinghai" src="https://img.shields.io/badge/%40zyinghai-000000?logo=x&logoColor=white"></a>
 </p>
 
-<p align="center"><a href="https://github.com/operad-io/operad/releases/download/v0.4.1/operad-0.4.1-arm64.dmg"><b>下载 macOS 版</b></a>（Apple 芯片） · <a href="#安装">安装命令行</a></p>
+<p align="center"><a href="https://github.com/operad-io/operad/releases/download/v0.5.0/operad-0.5.0-arm64.dmg"><b>下载 macOS 版</b></a>（Apple 芯片） · <a href="#安装">安装命令行</a></p>
 
 <p align="center"><img alt="operad 桌面应用：一个计划、它的任务和各自的状态" src="docs/assets/desktop-plan.png" width="820"></p>
 
