@@ -277,6 +277,8 @@
   "@operad-io/engine:PLUGIN_PROJECT_DIRECTORY": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",
   "@operad-io/engine:ensureInstalledPackage": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",
   "@operad-io/engine:installedPackageFile": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",
+  "@operad-io/engine:INSTALL_WAITING_LINE": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",
+  "@operad-io/engine:standInModule": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",
   "@operad-io/engine:pluginProjectManifestPath": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",
   "@operad-io/engine:pluginProjectPath": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",
   "@operad-io/engine:removePackage": "installs a plugin package into the operad home: the CLI host uses it, a plugin never calls it",
