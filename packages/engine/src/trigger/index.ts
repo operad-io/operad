@@ -29,4 +29,4 @@ export type {
   TriggerStoreOptions,
 } from "./store.ts";
 export { Kernel, start } from "./kernel.ts";
-export type { KernelOptions } from "./kernel.ts";
+export type { KernelOptions, SourceWatcher } from "./kernel.ts";

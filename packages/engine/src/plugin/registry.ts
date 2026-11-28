@@ -2162,11 +2162,19 @@ export class PluginRegistry {
     readonly signal?: AbortSignal | undefined;
     /** False when the rules could not be loaded: only `startsWithoutRules` plugins start. */
     readonly rulesLoaded?: boolean | undefined;
+    /**
+     * Called as each source's start ends, before the next one starts; without
+     * a handle when it failed or was not started.
+     */
+    readonly onSettled?: ((plugin: string, handle: SourceHandle | undefined) => void) | undefined;
   }): Promise<readonly { readonly plugin: string; readonly handle: SourceHandle }[]> {
     const running: { plugin: string; handle: SourceHandle }[] = [];
     for (const plugin of this.plugins) {
       if (plugin.start === undefined) continue;
-      if (options.rulesLoaded === false && plugin.startsWithoutRules !== true) continue;
+      if (options.rulesLoaded === false && plugin.startsWithoutRules !== true) {
+        options.onSettled?.(plugin.name, undefined);
+        continue;
+      }
       const emit = async (event: SourceEvent): Promise<void> => {
         const trigger: TriggerEvent = {
           source: event.source ?? plugin.name,
@@ -2210,12 +2218,14 @@ export class PluginRegistry {
         harnessCommand: (name) => this.interactiveCommandFor(name),
         ...(this.onCancelRun === undefined ? {} : { runs: this.runControl() }),
       };
+      let handle: SourceHandle | undefined;
       try {
-        const handle = await plugin.start(ctx);
+        handle = await plugin.start(ctx);
         running.push({ plugin: plugin.name, handle });
       } catch (error) {
         this.log(`plugin "${plugin.name}": start failed: ${messageOf(error)}`);
       }
+      options.onSettled?.(plugin.name, handle);
     }
     return running;
   }
